@@ -24,38 +24,27 @@ function AuraLogo() {
   );
 }
 
-export default function SignUpScreen() {
+export default function LoginScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+        {/* Logo */}
         <View style={styles.logoSection}>
           <AuraLogo />
           <Text style={styles.title}>AUra</Text>
         </View>
 
+        {/* Tabs */}
         <View style={styles.tabs}>
-          <Text style={styles.activeTab}>Sign Up</Text>
-
-          <TouchableOpacity
-            onPress={() => router.replace('/(auth)/login')}
-          >
-            <Text style={styles.inactiveTab}>Log In</Text>
+          <TouchableOpacity onPress={() => router.replace('/(auth)/signup')}>
+            <Text style={styles.inactiveTab}>Sign Up</Text>
           </TouchableOpacity>
+
+          <Text style={styles.activeTab}>Log In</Text>
         </View>
 
+        {/* Form */}
         <View style={styles.form}>
-          <TextInput
-            placeholder="First Name"
-            placeholderTextColor="#999"
-            style={styles.input}
-          />
-
-          <TextInput
-            placeholder="Last Name"
-            placeholderTextColor="#999"
-            style={styles.input}
-          />
-
           <TextInput
             placeholder="Email Address"
             placeholderTextColor="#999"
@@ -71,28 +60,28 @@ export default function SignUpScreen() {
             style={styles.input}
           />
 
-          <Text style={styles.terms}>
-            Agree with{' '}
-            <Text style={styles.link}>
-              Terms and Conditions
-            </Text>
+          {/* Forgot Password */}
+          <Text style={styles.forgotPassword}>
+            FORGOT PASSWORD?
           </Text>
 
+          {/* Button */}
           <TouchableOpacity style={styles.button}>
             <Text style={styles.buttonText}>
-              SIGN UP
+              LOG IN
             </Text>
           </TouchableOpacity>
 
+          {/* Footer */}
           <Text style={styles.footer}>
-            Already have an account?{' '}
+            Don't have an account?{' '}
             <Text
               style={styles.link}
               onPress={() =>
-                router.replace('/(auth)/login')
+                router.replace('/(auth)/signup')
               }
             >
-              Login
+              Sign up
             </Text>
           </Text>
         </View>
@@ -156,10 +145,13 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  terms: {
-    textAlign: 'center',
-    marginTop: 4,
-    color: '#333',
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginTop: -6,
+    marginBottom: 18,
+    fontSize: 13,
+    color: Colors.navy,
+    fontWeight: '500',
   },
 
   button: {
@@ -168,7 +160,7 @@ const styles = StyleSheet.create({
     height: 54,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 8,
   },
 
   buttonText: {
