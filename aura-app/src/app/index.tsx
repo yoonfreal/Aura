@@ -29,7 +29,7 @@ export default function OnboardingScreen() {
           style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
           onPress={() => router.push('/(auth)/login')}
         >
-          <Text style={styles.buttonText}>GET STARTED</Text>
+          <Text style={styles.button}>GET STARTED</Text>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -56,13 +56,14 @@ const styles = StyleSheet.create({
   },
   button: {
     alignSelf: 'stretch',
-    backgroundColor: 'transparent',
-    borderRadius: 50,
-    borderWidth: 2,
+    backgroundColor: '#1B2B4B',
+    borderRadius: 30,
+    borderWidth: 20,
     borderColor: Colors.navy,
-    paddingVertical: 16,
+    paddingVertical: 5,
     alignItems: 'center',
     marginTop: 64,
+    color: Colors.white,
   },
   buttonPressed: {
     opacity: 0.6,
