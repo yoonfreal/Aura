@@ -1,98 +1,111 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Colors } from '@/constants/colors';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+function AuraLogo() {
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
+    <View style={logoStyles.outer}>
+      <View style={logoStyles.inner}>
+        <View style={logoStyles.bars}>
+          <View style={[logoStyles.bar, { height: 26 }]} />
+          <View style={[logoStyles.bar, { height: 44 }]} />
+          <View style={[logoStyles.bar, { height: 34 }]} />
+        </View>
+      </View>
+    </View>
   );
 }
 
-export default function HomeScreen() {
+export default function OnboardingScreen() {
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Hello&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.content}>
+        <AuraLogo />
+        <Text style={styles.title}>AUra</Text>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <Pressable
+          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+          onPress={() => router.push('/(auth)/login')}
+        >
+          <Text style={styles.buttonText}>GET STARTED</Text>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safe: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: Colors.skyBackground,
   },
-  safeArea: {
+  content: {
     flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+    paddingHorizontal: 40,
   },
   title: {
-    textAlign: 'center',
+    fontSize: 48,
+    fontWeight: '700',
+    color: Colors.navy,
+    marginTop: 24,
+    letterSpacing: -0.5,
   },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
+  button: {
     alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+    backgroundColor: 'transparent',
+    borderRadius: 50,
+    borderWidth: 2,
+    borderColor: Colors.navy,
+    paddingVertical: 16,
+    alignItems: 'center',
+    marginTop: 64,
+  },
+  buttonPressed: {
+    opacity: 0.6,
+  },
+  buttonText: {
+    color: Colors.navy,
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 3,
+  },
+});
+
+const logoStyles = StyleSheet.create({
+  outer: {
+    width: 112,
+    height: 112,
+    borderRadius: 26,
+    backgroundColor: Colors.navy,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Colors.navyDark,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  inner: {
+    width: 88,
+    height: 88,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.navyLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bars: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  bar: {
+    width: 13,
+    borderRadius: 4,
+    backgroundColor: Colors.barBlue,
   },
 });
