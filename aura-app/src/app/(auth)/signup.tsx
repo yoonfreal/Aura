@@ -37,6 +37,7 @@ export default function AuthScreen() {
 
   const [signupFirstName, setSignupFirstName] = useState('');
   const [signupLastName, setSignupLastName] = useState('');
+  const [signupUsername, setSignupUsername] = useState('');
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupLoading, setSignupLoading] = useState(false);
@@ -46,8 +47,12 @@ export default function AuthScreen() {
   const [loginLoading, setLoginLoading] = useState(false);
 
   async function handleSignUp() {
-    if (!signupFirstName || !signupLastName || !signupEmail || !signupPassword) {
+    if (!signupFirstName || !signupLastName || !signupUsername || !signupEmail || !signupPassword) {
       Alert.alert('Error', 'Please fill in all fields.');
+      return;
+    }
+    if (!/^[a-z0-9_]{3,20}$/.test(signupUsername)) {
+      Alert.alert('Invalid Username', 'Username must be 3–20 characters and contain only lowercase letters, numbers, or underscores.');
       return;
     }
     if (!agreed) {
@@ -55,17 +60,40 @@ export default function AuthScreen() {
       return;
     }
     setSignupLoading(true);
-    const { error } = await supabase.auth.signUp({
+
+    const { data: existing } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', signupUsername)
+      .maybeSingle();
+
+    if (existing) {
+      setSignupLoading(false);
+      Alert.alert('Username Taken', 'That username is already in use. Please choose another.');
+      return;
+    }
+
+    const { data: authData, error } = await supabase.auth.signUp({
       email: signupEmail,
       password: signupPassword,
-      options: { data: { first_name: signupFirstName, last_name: signupLastName } },
+      options: { data: { first_name: signupFirstName, last_name: signupLastName, username: signupUsername } },
     });
-    setSignupLoading(false);
-    if (error) {
-      Alert.alert('Sign Up Failed', error.message);
-    } else {
-      Alert.alert('Check your email', 'We sent you a confirmation link to activate your account.');
+
+    if (error || !authData.user) {
+      setSignupLoading(false);
+      Alert.alert('Sign Up Failed', error?.message ?? 'Something went wrong.');
+      return;
     }
+
+    await supabase.from('profiles').insert({
+      id: authData.user.id,
+      username: signupUsername,
+      first_name: signupFirstName,
+      last_name: signupLastName,
+    });
+
+    setSignupLoading(false);
+    Alert.alert('Check your email', 'We sent you a confirmation link to activate your account.');
   }
 
   async function handleLogIn() {
@@ -154,6 +182,15 @@ export default function AuthScreen() {
                 style={styles.input}
                 value={signupLastName}
                 onChangeText={setSignupLastName}
+              />
+              <TextInput
+                placeholder="Username"
+                placeholderTextColor="#999"
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={styles.input}
+                value={signupUsername}
+                onChangeText={(t) => setSignupUsername(t.toLowerCase())}
               />
               <TextInput
                 placeholder="Email Address"
@@ -303,9 +340,9 @@ const styles = StyleSheet.create({
   input: {
     backgroundColor: '#FFF',
     borderRadius: 12,
-    height: 52,
+    height: 44,
     paddingHorizontal: 16,
-    marginBottom: 14,
+    marginBottom: 10,
   },
 
   termsRow: {
