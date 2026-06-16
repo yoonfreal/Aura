@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
+  Alert,
   StyleSheet,
   Text,
   TextInput,
@@ -9,6 +11,7 @@ import {
 } from 'react-native';
 
 import { Colors } from '@/constants/colors';
+import { supabase } from '@/lib/supabase';
 
 function AuraLogo() {
   return (
@@ -25,6 +28,25 @@ function AuraLogo() {
 }
 
 export default function LoginScreen() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function handleLogIn() {
+    if (!email || !password) {
+      Alert.alert('Error', 'Please enter your email and password.');
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) {
+      Alert.alert('Login Failed', error.message);
+    } else {
+      router.replace('/(tabs)' as any);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
@@ -36,11 +58,13 @@ export default function LoginScreen() {
 
         {/* Tabs */}
         <View style={styles.tabs}>
-          <TouchableOpacity onPress={() => router.replace('/(auth)/signup')}>
+          <TouchableOpacity style={styles.tabInactive} onPress={() => router.replace('/(auth)/signup')}>
             <Text style={styles.inactiveTab}>Sign Up</Text>
           </TouchableOpacity>
 
-          <Text style={styles.activeTab}>Log In</Text>
+          <View style={styles.tabActive}>
+            <Text style={styles.activeTab}>Log In</Text>
+          </View>
         </View>
 
         {/* Form */}
@@ -51,6 +75,8 @@ export default function LoginScreen() {
             keyboardType="email-address"
             autoCapitalize="none"
             style={styles.input}
+            value={email}
+            onChangeText={setEmail}
           />
 
           <TextInput
@@ -58,6 +84,8 @@ export default function LoginScreen() {
             placeholderTextColor="#999"
             secureTextEntry
             style={styles.input}
+            value={password}
+            onChangeText={setPassword}
           />
 
           {/* Forgot Password */}
@@ -66,9 +94,9 @@ export default function LoginScreen() {
           </Text>
 
           {/* Button */}
-          <TouchableOpacity style={styles.button}>
+          <TouchableOpacity style={styles.button} onPress={handleLogIn} disabled={loading}>
             <Text style={styles.buttonText}>
-              LOG IN
+              {loading ? 'LOGGING IN...' : 'LOG IN'}
             </Text>
           </TouchableOpacity>
 
@@ -103,38 +131,58 @@ const styles = StyleSheet.create({
 
   logoSection: {
     alignItems: 'center',
-    marginTop: 50,
+    marginTop: 40,
   },
 
   title: {
     fontSize: 48,
-    marginTop: 12,
+    fontWeight: '700',
     color: Colors.navy,
-    fontFamily: 'serif',
+    marginTop: 24,
+    letterSpacing: -0.5,
   },
 
   tabs: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    borderBottomWidth: 1,
-    borderBottomColor: '#C5CED9',
+    backgroundColor: '#D6E8F5',
+    borderRadius: 14,
+    padding: 4,
     marginTop: 24,
-    paddingBottom: 14,
+  },
+
+  tabActive: {
+    flex: 1,
+    backgroundColor: Colors.navy,
+    borderRadius: 11,
+    paddingVertical: 10,
+    alignItems: 'center',
+    shadowColor: Colors.navyDark,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+
+  tabInactive: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
   },
 
   activeTab: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: Colors.navy,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
   },
 
   inactiveTab: {
-    fontSize: 18,
-    color: '#888',
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#7A92AA',
   },
 
   form: {
-    marginTop: 32,
+    marginTop: 18,
   },
 
   input: {
@@ -183,32 +231,35 @@ const styles = StyleSheet.create({
 
 const logoStyles = StyleSheet.create({
   outer: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#CFE8F6',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  inner: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 112,
+    height: 112,
+    borderRadius: 26,
     backgroundColor: Colors.navy,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: Colors.navyDark,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 16,
+    elevation: 12,
   },
-
+  inner: {
+    width: 88,
+    height: 88,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: Colors.navyLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   bars: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 5,
+    gap: 6,
   },
-
   bar: {
-    width: 8,
-    backgroundColor: '#FFF',
+    width: 13,
     borderRadius: 4,
+    backgroundColor: Colors.barBlue,
   },
 });
