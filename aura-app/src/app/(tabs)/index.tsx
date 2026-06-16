@@ -1,6 +1,7 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useUserStore } from '@/store/userStore';
 import { StatCard } from '@/components/StatCard';
@@ -13,6 +14,16 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user, dailyStats, missions, watchSync, activeTab, setActiveTab, setDailyStats, setWatchSync } =
     useUserStore();
+  const pillAnim = useRef(new Animated.Value(0)).current;
+  const [trackWidth, setTrackWidth] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(pillAnim, {
+      toValue: activeTab === 'Daily' ? 0 : 1,
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [activeTab]);
 
   useEffect(() => {
     async function loadData() {
@@ -30,21 +41,17 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.safe}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[styles.content, { paddingTop: insets.top }]}
-        showsVerticalScrollIndicator={false}
-        bounces={true}
-      >
+      {/* Sticky header — stays fixed */}
+      <View style={[styles.stickyHeader, { paddingTop: insets.top }]}>
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.username}>{user.username}</Text>
           <View style={styles.headerIcons}>
             <TouchableOpacity style={styles.iconBtn}>
-              <Text style={styles.headerIconText}>👤+</Text>
+              <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn}>
-              <Text style={styles.headerIconText}>💬</Text>
+              <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
             </TouchableOpacity>
           </View>
         </View>
@@ -63,62 +70,101 @@ export default function HomeScreen() {
         </View>
 
         {/* Daily / Weekly Tabs */}
-        <View style={styles.tabRow}>
-          {(['Daily', 'Weekly'] as const).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={styles.tab}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                {tab}
-              </Text>
-              {activeTab === tab && <View style={styles.tabIndicator} />}
-            </TouchableOpacity>
-          ))}
-          <View style={styles.tabDivider} />
-        </View>
-
-        {/* Stats Grid */}
-        <View style={styles.statsGrid}>
-          <View style={styles.statsRow}>
-            <StatCard
-              icon="🦶"
-              value={dailyStats.steps.toLocaleString()}
-              label="Avg daily steps"
-              iconBg="#D1FAE5"
+        <View style={styles.segmentWrapper}>
+          <View
+            style={styles.segmentTrack}
+            onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+          >
+            <Animated.View
+              style={[
+                styles.segmentPill,
+                {
+                  transform: [{
+                    translateX: pillAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0, trackWidth / 2],
+                    }),
+                  }],
+                },
+              ]}
             />
-            <StatCard
-              icon="💪"
-              value={dailyStats.calories.toString()}
-              label="Calories"
-              iconBg="#D1FAE5"
-            />
-          </View>
-          <View style={styles.statsRow}>
-            <StatCard
-              icon="🔥"
-              value={dailyStats.streakDays.toString()}
-              label="Days streak"
-              iconBg="#FEF3C7"
-            />
-            <StatCard
-              icon="🏆"
-              value={dailyStats.xpEarned.toString()}
-              label="XP earned"
-              iconBg="#FEF3C7"
-            />
+            {(['Daily', 'Weekly'] as const).map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                style={styles.segmentBtn}
+                onPress={() => setActiveTab(tab)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.segmentText, activeTab === tab && styles.segmentTextActive]}>
+                  {tab}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
+      </View>
 
-        {/* Watch Sync */}
-        <WatchSyncCard status={watchSync} />
+      {/* Scrollable content */}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
+        {activeTab === 'Daily' ? (
+          <>
+            {/* Stats Grid */}
+            <View style={styles.statsGrid}>
+              <View style={styles.statsRow}>
+                <StatCard
+                  icon="footsteps"
+                  iconColor="#0D9488"
+                  iconBg="#CCFBF1"
+                  value={dailyStats.steps.toLocaleString()}
+                  label="Avg daily steps"
+                />
+                <StatCard
+                  icon="barbell"
+                  iconColor="#EA580C"
+                  iconBg="#FFEDD5"
+                  value={dailyStats.calories.toString()}
+                  label="Calories"
+                />
+              </View>
+              <View style={styles.statsRow}>
+                <StatCard
+                  icon="flame"
+                  iconColor="#DC2626"
+                  iconBg="#FEE2E2"
+                  value={dailyStats.streakDays.toString()}
+                  label="Days streak"
+                />
+                <StatCard
+                  icon="trophy"
+                  iconColor="#D97706"
+                  iconBg="#FEF3C7"
+                  value={dailyStats.xpEarned.toString()}
+                  label="XP earned"
+                />
+              </View>
+            </View>
 
-        {/* Missions */}
-        <Text style={styles.sectionTitle}>TODAY'S MISSIONS</Text>
-        {missions.map((mission) => (
-          <MissionCard key={mission.id} mission={mission} />
-        ))}
+            {/* Watch Sync */}
+            <WatchSyncCard status={watchSync} />
+
+            {/* Missions */}
+            <Text style={styles.sectionTitle}>TODAY'S MISSIONS</Text>
+            {missions.map((mission) => (
+              <MissionCard key={mission.id} mission={mission} />
+            ))}
+          </>
+        ) : (
+          <View style={styles.comingSoon}>
+            <Ionicons name="bar-chart-outline" size={48} color="#D1D5DB" />
+            <Text style={styles.comingSoonTitle}>Weekly Stats</Text>
+            <Text style={styles.comingSoonSub}>Coming soon</Text>
+          </View>
+        )}
 
         <View style={styles.bottomPad} />
       </ScrollView>
@@ -130,6 +176,10 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: '#F2F6F9',
+  },
+  stickyHeader: {
+    backgroundColor: '#F2F6F9',
+    paddingBottom: 8,
   },
   scroll: {
     flex: 1,
@@ -171,9 +221,6 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
-  headerIconText: {
-    fontSize: 16,
-  },
 
   // Level
   levelSection: {
@@ -204,44 +251,47 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
 
-  // Tabs
-  tabRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginTop: 12,
+  // Segment control
+  segmentWrapper: {
+    paddingHorizontal: 16,
+    marginTop: 14,
     marginBottom: 4,
+  },
+  segmentTrack: {
+    flexDirection: 'row',
+    backgroundColor: '#E8EDF2',
+    borderRadius: 12,
+    padding: 3,
     position: 'relative',
   },
-  tabDivider: {
+  segmentPill: {
     position: 'absolute',
-    bottom: 0,
-    left: 20,
-    right: 20,
-    height: 1,
-    backgroundColor: '#E5E7EB',
+    top: 3,
+    left: 3,
+    bottom: 3,
+    width: '50%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  tab: {
-    marginRight: 24,
-    paddingBottom: 8,
+  segmentBtn: {
+    flex: 1,
+    paddingVertical: 8,
     alignItems: 'center',
+    zIndex: 1,
   },
-  tabText: {
-    fontSize: 15,
-    fontWeight: '500',
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
     color: '#9CA3AF',
   },
-  tabTextActive: {
-    fontWeight: '700',
+  segmentTextActive: {
     color: '#1B2B4B',
-  },
-  tabIndicator: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 2,
-    backgroundColor: '#1B2B4B',
-    borderRadius: 1,
+    fontWeight: '700',
   },
 
   // Stats grid
@@ -269,5 +319,21 @@ const styles = StyleSheet.create({
 
   bottomPad: {
     height: 16,
+  },
+  comingSoon: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 60,
+    gap: 10,
+  },
+  comingSoonTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#9CA3AF',
+  },
+  comingSoonSub: {
+    fontSize: 13,
+    color: '#C4C9D4',
+    fontWeight: '500',
   },
 });

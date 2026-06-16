@@ -1,20 +1,24 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props {
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  iconBg: string;
   value: string;
   label: string;
-  iconBg: string;
 }
 
-export function StatCard({ icon, value, label, iconBg }: Props) {
+export function StatCard({ icon, iconColor, iconBg, value, label }: Props) {
   return (
     <View style={styles.card}>
       <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
-        <Text style={styles.icon}>{icon}</Text>
+        <Ionicons name={icon} size={22} color={iconColor} />
       </View>
-      <Text style={styles.value}>{value}</Text>
-      <Text style={styles.label}>{label}</Text>
+      <View style={styles.textWrap}>
+        <Text style={styles.value}>{value}</Text>
+        <Text style={styles.label}>{label}</Text>
+      </View>
     </View>
   );
 }
@@ -22,37 +26,39 @@ export function StatCard({ icon, value, label, iconBg }: Props) {
 const styles = StyleSheet.create({
   card: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderRadius: 14,
-    padding: 12,
+    padding: 10,
     marginHorizontal: 4,
+    gap: 9,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 2,
   },
   iconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 9,
+    width: 40,
+    height: 40,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
   },
-  icon: {
-    fontSize: 16,
+  textWrap: {
+    flex: 1,
   },
   value: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
     color: '#1B2B4B',
     letterSpacing: -0.5,
   },
   label: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#8A9BB0',
-    marginTop: 2,
     fontWeight: '500',
+    marginTop: 1,
   },
 });
