@@ -85,12 +85,16 @@ export default function AuthScreen() {
       return;
     }
 
-    await supabase.from('profiles').insert({
+    const { error: profileError } = await supabase.from('profiles').upsert({
       id: authData.user.id,
       username: signupUsername,
       first_name: signupFirstName,
       last_name: signupLastName,
     });
+
+    if (profileError) {
+      console.error('Profile insert failed:', profileError.message);
+    }
 
     setSignupLoading(false);
     Alert.alert('Check your email', 'We sent you a confirmation link to activate your account.');
