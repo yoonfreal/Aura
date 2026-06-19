@@ -7,9 +7,11 @@ interface Props {
   iconBg: string;
   value: string;
   label: string;
+  sub?: string;
+  subColor?: string;
 }
 
-export function StatCard({ icon, iconColor, iconBg, value, label }: Props) {
+export function StatCard({ icon, iconColor, iconBg, value, label, sub, subColor }: Props) {
   return (
     <View style={styles.card}>
       <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
@@ -18,6 +20,7 @@ export function StatCard({ icon, iconColor, iconBg, value, label }: Props) {
       <View style={styles.textWrap}>
         <Text style={styles.value}>{value}</Text>
         <Text style={styles.label}>{label}</Text>
+        {sub ? <Text style={[styles.sub, subColor ? { color: subColor } : undefined]}>{sub}</Text> : null}
       </View>
     </View>
   );
@@ -60,5 +63,11 @@ const styles = StyleSheet.create({
     color: '#8A9BB0',
     fontWeight: '500',
     marginTop: 1,
+  },
+  sub: {
+    fontSize: 10,
+    color: '#0D9488',
+    fontWeight: '500',
+    marginTop: 2,
   },
 });

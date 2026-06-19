@@ -47,3 +47,19 @@ export interface LeaderboardEntry {
   xp: number;
   rank: number;
 }
+
+export interface WeeklyBarDay {
+  day: string;
+  xp: number;
+}
+
+export interface WeeklyStats {
+  avgSteps: number;
+  totalCalories: number;
+  estimatedKm: number;
+  totalXp: number;
+  avgStepsVsLastWeek: number | null;
+  caloriesVsLastWeek: number | null;
+  xpVsLastWeek: number | null;
+  barData: WeeklyBarDay[];
+}
