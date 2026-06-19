@@ -8,12 +8,17 @@ import { StatCard } from '@/components/StatCard';
 import { MissionCard } from '@/components/MissionCard';
 import { XPBar } from '@/components/XPBar';
 import { WatchSyncCard } from '@/components/WatchSyncCard';
-import { fetchTodayStats, fetchWatchSyncStatus } from '@/lib/healthkit';
+import { WeeklyView } from '@/components/WeeklyView';
+import { fetchWatchSyncStatus } from '@/lib/healthkit';
+import { fetchTodayMissions, fetchDailyStats, logMissionComplete, fetchWeeklyStats } from '@/lib/api';
+import { getLevelTitle, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { user, dailyStats, missions, watchSync, activeTab, setActiveTab, setDailyStats, setWatchSync } =
-    useUserStore();
+  const {
+    user, dailyStats, missions, watchSync, activeTab, weeklyStats,
+    setActiveTab, setDailyStats, setWatchSync, setMissions, setUser, setWeeklyStats,
+  } = useUserStore();
   const pillAnim = useRef(new Animated.Value(0)).current;
   const [trackWidth, setTrackWidth] = useState(0);
 
@@ -26,16 +31,57 @@ export default function HomeScreen() {
   }, [activeTab]);
 
   useEffect(() => {
+    if (!user || activeTab !== 'Weekly') return;
+    fetchWeeklyStats(user.id).then(setWeeklyStats);
+  }, [user?.id, activeTab]);
+
+  useEffect(() => {
+    if (!user) return;
     async function loadData() {
-      const [stats, sync] = await Promise.all([
-        fetchTodayStats(),
+      const [activityStats, sync, todayMissions] = await Promise.all([
+        fetchDailyStats(user!.id),
         fetchWatchSyncStatus(),
+        fetchTodayMissions(user!.id),
       ]);
-      setDailyStats(stats);
+      const xpEarned = todayMissions
+        .filter((m) => m.completed)
+        .reduce((sum, m) => sum + m.xpReward, 0);
+      setDailyStats({
+        steps: activityStats.steps,
+        calories: activityStats.calories,
+        streakDays: user!.streak,
+        xpEarned,
+      });
+      setMissions(todayMissions);
       setWatchSync(sync);
     }
     loadData();
-  }, []);
+  }, [user?.id]);
+
+  async function handleLog(userMissionId: string) {
+    if (!user) return;
+    const mission = missions.find((m) => m.id === userMissionId);
+    if (!mission) return;
+
+    const { newXp, newLevel } = await logMissionComplete(
+      userMissionId,
+      user.id,
+      mission.goalValue,
+      mission.xpReward,
+      user.xp,
+      user.level,
+    );
+
+    setMissions(
+      missions.map((m) =>
+        m.id === userMissionId
+          ? { ...m, currentValue: m.goalValue, completed: true }
+          : m,
+      ),
+    );
+    setUser({ ...user, xp: newXp, level: newLevel, xpForNextLevel: xpForLevel(newLevel + 1) });
+    setDailyStats({ ...dailyStats, xpEarned: dailyStats.xpEarned + mission.xpReward });
+  }
 
   if (!user) return null;
 
@@ -59,7 +105,7 @@ export default function HomeScreen() {
         {/* Level Badge */}
         <View style={styles.levelSection}>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelText}>⭐ Level {user.level} (Warrior)</Text>
+            <Text style={styles.levelText}>⭐ Level {user.level} ({getLevelTitle(user.level)})</Text>
             <Text style={styles.xpText}>
               {user.xp.toLocaleString()} / {user.xpForNextLevel.toLocaleString()} XP
             </Text>
@@ -155,15 +201,11 @@ export default function HomeScreen() {
             {/* Missions */}
             <Text style={styles.sectionTitle}>TODAY'S MISSIONS</Text>
             {missions.map((mission) => (
-              <MissionCard key={mission.id} mission={mission} />
+              <MissionCard key={mission.id} mission={mission} onLog={handleLog} />
             ))}
           </>
         ) : (
-          <View style={styles.comingSoon}>
-            <Ionicons name="bar-chart-outline" size={48} color="#D1D5DB" />
-            <Text style={styles.comingSoonTitle}>Weekly Stats</Text>
-            <Text style={styles.comingSoonSub}>Coming soon</Text>
-          </View>
+          <WeeklyView stats={weeklyStats} />
         )}
 
         <View style={styles.bottomPad} />

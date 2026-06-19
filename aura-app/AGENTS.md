@@ -277,6 +277,17 @@ When building a feature:
 7. Fix lint and type errors before finishing.
  
 ---
+
+## For level proceeding
+  if (level < 5) return 'Beginner'
+  if (level < 10) return 'Rookie'
+  if (level < 20) return 'Warrior'
+  if (level < 30) return 'Athlete'
+  if (level < 40) return 'Elite'
+  else return 'Legend'
+
+## level calculation formula
+ XP to reach level N = 80 × N^1.3
  
 ## Communication
  
