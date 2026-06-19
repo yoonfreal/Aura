@@ -1,5 +1,6 @@
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { StatCard } from '@/components/StatCard';
 import type { WeeklyStats } from '@/types';
 
@@ -109,7 +110,11 @@ export function WeeklyView({ stats }: Props) {
       </View>
 
       {/* AI Weekly Summary */}
-      <View style={styles.aiCard}>
+      <TouchableOpacity
+        style={styles.aiCard}
+        activeOpacity={0.85}
+        onPress={() => router.push('/ai-report-card')}
+      >
         <View style={styles.aiHeader}>
           <Ionicons name="hardware-chip-outline" size={20} color="#FFFFFF" />
           <Text style={styles.aiTitle}>AI weekly summary</Text>
@@ -120,7 +125,7 @@ export function WeeklyView({ stats }: Props) {
         <View style={styles.aiArrow}>
           <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
         </View>
-      </View>
+      </TouchableOpacity>
     </>
   );
 }
