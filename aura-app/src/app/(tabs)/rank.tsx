@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import { supabase } from '@/lib/supabase';
+import React, { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   View,
@@ -7,10 +8,7 @@ import {
   TouchableOpacity,
   FlatList,
 } from 'react-native';
-import {
-  Ionicons,
-  MaterialCommunityIcons,
-} from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 
 type User = {
   rank: number;
@@ -20,8 +18,10 @@ type User = {
   xp: number;
 };
 
-const leaderboardData: User[] = [
-  { rank: 1, name: 'Kevin', level: 8, title: 'Warrior', xp: 400 },
+const currentUserRank = 10;
+
+const MOCK_DATA: User[] = [
+  { rank: 1, name: 'Kevin', level: 8, title: 'Active', xp: 400 },
   { rank: 2, name: 'Natasha', level: 15, title: 'Athlete', xp: 380 },
   { rank: 3, name: 'Tom', level: 10, title: 'Active', xp: 290 },
   { rank: 4, name: 'Chris', level: 8, title: 'Active', xp: 250 },
@@ -32,197 +32,6 @@ const leaderboardData: User[] = [
   { rank: 9, name: 'Ryan', level: 7, title: 'Active', xp: 180 },
   { rank: 10, name: 'Jane', level: 5, title: 'Beginner', xp: 160 },
 ];
-
-const currentUserRank = 10;
-
-export default function LeaderboardScreen() {
-  const [activeTab, setActiveTab] = useState('Weekly');
-
-  const topThree = leaderboardData.slice(0, 3);
-
-  const renderItem = ({ item }: { item: User }) => {
-    const isCurrentUser = item.rank === currentUserRank;
-
-    return (
-      <View
-        style={[
-          styles.row,
-          isCurrentUser && styles.currentUserRow,
-        ]}
-      >
-        <Text style={styles.rank}>{item.rank}</Text>
-
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {item.name.charAt(0)}
-          </Text>
-        </View>
-
-        <View style={styles.userInfo}>
-          <Text style={styles.name}>{item.name}</Text>
-
-          <Text style={styles.subtitle}>
-            Level {item.level} • {item.title}
-          </Text>
-        </View>
-
-        <View style={styles.xpBadge}>
-          <Text style={styles.xpText}>
-            {item.xp} XP
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Leaderboard</Text>
-
-        <View style={styles.headerIcons}>
-          <TouchableOpacity>
-            <Ionicons
-              name="person-add-outline"
-              size={24}
-              color="#000"
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity>
-            <Ionicons
-              name="chatbubble-outline"
-              size={24}
-              color="#000"
-            />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {['Overall', 'Weekly', 'Friends'].map(tab => (
-          <TouchableOpacity
-            key={tab}
-            style={styles.tab}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === tab &&
-                  styles.activeTabText,
-              ]}
-            >
-              {tab}
-            </Text>
-
-            {activeTab === tab && (
-              <View style={styles.activeIndicator} />
-            )}
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Leaderboard */}
-      <FlatList
-        style={{ flex: 1 }}
-        data={leaderboardData}
-        keyExtractor={(item) => item.rank.toString()}
-        renderItem={renderItem}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{
-          paddingBottom: 50,
-        }}
-        ListHeaderComponent={
-          <View style={styles.podiumContainer}>
-            {/* Second */}
-            <View style={styles.secondPlace}>
-              <View
-                style={[
-                  styles.podiumAvatar,
-                  { backgroundColor: '#3f7f67' },
-                ]}
-              >
-                <Text style={styles.avatarLetter}>
-                  {topThree[1].name[0]}
-                </Text>
-              </View>
-
-              <Text style={styles.podiumName}>
-                {topThree[1].name}
-              </Text>
-
-              <View
-                style={[
-                  styles.podiumBar,
-                  styles.secondBar,
-                ]}
-              />
-            </View>
-
-            {/* First */}
-            <View style={styles.firstPlace}>
-              <MaterialCommunityIcons
-                name="crown"
-                size={30}
-                color="#F5B041"
-              />
-
-              <View
-                style={[
-                  styles.podiumAvatar,
-                  { backgroundColor: '#6f7c34' },
-                ]}
-              >
-                <Text style={styles.avatarLetter}>
-                  {topThree[0].name[0]}
-                </Text>
-              </View>
-
-              <Text style={styles.podiumName}>
-                {topThree[0].name}
-              </Text>
-
-              <View
-                style={[
-                  styles.podiumBar,
-                  styles.firstBar,
-                ]}
-              />
-            </View>
-
-            {/* Third */}
-            <View style={styles.thirdPlace}>
-              <View
-                style={[
-                  styles.podiumAvatar,
-                  { backgroundColor: '#bdbdbd' },
-                ]}
-              >
-                <Text style={styles.avatarLetter}>
-                  {topThree[2].name[0]}
-                </Text>
-              </View>
-
-              <Text style={styles.podiumName}>
-                {topThree[2].name}
-              </Text>
-
-              <View
-                style={[
-                  styles.podiumBar,
-                  styles.thirdBar,
-                ]}
-              />
-            </View>
-          </View>
-        }
-      />
-    </SafeAreaView>
-  );
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -403,3 +212,155 @@ const styles = StyleSheet.create({
     color: '#2B4D76',
   },
 });
+
+export default function LeaderboardScreen() {
+  const [activeTab, setActiveTab] = useState('Weekly');
+  const [leaderboardData, setLeaderboardData] = useState<User[]>(MOCK_DATA);
+
+  useEffect(() => {
+    fetchLeaderboard();
+  }, []);
+
+  const fetchLeaderboard = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .order('xp', { ascending: false });
+
+    if (error || !data || data.length === 0) {
+      return;
+    }
+
+    const formatted: User[] = data.map(
+      (user: { username?: string; first_name?: string; last_name?: string; level?: number; streak_days?: number; xp?: number }, index: number) => ({
+        rank: index + 1,
+        name:
+          user.username ||
+          `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim(),
+        level: user.level ?? 1,
+        title: `${user.streak_days ?? 0} Day Streak`,
+        xp: user.xp ?? 0,
+      })
+    );
+
+    setLeaderboardData(formatted);
+  };
+
+  const topThree = leaderboardData.slice(0, 3);
+
+  const renderPodiumUser = (user: User, place: 1 | 2 | 3) => {
+    const avatarColor =
+      place === 1
+        ? '#336999'
+        : place === 2
+        ? '#E76F24'
+        : '#E8B737';
+
+    const barStyle =
+      place === 1
+        ? styles.firstBar
+        : place === 2
+        ? styles.secondBar
+        : styles.thirdBar;
+
+    const placeStyle =
+      place === 1
+        ? styles.firstPlace
+        : place === 2
+        ? styles.secondPlace
+        : styles.thirdPlace;
+
+    return (
+      <View key={place} style={placeStyle}>
+        <View style={[styles.podiumAvatar, { backgroundColor: avatarColor }]}>
+          <Text style={styles.avatarLetter}>
+            {user.name.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        <Text style={styles.podiumName}>{user.name}</Text>
+        <Text style={{ fontSize: 12, color: '#666' }}>
+          Level {user.level}
+        </Text>
+        <View style={[styles.podiumBar, barStyle]} />
+      </View>
+    );
+  };
+
+  const renderLeaderboardRow = (user: User) => {
+    const isCurrentUser = user.rank === currentUserRank;
+    return (
+      <View
+        key={user.rank}
+        style={[styles.row, isCurrentUser && styles.currentUserRow]}
+      >
+        <Text style={styles.rank}>{user.rank}</Text>
+        <View style={styles.avatar}>
+          <Text style={styles.avatarText}>
+            {user.name.charAt(0).toUpperCase()}
+          </Text>
+        </View>
+        <View style={styles.userInfo}>
+          <Text style={styles.name}>{user.name}</Text>
+          <Text style={styles.subtitle}>{user.title}</Text>
+        </View>
+        <View style={styles.xpBadge}>
+          <Text style={styles.xpText}>{user.xp} XP</Text>
+        </View>
+      </View>
+    );
+  };
+
+  const listHeader = (
+    <>
+      <View style={styles.header}>
+        <Text style={styles.title}>Leaderboard</Text>
+        <View style={styles.headerIcons}>
+          <TouchableOpacity>
+            <Ionicons name="search" size={24} color="#000" />
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Ionicons name="settings-outline" size={24} color="#000" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.tabs}>
+        {['Weekly', 'Monthly', 'All Time'].map((tab) => (
+          <TouchableOpacity
+            key={tab}
+            style={styles.tab}
+            onPress={() => setActiveTab(tab)}
+          >
+            <Text
+              style={
+                activeTab === tab
+                  ? styles.activeTabText
+                  : styles.tabText
+              }
+            >
+              {tab}
+            </Text>
+            {activeTab === tab && <View style={styles.activeIndicator} />}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={styles.podiumContainer}>
+        {topThree[1] && renderPodiumUser(topThree[1], 2)}
+        {topThree[0] && renderPodiumUser(topThree[0], 1)}
+        {topThree[2] && renderPodiumUser(topThree[2], 3)}
+      </View>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <FlatList
+        data={leaderboardData.slice(3)}
+        renderItem={({ item }) => renderLeaderboardRow(item)}
+        keyExtractor={(item) => item.rank.toString()}
+        ListHeaderComponent={listHeader}
+      />
+    </SafeAreaView>
+  );
+}
