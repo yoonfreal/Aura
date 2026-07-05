@@ -10,7 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { router } from 'expo-router';
 
 import { Colors } from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
@@ -96,8 +95,10 @@ export default function AuthScreen() {
       console.error('Profile insert failed:', profileError.message);
     }
 
+    await supabase.auth.signOut();
     setSignupLoading(false);
-    Alert.alert('Check your email', 'We sent you a confirmation link to activate your account.');
+    switchTab('login');
+    Alert.alert('Account created!', 'You can now log in.');
   }
 
   async function handleLogIn() {
@@ -113,8 +114,6 @@ export default function AuthScreen() {
     setLoginLoading(false);
     if (error) {
       Alert.alert('Login Failed', error.message);
-    } else {
-      router.replace('/(tabs)' as any);
     }
   }
 
