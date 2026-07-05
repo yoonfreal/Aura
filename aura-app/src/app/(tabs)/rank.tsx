@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -164,20 +165,22 @@ export default function LeaderboardScreen() {
       .map((entry, i) => ({ ...entry, rank: i + 1 }));
   }, []);
 
-  useEffect(() => {
-    if (activeTab === 'Friends') {
-      setLeaderboardData([]);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setFetchError(null);
-    const fetch = activeTab === 'Overall' ? fetchOverall : fetchWeekly;
-    fetch().then((entries) => {
-      setLeaderboardData(entries);
-      setLoading(false);
-    });
-  }, [activeTab, fetchOverall, fetchWeekly]);
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab === 'Friends') {
+        setLeaderboardData([]);
+        setLoading(false);
+        return;
+      }
+      setLoading(true);
+      setFetchError(null);
+      const fetch = activeTab === 'Overall' ? fetchOverall : fetchWeekly;
+      fetch().then((entries) => {
+        setLeaderboardData(entries);
+        setLoading(false);
+      });
+    }, [activeTab, fetchOverall, fetchWeekly]),
+  );
 
   const topThree = leaderboardData.slice(0, 3);
   const currentUser = currentUserId

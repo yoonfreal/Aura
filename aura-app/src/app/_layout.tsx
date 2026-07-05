@@ -17,18 +17,43 @@ type ProfileRow = {
   level: number;
   xp: number;
   streak_days: number;
+  role: 'user' | 'admin';
 };
 
 async function fetchAndSetUser(
-  userId: string,
-  email: string,
+  authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
   setUser: ReturnType<typeof useUserStore.getState>['setUser'],
 ) {
-  const { data } = await supabase
+  const userId = authUser.id;
+  const email = authUser.email ?? '';
+
+  let { data, error } = await supabase
     .from('profiles')
-    .select('id, username, first_name, last_name, level, xp, streak_days')
+    .select('id, username, first_name, last_name, level, xp, streak_days, role')
     .eq('id', userId)
     .single();
+
+  if (error?.code === 'PGRST116') {
+    // Profile row was never created (trigger or signup upsert didn't run) — self-heal from auth metadata.
+    const meta = authUser.user_metadata ?? {};
+    await supabase.from('profiles').upsert({
+      id: userId,
+      username: (meta.username as string) || email.split('@')[0] || `user_${userId.slice(0, 8)}`,
+      first_name: (meta.first_name as string) ?? '',
+      last_name: (meta.last_name as string) ?? '',
+    });
+
+    ({ data, error } = await supabase
+      .from('profiles')
+      .select('id, username, first_name, last_name, level, xp, streak_days, role')
+      .eq('id', userId)
+      .single());
+  }
+
+  if (error) {
+    console.error('fetchAndSetUser: could not load profile', userId, error);
+    return;
+  }
 
   const profile = data as ProfileRow | null;
   if (!profile) return;
@@ -41,6 +66,7 @@ async function fetchAndSetUser(
     level: profile.level ?? 1,
     streak: profile.streak_days ?? 0,
     xpForNextLevel: xpForLevel((profile.level ?? 1) + 1),
+    role: profile.role ?? 'user',
   });
 }
 
@@ -56,7 +82,7 @@ export default function RootLayout() {
           (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           session?.user
         ) {
-          await fetchAndSetUser(session.user.id, session.user.email ?? '', setUser);
+          await fetchAndSetUser(session.user, setUser);
           setPendingRedirect('/(tabs)');
         } else if (
           event === 'SIGNED_OUT' ||

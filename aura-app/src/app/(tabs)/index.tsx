@@ -1,7 +1,8 @@
-import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useEffect, useRef, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useUserStore } from '@/store/userStore';
 import { StatCard } from '@/components/StatCard';
@@ -10,7 +11,14 @@ import { XPBar } from '@/components/XPBar';
 import { WatchSyncCard } from '@/components/WatchSyncCard';
 import { WeeklyView } from '@/components/WeeklyView';
 import { fetchWatchSyncStatus } from '@/lib/healthkit';
-import { fetchTodayMissions, fetchDailyStats, logMissionComplete, fetchWeeklyStats } from '@/lib/api';
+import {
+  fetchTodayMissions,
+  fetchDailyStats,
+  logMissionComplete,
+  fetchWeeklyStats,
+  incrementDailyStat,
+} from '@/lib/api';
+import { syncChallengeProgressForUser } from '@/lib/challenges';
 import { getLevelTitle, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
@@ -30,57 +38,77 @@ export default function HomeScreen() {
     }).start();
   }, [activeTab]);
 
-  useEffect(() => {
-    if (!user || activeTab !== 'Weekly') return;
-    fetchWeeklyStats(user.id).then(setWeeklyStats);
-  }, [user?.id, activeTab]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user || activeTab !== 'Weekly') return;
+      fetchWeeklyStats(user.id)
+        .then(setWeeklyStats)
+        .catch((err) => console.error('fetchWeeklyStats failed', err));
+    }, [user?.id, activeTab]),
+  );
 
-  useEffect(() => {
-    if (!user) return;
-    async function loadData() {
-      const [activityStats, sync, todayMissions] = await Promise.all([
-        fetchDailyStats(user!.id),
-        fetchWatchSyncStatus(),
-        fetchTodayMissions(user!.id),
-      ]);
-      const xpEarned = todayMissions
-        .filter((m) => m.completed)
-        .reduce((sum, m) => sum + m.xpReward, 0);
-      setDailyStats({
-        steps: activityStats.steps,
-        calories: activityStats.calories,
-        streakDays: user!.streak,
-        xpEarned,
-      });
-      setMissions(todayMissions);
-      setWatchSync(sync);
-    }
-    loadData();
-  }, [user?.id]);
+  useFocusEffect(
+    useCallback(() => {
+      if (!user) return;
+      async function loadData() {
+        try {
+          const [activityStats, sync, todayMissions] = await Promise.all([
+            fetchDailyStats(user!.id),
+            fetchWatchSyncStatus(),
+            fetchTodayMissions(user!.id),
+          ]);
+          setDailyStats({
+            steps: activityStats.steps,
+            calories: activityStats.calories,
+            streakDays: user!.streak,
+            xpEarned: activityStats.xpEarned,
+          });
+          setMissions(todayMissions);
+          setWatchSync(sync);
+        } catch (err) {
+          console.error('loadData failed', err);
+        }
+      }
+      loadData();
+    }, [user?.id]),
+  );
 
   async function handleLog(userMissionId: string) {
     if (!user) return;
     const mission = missions.find((m) => m.id === userMissionId);
     if (!mission) return;
 
-    const { newXp, newLevel } = await logMissionComplete(
-      userMissionId,
-      user.id,
-      mission.goalValue,
-      mission.xpReward,
-      user.xp,
-      user.level,
-    );
+    try {
+      const { newXp, newLevel } = await logMissionComplete(
+        userMissionId,
+        user.id,
+        mission.goalValue,
+        mission.xpReward,
+        user.xp,
+        user.level,
+      );
 
-    setMissions(
-      missions.map((m) =>
-        m.id === userMissionId
-          ? { ...m, currentValue: m.goalValue, completed: true }
-          : m,
-      ),
-    );
-    setUser({ ...user, xp: newXp, level: newLevel, xpForNextLevel: xpForLevel(newLevel + 1) });
-    setDailyStats({ ...dailyStats, xpEarned: dailyStats.xpEarned + mission.xpReward });
+      await syncChallengeProgressForUser(user.id, mission.goalUnit, mission.goalValue);
+
+      setMissions(
+        missions.map((m) =>
+          m.id === userMissionId
+            ? { ...m, currentValue: m.goalValue, completed: true }
+            : m,
+        ),
+      );
+      setUser({ ...user, xp: newXp, level: newLevel, xpForNextLevel: xpForLevel(newLevel + 1) });
+
+      if (mission.goalUnit === 'steps' || mission.goalUnit === 'calories') {
+        const { steps, calories } = await incrementDailyStat(user.id, mission.goalUnit, mission.goalValue);
+        setDailyStats({ ...dailyStats, steps, calories, xpEarned: dailyStats.xpEarned + mission.xpReward });
+      } else {
+        setDailyStats({ ...dailyStats, xpEarned: dailyStats.xpEarned + mission.xpReward });
+      }
+    } catch (err) {
+      console.error('handleLog failed', err);
+      Alert.alert('Could not log mission', (err as { message?: string })?.message ?? 'Please try again.');
+    }
   }
 
   if (!user) return null;
