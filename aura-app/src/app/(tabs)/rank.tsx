@@ -1,366 +1,654 @@
-import { supabase } from '@/lib/supabase';
-import React, { useEffect, useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useEffect, useState, useCallback } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { supabase } from '@/lib/supabase';
+import { getLevelTitle } from '@/lib/level';
 
-type User = {
+type LeaderboardEntry = {
   rank: number;
+  userId: string;
   name: string;
   level: number;
-  title: string;
   xp: number;
 };
 
-const currentUserRank = 10;
+type TabType = 'Overall' | 'Weekly' | 'Friends';
 
-const MOCK_DATA: User[] = [
-  { rank: 1, name: 'Kevin', level: 8, title: 'Active', xp: 400 },
-  { rank: 2, name: 'Natasha', level: 15, title: 'Athlete', xp: 380 },
-  { rank: 3, name: 'Tom', level: 10, title: 'Active', xp: 290 },
-  { rank: 4, name: 'Chris', level: 8, title: 'Active', xp: 250 },
-  { rank: 5, name: 'Emma', level: 11, title: 'Warrior', xp: 230 },
-  { rank: 6, name: 'Alex', level: 12, title: 'Runner', xp: 220 },
-  { rank: 7, name: 'Mia', level: 6, title: 'Active', xp: 210 },
-  { rank: 8, name: 'Leo', level: 9, title: 'Athlete', xp: 190 },
-  { rank: 9, name: 'Ryan', level: 7, title: 'Active', xp: 180 },
-  { rank: 10, name: 'Jane', level: 5, title: 'Beginner', xp: 160 },
+const AVATAR_COLORS = [
+  '#1E4D8C', '#4A5568', '#744210', '#065F46',
+  '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F',
 ];
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F7F7F7',
-  },
+function getAvatarColor(rankIndex: number): string {
+  return AVATAR_COLORS[rankIndex % AVATAR_COLORS.length];
+}
 
-  header: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
-    paddingBottom: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
+function formatXP(xp: number): string {
+  if (xp >= 1000) return `${(xp / 1000).toFixed(1)}k`;
+  return xp.toLocaleString();
+}
 
-  title: {
-    fontSize: 34,
-    fontWeight: '700',
-  },
+function getMondayDate(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  return d.toISOString().split('T')[0];
+}
 
-  headerIcons: {
-    flexDirection: 'row',
-    gap: 18,
-  },
-
-  tabs: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderColor: '#E5E5E5',
-  },
-
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
-
-  tabText: {
-    color: '#888',
-    fontWeight: '500',
-  },
-
-  activeTabText: {
-    color: '#000',
-    fontWeight: '700',
-  },
-
-  activeIndicator: {
-    marginTop: 8,
-    height: 2,
-    width: '100%',
-    backgroundColor: '#000',
-  },
-
-  podiumContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    paddingVertical: 30,
-  },
-
-  firstPlace: {
-    alignItems: 'center',
-    marginHorizontal: 8,
-  },
-
-  secondPlace: {
-    alignItems: 'center',
-  },
-
-  thirdPlace: {
-    alignItems: 'center',
-  },
-
-  podiumAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-
-  avatarLetter: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 20,
-  },
-
-  podiumName: {
-    marginVertical: 8,
-    fontWeight: '600',
-  },
-
-  podiumBar: {
-    width: 75,
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
-  },
-
-  firstBar: {
-    height: 160,
-    backgroundColor: '#336999',
-  },
-
-  secondBar: {
-    height: 110,
-    backgroundColor: '#E76F24',
-  },
-
-  thirdBar: {
-    height: 90,
-    backgroundColor: '#E8B737',
-  },
-
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderColor: '#EFEFEF',
-  },
-
-  currentUserRow: {
-    marginHorizontal: 12,
-    marginVertical: 10,
-    borderRadius: 18,
-    backgroundColor: '#EAF2FF',
-    borderBottomWidth: 0,
-  },
-
-  rank: {
-    width: 32,
-    fontSize: 18,
-    color: '#666',
-  },
-
-  avatar: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#466A92',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-
-  avatarText: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-
-  userInfo: {
-    flex: 1,
-  },
-
-  name: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-
-  subtitle: {
-    color: '#777',
-    marginTop: 2,
-  },
-
-  xpBadge: {
-    backgroundColor: '#E8EFF8',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-
-  xpText: {
-    fontWeight: '700',
-    color: '#2B4D76',
-  },
-});
+const PODIUM_CONFIG = {
+  1: { ringColor: '#F5B800', avatarSize: 66, barHeight: 96 },
+  2: { ringColor: '#9BA4B4', avatarSize: 54, barHeight: 68 },
+  3: { ringColor: '#CD7F32', avatarSize: 50, barHeight: 52 },
+} as const;
 
 export default function LeaderboardScreen() {
-  const [activeTab, setActiveTab] = useState('Weekly');
-  const [leaderboardData, setLeaderboardData] = useState<User[]>(MOCK_DATA);
+  const [activeTab, setActiveTab] = useState<TabType>('Overall');
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchLeaderboard();
+    supabase.auth.getUser().then(({ data }) => {
+      setCurrentUserId(data.user?.id ?? null);
+    });
   }, []);
 
-  const fetchLeaderboard = async () => {
+  const fetchOverall = useCallback(async (): Promise<LeaderboardEntry[]> => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('*')
-      .order('xp', { ascending: false });
+      .select('id, username, first_name, last_name, level, xp')
+      .order('xp', { ascending: false })
+      .limit(50);
 
-    if (error || !data || data.length === 0) {
-      return;
+    if (error) {
+      setFetchError('Could not load leaderboard. Check your connection.');
+      return [];
+    }
+    if (!data || data.length === 0) {
+      setFetchError('No users found. Make sure the leaderboard RLS policy allows reading all profiles.');
+      return [];
     }
 
-    const formatted: User[] = data.map(
-      (user: { username?: string; first_name?: string; last_name?: string; level?: number; streak_days?: number; xp?: number }, index: number) => ({
-        rank: index + 1,
+    return data.map(
+      (
+        u: {
+          id: string;
+          username?: string;
+          first_name?: string;
+          last_name?: string;
+          level?: number;
+          xp?: number;
+        },
+        i: number
+      ) => ({
+        rank: i + 1,
+        userId: u.id,
         name:
-          user.username ||
-          `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim(),
-        level: user.level ?? 1,
-        title: `${user.streak_days ?? 0} Day Streak`,
-        xp: user.xp ?? 0,
+          u.username ||
+          `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() ||
+          'Unknown',
+        level: u.level ?? 1,
+        xp: u.xp ?? 0,
       })
     );
+  }, []);
 
-    setLeaderboardData(formatted);
-  };
+  const fetchWeekly = useCallback(async (): Promise<LeaderboardEntry[]> => {
+    const monday = getMondayDate();
 
-  const topThree = leaderboardData.slice(0, 3);
+    // Fetch all profiles and this week's completed missions in parallel
+    const [profilesRes, missionsRes] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, username, first_name, last_name, level')
+        .limit(50),
+      supabase
+        .from('user_missions')
+        .select('user_id, missions(xp_reward)')
+        .eq('completed', true)
+        .gte('date', monday),
+    ]);
 
-  const renderPodiumUser = (user: User, place: 1 | 2 | 3) => {
-    const avatarColor =
-      place === 1
-        ? '#336999'
-        : place === 2
-        ? '#E76F24'
-        : '#E8B737';
+    if (profilesRes.error) {
+      setFetchError('Could not load leaderboard. Check your connection.');
+      return [];
+    }
+    if (!profilesRes.data || profilesRes.data.length === 0) {
+      setFetchError('No users found. Make sure the leaderboard RLS policy allows reading all profiles.');
+      return [];
+    }
 
-    const barStyle =
-      place === 1
-        ? styles.firstBar
-        : place === 2
-        ? styles.secondBar
-        : styles.thirdBar;
-
-    const placeStyle =
-      place === 1
-        ? styles.firstPlace
-        : place === 2
-        ? styles.secondPlace
-        : styles.thirdPlace;
+    // Build weekly XP map from completed missions
+    const xpMap: Record<string, number> = {};
+    if (missionsRes.data) {
+      for (const row of missionsRes.data as unknown as {
+        user_id: string;
+        missions: { xp_reward: number } | { xp_reward: number }[] | null;
+      }[]) {
+        const m = row.missions;
+        const reward = Array.isArray(m) ? (m[0]?.xp_reward ?? 0) : (m?.xp_reward ?? 0);
+        xpMap[row.user_id] = (xpMap[row.user_id] ?? 0) + reward;
+      }
+    }
 
     return (
-      <View key={place} style={placeStyle}>
-        <View style={[styles.podiumAvatar, { backgroundColor: avatarColor }]}>
-          <Text style={styles.avatarLetter}>
-            {user.name.charAt(0).toUpperCase()}
-          </Text>
+      profilesRes.data as {
+        id: string;
+        username?: string;
+        first_name?: string;
+        last_name?: string;
+        level?: number;
+      }[]
+    )
+      .map((u) => ({
+        rank: 0,
+        userId: u.id,
+        name:
+          u.username ||
+          `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() ||
+          'Unknown',
+        level: u.level ?? 1,
+        xp: xpMap[u.id] ?? 0,
+      }))
+      .sort((a, b) => b.xp - a.xp)
+      .map((entry, i) => ({ ...entry, rank: i + 1 }));
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'Friends') {
+      setLeaderboardData([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setFetchError(null);
+    const fetch = activeTab === 'Overall' ? fetchOverall : fetchWeekly;
+    fetch().then((entries) => {
+      setLeaderboardData(entries);
+      setLoading(false);
+    });
+  }, [activeTab, fetchOverall, fetchWeekly]);
+
+  const topThree = leaderboardData.slice(0, 3);
+  const currentUser = currentUserId
+    ? (leaderboardData.find((u) => u.userId === currentUserId) ?? null)
+    : null;
+
+  const renderPodiumUser = (user: LeaderboardEntry, place: 1 | 2 | 3) => {
+    const cfg = PODIUM_CONFIG[place];
+    const avatarBg = { 1: '#1E4D8C', 2: '#374151', 3: '#78350F' }[place];
+
+    return (
+      <View key={user.userId} style={styles.podiumSlot}>
+        <View style={styles.crownContainer}>
+          {place === 1 && (
+            <MaterialCommunityIcons name="crown" size={20} color="#F5B800" />
+          )}
         </View>
-        <Text style={styles.podiumName}>{user.name}</Text>
-        <Text style={{ fontSize: 12, color: '#666' }}>
-          Level {user.level}
+
+        <View style={{ position: 'relative', marginBottom: 8 }}>
+          <View
+            style={[
+              styles.podiumAvatarRing,
+              {
+                width: cfg.avatarSize + 8,
+                height: cfg.avatarSize + 8,
+                borderRadius: (cfg.avatarSize + 8) / 2,
+                borderColor: cfg.ringColor,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.podiumAvatar,
+                {
+                  width: cfg.avatarSize,
+                  height: cfg.avatarSize,
+                  borderRadius: cfg.avatarSize / 2,
+                  backgroundColor: avatarBg,
+                },
+              ]}
+            >
+              <Text style={[styles.avatarLetter, { fontSize: cfg.avatarSize * 0.33 }]}>
+                {user.name.charAt(0).toUpperCase()}
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.rankBadge, { backgroundColor: cfg.ringColor }]}>
+            <Text style={styles.rankBadgeText}>{place}</Text>
+          </View>
+        </View>
+
+        <Text style={styles.podiumName} numberOfLines={1}>
+          {user.name}
         </Text>
-        <View style={[styles.podiumBar, barStyle]} />
+        <Text style={styles.podiumXp}>{formatXP(user.xp)} XP</Text>
+
+        <View
+          style={[
+            styles.podiumBar,
+            { height: cfg.barHeight, backgroundColor: cfg.ringColor + '22' },
+          ]}
+        />
       </View>
     );
   };
 
-  const renderLeaderboardRow = (user: User) => {
-    const isCurrentUser = user.rank === currentUserRank;
+  const renderRow = ({ item: user }: { item: LeaderboardEntry }) => {
+    const isCurrentUser = user.userId === currentUserId;
+    const rankColor =
+      user.rank === 1
+        ? '#F5B800'
+        : user.rank === 2
+        ? '#9BA4B4'
+        : user.rank === 3
+        ? '#CD7F32'
+        : '#C0C8D4';
+
     return (
-      <View
-        key={user.rank}
-        style={[styles.row, isCurrentUser && styles.currentUserRow]}
-      >
-        <Text style={styles.rank}>{user.rank}</Text>
-        <View style={styles.avatar}>
+      <View style={[styles.row, isCurrentUser && styles.currentUserRow]}>
+        <Text style={[styles.rankNumber, { color: rankColor }]}>
+          {user.rank}
+        </Text>
+        <View
+          style={[
+            styles.avatar,
+            { backgroundColor: getAvatarColor(user.rank - 1) },
+          ]}
+        >
           <Text style={styles.avatarText}>
             {user.name.charAt(0).toUpperCase()}
           </Text>
         </View>
         <View style={styles.userInfo}>
           <Text style={styles.name}>{user.name}</Text>
-          <Text style={styles.subtitle}>{user.title}</Text>
+          <Text style={styles.subtitle}>
+            Lv {user.level} · {getLevelTitle(user.level)}
+          </Text>
         </View>
-        <View style={styles.xpBadge}>
-          <Text style={styles.xpText}>{user.xp} XP</Text>
+        <View style={[styles.xpBadge, isCurrentUser && styles.xpBadgeCurrent]}>
+          <Text style={[styles.xpText, isCurrentUser && styles.xpTextCurrent]}>
+            {formatXP(user.xp)} XP
+          </Text>
         </View>
       </View>
     );
   };
 
+  const insets = useSafeAreaInsets();
+  const showPodium = !loading && !fetchError && activeTab !== 'Friends';
+
   const listHeader = (
     <>
-      <View style={styles.header}>
-        <Text style={styles.title}>Leaderboard</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity>
-            <Ionicons name="search" size={24} color="#000" />
-          </TouchableOpacity>
-          <TouchableOpacity>
-            <Ionicons name="settings-outline" size={24} color="#000" />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.tabs}>
-        {['Weekly', 'Monthly', 'All Time'].map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={styles.tab}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text
-              style={
-                activeTab === tab
-                  ? styles.activeTabText
-                  : styles.tabText
-              }
+      {/* Podium section */}
+      <View style={styles.podiumSection}>
+        {/* Segmented tabs */}
+        <View style={styles.tabBar}>
+          {(['Overall', 'Weekly', 'Friends'] as TabType[]).map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, activeTab === tab && styles.activeTab]}
+              onPress={() => setActiveTab(tab)}
             >
-              {tab}
-            </Text>
-            {activeTab === tab && <View style={styles.activeIndicator} />}
-          </TouchableOpacity>
-        ))}
+              <Text style={activeTab === tab ? styles.activeTabText : styles.tabText}>
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {showPodium && (
+          <View style={styles.podiumContainer}>
+            {topThree[1] && renderPodiumUser(topThree[1], 2)}
+            {topThree[0] && renderPodiumUser(topThree[0], 1)}
+            {topThree[2] && renderPodiumUser(topThree[2], 3)}
+          </View>
+        )}
       </View>
 
-      <View style={styles.podiumContainer}>
-        {topThree[1] && renderPodiumUser(topThree[1], 2)}
-        {topThree[0] && renderPodiumUser(topThree[0], 1)}
-        {topThree[2] && renderPodiumUser(topThree[2], 3)}
-      </View>
+      {/* State messages */}
+      {loading && (
+        <View style={styles.stateContainer}>
+          <ActivityIndicator size="large" color="#2563EB" />
+        </View>
+      )}
+      {fetchError && (
+        <View style={styles.stateContainer}>
+          <Text style={[styles.stateText, { color: '#DC2626', textAlign: 'center', paddingHorizontal: 32 }]}>
+            {fetchError}
+          </Text>
+        </View>
+      )}
+      {!loading && !fetchError && activeTab === 'Friends' && (
+        <View style={styles.stateContainer}>
+          <Ionicons name="people-outline" size={40} color="#C0C8D4" />
+          <Text style={[styles.stateText, { marginTop: 12 }]}>
+            Friend connections coming soon
+          </Text>
+        </View>
+      )}
+      {!loading && !fetchError && activeTab !== 'Friends' && (
+        <Text style={styles.sectionLabel}>All Players</Text>
+      )}
     </>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.safe}>
+      {/* Sticky header */}
+      <View style={[styles.stickyHeader, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Leaderboard</Text>
+          <View style={styles.headerIcons}>
+            <TouchableOpacity style={styles.iconBtn}>
+              <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn}>
+              <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
       <FlatList
-        data={leaderboardData.slice(3)}
-        renderItem={({ item }) => renderLeaderboardRow(item)}
-        keyExtractor={(item) => item.rank.toString()}
+        data={loading || activeTab === 'Friends' || fetchError ? [] : leaderboardData}
+        renderItem={renderRow}
+        keyExtractor={(item) => item.userId}
         ListHeaderComponent={listHeader}
+        contentContainerStyle={{ paddingBottom: currentUser && !loading ? 100 : 24 }}
+        showsVerticalScrollIndicator={false}
       />
-    </SafeAreaView>
+
+      {currentUser && !loading && (
+        <View style={[styles.pinnedWrapper, { paddingBottom: insets.bottom + 65 }]}>
+<View style={[styles.row, styles.currentUserRow, { marginBottom: 0 }]}>
+            <Text style={[styles.rankNumber, { color: '#2563EB' }]}>{currentUser.rank}</Text>
+            <View style={[styles.avatar, { backgroundColor: getAvatarColor(currentUser.rank - 1) }]}>
+              <Text style={styles.avatarText}>{currentUser.name.charAt(0).toUpperCase()}</Text>
+            </View>
+            <View style={styles.userInfo}>
+              <Text style={styles.name}>{currentUser.name}</Text>
+              <Text style={styles.subtitle}>Lv {currentUser.level} · {getLevelTitle(currentUser.level)}</Text>
+            </View>
+            <View style={[styles.xpBadge, styles.xpBadgeCurrent]}>
+              <Text style={[styles.xpText, styles.xpTextCurrent]}>{formatXP(currentUser.xp)} XP</Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: '#F0F4F8',
+  },
+  stickyHeader: {
+    backgroundColor: '#F0F4F8',
+    paddingBottom: 4,
+  },
+  podiumSection: {
+    backgroundColor: '#fff',
+    paddingBottom: 12,
+  },
+
+  /* ── Header ── */
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: '800',
+    color: '#0D1829',
+    letterSpacing: -0.3,
+  },
+  headerIcons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+
+  /* ── Segmented tabs ── */
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#F0F4F8',
+    borderRadius: 12,
+    marginHorizontal: 20,
+    marginTop: 16,
+    marginBottom: 24,
+    padding: 3,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  activeTab: {
+    backgroundColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  tabText: {
+    color: '#9CA3AF',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  activeTabText: {
+    color: '#0D1829',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  /* ── Podium ── */
+  podiumContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingHorizontal: 16,
+    gap: 10,
+  },
+  podiumSlot: {
+    alignItems: 'center',
+  },
+  crownContainer: {
+    height: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  podiumAvatarRing: {
+    borderWidth: 3,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  podiumAvatar: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarLetter: {
+    color: '#fff',
+    fontWeight: '800',
+  },
+  rankBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  rankBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#0D1829',
+  },
+  podiumName: {
+    color: '#0D1829',
+    fontWeight: '700',
+    fontSize: 12,
+    textAlign: 'center',
+    maxWidth: 80,
+  },
+  podiumXp: {
+    color: '#9CA3AF',
+    fontSize: 10,
+    marginTop: 2,
+    marginBottom: 8,
+  },
+  podiumBar: {
+    width: 84,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
+    borderTopWidth: 2,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+
+  /* ── State messages ── */
+  stateContainer: {
+    paddingVertical: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stateText: {
+    color: '#9CA3AF',
+    fontSize: 15,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginHorizontal: 20,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+
+  /* ── List row ── */
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  currentUserRow: {
+    backgroundColor: '#EBF2FF',
+    borderWidth: 1.5,
+    borderColor: '#93B4E0',
+  },
+  rankNumber: {
+    width: 28,
+    fontSize: 14,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  name: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0D1829',
+  },
+  subtitle: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    marginTop: 2,
+  },
+  xpBadge: {
+    backgroundColor: '#F0F4F8',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+  },
+  xpBadgeCurrent: {
+    backgroundColor: '#DBEAFE',
+  },
+  xpText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+  },
+  xpTextCurrent: {
+    color: '#1D4ED8',
+  },
+
+  /* ── Pinned "Your Rank" ── */
+  pinnedWrapper: {
+    backgroundColor: '#F0F4F8',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  pinnedLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginHorizontal: 20,
+    marginBottom: 6,
+  },
+});

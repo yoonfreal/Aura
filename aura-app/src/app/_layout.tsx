@@ -1,7 +1,7 @@
 import "../../global.css";
 
-import { useEffect } from 'react';
-import { Stack, router } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -46,6 +46,8 @@ async function fetchAndSetUser(
 
 export default function RootLayout() {
   const { setUser, clearUser } = useUserStore();
+  const navigationState = useRootNavigationState();
+  const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
@@ -55,19 +57,25 @@ export default function RootLayout() {
           session?.user
         ) {
           await fetchAndSetUser(session.user.id, session.user.email ?? '', setUser);
-          router.replace('/(tabs)');
+          setPendingRedirect('/(tabs)');
         } else if (
           event === 'SIGNED_OUT' ||
           (event === 'INITIAL_SESSION' && !session)
         ) {
           clearUser();
-          router.replace('/(auth)/signup');
+          setPendingRedirect('/(auth)/signup');
         }
       },
     );
 
     return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!navigationState?.key || !pendingRedirect) return;
+    router.replace(pendingRedirect as any);
+    setPendingRedirect(null);
+  }, [navigationState?.key, pendingRedirect]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
