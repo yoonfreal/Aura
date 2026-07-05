@@ -20,7 +20,7 @@ type UserMissionRow = {
 };
 
 type MissionTemplate = { id: string };
-type DailyStatRow = { steps: number; calories: number } | null;
+type DailyStatRow = { steps: number; calories: number; xp_earned: number } | null;
 
 const FALLBACK_ICON: Record<string, string> = {
   steps: '🦶',
@@ -83,26 +83,60 @@ export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
 
 export async function fetchDailyStats(
   userId: string,
-): Promise<Pick<DailyStats, 'steps' | 'calories'>> {
+): Promise<Pick<DailyStats, 'steps' | 'calories' | 'xpEarned'>> {
   const today = todayISO();
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('daily_stats')
-    .select('steps, calories')
+    .select('steps, calories, xp_earned')
     .eq('user_id', userId)
     .eq('date', today)
     .maybeSingle();
+  if (error) throw error;
 
   const row = data as DailyStatRow;
 
   return {
     steps: row?.steps ?? 0,
     calories: row?.calories ?? 0,
+    xpEarned: row?.xp_earned ?? 0,
   };
 }
 
-type StatRow = { date: string; steps: number; calories: number };
-type MissionXpRow = { date: string; missions: { xp_reward: number } | null };
+type DailyStatFields = { steps: number; calories: number; xp_earned: number };
+
+// Bumps today's daily_stats row so Daily/Weekly stats reflect XP/steps/calories right now —
+// missions call this for xp_earned (and steps/calories), challenge claims call it for
+// xp_earned too, since HealthKit isn't wired up yet to sync any of this automatically.
+export async function incrementDailyStat(
+  userId: string,
+  field: 'steps' | 'calories' | 'xp_earned',
+  amount: number,
+): Promise<DailyStatFields> {
+  const today = todayISO();
+
+  const { data: existing, error: selectError } = await supabase
+    .from('daily_stats')
+    .select('id, steps, calories, xp_earned')
+    .eq('user_id', userId)
+    .eq('date', today)
+    .maybeSingle();
+  if (selectError) throw selectError;
+
+  const row = existing as ({ id: string } & DailyStatFields) | null;
+  const steps = (row?.steps ?? 0) + (field === 'steps' ? amount : 0);
+  const calories = (row?.calories ?? 0) + (field === 'calories' ? amount : 0);
+  const xp_earned = (row?.xp_earned ?? 0) + (field === 'xp_earned' ? amount : 0);
+
+  const { error: writeError } = row
+    ? await supabase.from('daily_stats').update({ steps, calories, xp_earned }).eq('id', row.id)
+    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps, calories, xp_earned });
+  if (writeError) throw writeError;
+
+  return { steps, calories, xp_earned };
+}
+
+type StatRow = { date: string; steps: number; calories: number; xp_earned: number };
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 function getWeekRange(offsetWeeks = 0): { start: string; end: string } {
@@ -116,35 +150,24 @@ function getWeekRange(offsetWeeks = 0): { start: string; end: string } {
   return { start: fmt(monday), end: fmt(sunday) };
 }
 
-function sumXp(rows: MissionXpRow[]): number {
-  return rows.reduce((s, m) => s + (m.missions?.xp_reward ?? 0), 0);
-}
-
 export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const thisWeek = getWeekRange(0);
   const lastWeek = getWeekRange(-1);
 
-  const [
-    { data: thisStatsRaw },
-    { data: lastStatsRaw },
-    { data: thisMissionsRaw },
-    { data: lastMissionsRaw },
-  ] = await Promise.all([
-    supabase.from('daily_stats').select('date, steps, calories').eq('user_id', userId).gte('date', thisWeek.start).lte('date', thisWeek.end),
-    supabase.from('daily_stats').select('date, steps, calories').eq('user_id', userId).gte('date', lastWeek.start).lte('date', lastWeek.end),
-    supabase.from('user_missions').select('date, missions(xp_reward)').eq('user_id', userId).eq('completed', true).gte('date', thisWeek.start).lte('date', thisWeek.end),
-    supabase.from('user_missions').select('date, missions(xp_reward)').eq('user_id', userId).eq('completed', true).gte('date', lastWeek.start).lte('date', lastWeek.end),
+  const [{ data: thisStatsRaw, error: thisError }, { data: lastStatsRaw, error: lastError }] = await Promise.all([
+    supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', thisWeek.start).lte('date', thisWeek.end),
+    supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', lastWeek.start).lte('date', lastWeek.end),
   ]);
+  if (thisError) throw thisError;
+  if (lastError) throw lastError;
 
   const thisRows = (thisStatsRaw ?? []) as StatRow[];
   const lastRows = (lastStatsRaw ?? []) as StatRow[];
-  const thisMissions = (thisMissionsRaw ?? []) as MissionXpRow[];
-  const lastMissions = (lastMissionsRaw ?? []) as MissionXpRow[];
 
-  // Build bar data: Mon–Sun mapped to XP earned each day
+  // Build bar data: Mon–Sun mapped to XP earned each day (missions + claimed challenges)
   const xpByDate: Record<string, number> = {};
-  for (const m of thisMissions) {
-    xpByDate[m.date] = (xpByDate[m.date] ?? 0) + (m.missions?.xp_reward ?? 0);
+  for (const r of thisRows) {
+    xpByDate[r.date] = r.xp_earned;
   }
   const mondayUTC = new Date(thisWeek.start + 'T00:00:00Z');
   const barData = WEEK_DAYS.map((day, i) => {
@@ -159,14 +182,14 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const avgSteps = activeDays > 0 ? Math.round(totalSteps / activeDays) : 0;
   const totalCalories = thisRows.reduce((s, r) => s + r.calories, 0);
   const estimatedKm = Math.round(totalSteps * 0.000762 * 10) / 10;
-  const totalXp = sumXp(thisMissions);
+  const totalXp = thisRows.reduce((s, r) => s + r.xp_earned, 0);
 
   // Last week aggregates for comparison
   const lastTotalSteps = lastRows.reduce((s, r) => s + r.steps, 0);
   const lastActiveDays = lastRows.filter((r) => r.steps > 0).length;
   const lastAvgSteps = lastActiveDays > 0 ? Math.round(lastTotalSteps / lastActiveDays) : 0;
   const lastCalories = lastRows.reduce((s, r) => s + r.calories, 0);
-  const lastXp = sumXp(lastMissions);
+  const lastXp = lastRows.reduce((s, r) => s + r.xp_earned, 0);
 
   return {
     avgSteps,
@@ -188,10 +211,13 @@ export async function logMissionComplete(
   currentXp: number,
   currentLevel: number,
 ): Promise<{ newXp: number; newLevel: number }> {
-  await supabase
+  const { error: missionError } = await supabase
     .from('user_missions')
     .update({ current_value: goalValue, completed: true })
     .eq('id', userMissionId);
+  if (missionError) throw missionError;
+
+  await incrementDailyStat(userId, 'xp_earned', xpReward);
 
   const newXp = currentXp + xpReward;
   let newLevel = currentLevel;
@@ -199,10 +225,11 @@ export async function logMissionComplete(
     newLevel += 1;
   }
 
-  await supabase
+  const { error: profileError } = await supabase
     .from('profiles')
     .update({ xp: newXp, level: newLevel })
     .eq('id', userId);
+  if (profileError) throw profileError;
 
   return { newXp, newLevel };
 }
