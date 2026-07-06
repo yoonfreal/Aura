@@ -21,6 +21,23 @@ const TYPE_OPTIONS: { value: ChallengeType; label: string }[] = [
   { value: 'team', label: 'Team' },
 ];
 
+const DURATION_OPTIONS: { value: number | null; label: string }[] = [
+  { value: null, label: 'No limit' },
+  { value: 1, label: 'Daily' },
+  { value: 7, label: 'Weekly' },
+  { value: 30, label: 'Monthly' },
+];
+
+// "No limit" still needs a real end date under the hood (the column isn't nullable), so
+// it just uses a date far enough out that it never realistically comes up.
+const NO_LIMIT_DAYS = 36500;
+
+function addDaysISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().split('T')[0];
+}
+
 export default function NewChallengeScreen() {
   const router = useRouter();
   const userId = useUserStore((state) => state.user?.id);
@@ -33,8 +50,7 @@ export default function NewChallengeScreen() {
   const [goalValue, setGoalValue] = useState('');
   const [goalUnit, setGoalUnit] = useState('STEPS');
   const [xpReward, setXpReward] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [durationDays, setDurationDays] = useState<number | null>(7);
   const [saving, setSaving] = useState(false);
 
   async function handleCreate() {
@@ -43,8 +59,8 @@ export default function NewChallengeScreen() {
     const goalValueNum = Number(goalValue);
     const xpRewardNum = Number(xpReward);
 
-    if (!title.trim() || !goalValue || !xpReward || !startDate || !endDate) {
-      Alert.alert('Missing fields', 'Title, goal, XP, and both dates are required.');
+    if (!title.trim() || !goalValue || !xpReward) {
+      Alert.alert('Missing fields', 'Title, goal, and XP are required.');
       return;
     }
     if (Number.isNaN(goalValueNum) || Number.isNaN(xpRewardNum)) {
@@ -63,8 +79,11 @@ export default function NewChallengeScreen() {
         goalValue: goalValueNum,
         goalUnit: goalUnit.trim(),
         xpReward: xpRewardNum,
-        startDate,
-        endDate,
+        startDate: addDaysISO(0),
+        // Today counts as day 1, so a 7-day week ends 6 days after today (7 days total),
+        // not 7 days after today (which would be 8 days total).
+        endDate: addDaysISO(durationDays === null ? NO_LIMIT_DAYS : durationDays - 1),
+        durationDays: type === 'team' ? durationDays : null,
       });
       router.back();
     } catch {
@@ -112,6 +131,27 @@ export default function NewChallengeScreen() {
           ))}
         </View>
 
+        <Text style={styles.label}>
+          {type === 'team'
+            ? 'Duration (shared by the whole team, from when it is created)'
+            : type === '1v1'
+              ? 'Duration (how long this is open to start a race in)'
+              : 'Duration (how long this challenge runs for everyone)'}
+        </Text>
+        <View style={styles.typeRow}>
+          {DURATION_OPTIONS.map((opt) => (
+            <TouchableOpacity
+              key={opt.label}
+              style={[styles.typeChip, durationDays === opt.value && styles.typeChipActive]}
+              onPress={() => setDurationDays(opt.value)}
+            >
+              <Text style={[styles.typeChipText, durationDays === opt.value && styles.typeChipTextActive]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         <Text style={styles.label}>Category (optional, e.g. Sport)</Text>
         <TextInput style={styles.input} value={category} onChangeText={setCategory} placeholder="Sport" />
 
@@ -149,27 +189,6 @@ export default function NewChallengeScreen() {
           placeholder="500"
           keyboardType="numeric"
         />
-
-        <View style={styles.row}>
-          <View style={styles.half}>
-            <Text style={styles.label}>Start date</Text>
-            <TextInput
-              style={styles.input}
-              value={startDate}
-              onChangeText={setStartDate}
-              placeholder="YYYY-MM-DD"
-            />
-          </View>
-          <View style={styles.half}>
-            <Text style={styles.label}>End date</Text>
-            <TextInput
-              style={styles.input}
-              value={endDate}
-              onChangeText={setEndDate}
-              placeholder="YYYY-MM-DD"
-            />
-          </View>
-        </View>
 
         <TouchableOpacity
           style={[styles.createBtn, saving && styles.createBtnDisabled]}

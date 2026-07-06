@@ -18,14 +18,14 @@ import {
   fetchWeeklyStats,
   incrementDailyStat,
 } from '@/lib/api';
-import { syncChallengeProgressForUser } from '@/lib/challenges';
+import { syncChallengeProgressForUser, refreshClaimableCount } from '@/lib/challenges';
 import { getLevelTitle, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const {
     user, dailyStats, missions, watchSync, activeTab, weeklyStats,
-    setActiveTab, setDailyStats, setWatchSync, setMissions, setUser, setWeeklyStats,
+    setActiveTab, setDailyStats, setWatchSync, setMissions, setUser, setWeeklyStats, setClaimableCount,
   } = useUserStore();
   const pillAnim = useRef(new Animated.Value(0)).current;
   const [trackWidth, setTrackWidth] = useState(0);
@@ -65,6 +65,9 @@ export default function HomeScreen() {
           });
           setMissions(todayMissions);
           setWatchSync(sync);
+
+          const claimable = await refreshClaimableCount(user!.id);
+          setClaimableCount(claimable);
         } catch (err) {
           console.error('loadData failed', err);
         }
@@ -105,6 +108,9 @@ export default function HomeScreen() {
       } else {
         setDailyStats({ ...dailyStats, xpEarned: dailyStats.xpEarned + mission.xpReward });
       }
+
+      const claimable = await refreshClaimableCount(user.id);
+      setClaimableCount(claimable);
     } catch (err) {
       console.error('handleLog failed', err);
       Alert.alert('Could not log mission', (err as { message?: string })?.message ?? 'Please try again.');

@@ -12,6 +12,7 @@ type TeamRosterModalProps = {
   teamName: string;
   goalUnit: string;
   goalValue: number;
+  expiresAt: string | null;
   members: RosterMember[];
   currentUserId?: string;
   onClose: () => void;
@@ -27,12 +28,16 @@ export function TeamRosterModal({
   teamName,
   goalUnit,
   goalValue,
+  expiresAt,
   members,
   currentUserId,
   onClose,
 }: TeamRosterModalProps) {
   const teamTotal = members.reduce((sum, m) => sum + m.currentValue, 0);
   const ranked = [...members].sort((a, b) => b.currentValue - a.currentValue);
+  const isCompleted = teamTotal >= goalValue;
+  const isExpired = !isCompleted && !!expiresAt && Date.now() > new Date(expiresAt).getTime();
+  const daysLeft = expiresAt ? Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000) : null;
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -48,6 +53,11 @@ export function TeamRosterModal({
           <Text style={styles.subheading}>
             Team total: {teamTotal.toLocaleString()} / {goalValue.toLocaleString()} {goalUnit}
           </Text>
+          {!isCompleted && expiresAt && (
+            <Text style={isExpired ? styles.expiredText : styles.subheading}>
+              {isExpired ? 'Expired — no XP for this attempt' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left to finish`}
+            </Text>
+          )}
 
           <FlatList
             data={ranked}
@@ -111,6 +121,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#6B7280',
+    marginBottom: 10,
+  },
+  expiredText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#DC2626',
     marginBottom: 10,
   },
   memberRow: {
