@@ -128,6 +128,7 @@ export default function ChallengesScreen() {
           level: result.newLevel,
           xpForNextLevel: xpForLevel(result.newLevel + 1),
         });
+        Alert.alert('Reward claimed!', `You earned ${challenge.xpReward} XP.`);
       }
       load();
     } catch (err) {
@@ -506,7 +507,9 @@ function UserChallengesView({
         visible={!!rosterChallenge}
         teamName={myRosterTeam?.name ?? ''}
         goalUnit={rosterChallenge?.goalUnit ?? ''}
+        goalValue={rosterChallenge?.goalValue ?? 0}
         members={myRosterTeam?.members ?? []}
+        currentUserId={userId}
         onClose={() => setRosterChallenge(null)}
       />
 

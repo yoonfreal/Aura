@@ -18,18 +18,19 @@ type ProfileRow = {
   xp: number;
   streak_days: number;
   role: 'user' | 'admin';
+  onboarding_completed: boolean;
 };
 
 async function fetchAndSetUser(
   authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
   setUser: ReturnType<typeof useUserStore.getState>['setUser'],
-) {
+): Promise<boolean> {
   const userId = authUser.id;
   const email = authUser.email ?? '';
 
   let { data, error } = await supabase
     .from('profiles')
-    .select('id, username, first_name, last_name, level, xp, streak_days, role')
+    .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed')
     .eq('id', userId)
     .single();
 
@@ -45,18 +46,18 @@ async function fetchAndSetUser(
 
     ({ data, error } = await supabase
       .from('profiles')
-      .select('id, username, first_name, last_name, level, xp, streak_days, role')
+      .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed')
       .eq('id', userId)
       .single());
   }
 
   if (error) {
     console.error('fetchAndSetUser: could not load profile', userId, error);
-    return;
+    return true;
   }
 
   const profile = data as ProfileRow | null;
-  if (!profile) return;
+  if (!profile) return true;
 
   setUser({
     id: profile.id,
@@ -68,6 +69,8 @@ async function fetchAndSetUser(
     xpForNextLevel: xpForLevel((profile.level ?? 1) + 1),
     role: profile.role ?? 'user',
   });
+
+  return profile.onboarding_completed ?? false;
 }
 
 export default function RootLayout() {
@@ -82,8 +85,8 @@ export default function RootLayout() {
           (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           session?.user
         ) {
-          await fetchAndSetUser(session.user, setUser);
-          setPendingRedirect('/(tabs)');
+          const onboardingCompleted = await fetchAndSetUser(session.user, setUser);
+          setPendingRedirect(onboardingCompleted ? '/(tabs)' : '/(onboarding)');
         } else if (
           event === 'SIGNED_OUT' ||
           (event === 'INITIAL_SESSION' && !session)

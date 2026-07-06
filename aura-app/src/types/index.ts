@@ -1,3 +1,22 @@
+export type Gender = 'male' | 'female' | 'other' | 'prefer_not_to_say';
+export type FitnessGoal = 'lose_weight' | 'build_muscle' | 'improve_endurance' | 'stay_active';
+export type ActivityLevel = 'sedentary' | 'lightly_active' | 'moderately_active' | 'very_active';
+export type WorkoutExperience = 'beginner' | 'under_6_months' | '6_months_2_years' | '2_plus_years';
+export type PreferredActivity = 'gym' | 'running' | 'yoga' | 'sports' | 'walking' | 'cycling';
+export type DaysPerWeek = '1_2' | '3_4' | '5_6' | 'every_day';
+export type PreferredTime = 'morning' | 'afternoon' | 'evening' | 'varies';
+
+export interface OnboardingAnswers {
+  age: number;
+  gender: Gender;
+  fitnessGoal: FitnessGoal;
+  activityLevel: ActivityLevel;
+  workoutExperience: WorkoutExperience;
+  preferredActivities: PreferredActivity[];
+  daysPerWeek: DaysPerWeek;
+  preferredTime: PreferredTime;
+}
+
 export type MissionType = 'steps' | 'calories' | 'minutes' | 'photo';
 
 export interface Mission {
