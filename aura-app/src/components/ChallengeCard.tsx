@@ -90,6 +90,12 @@ export function ChallengeCard({
         </Text>
         <Text style={[styles.progressPct, { color: accent }]}>{Math.round(progressPct)}%</Text>
       </View>
+      <View style={styles.metaRow}>
+        <Text style={styles.rewardText}>🏆 {challenge.xpReward.toLocaleString()} XP reward</Text>
+        {!isTeam && !hasJoined && (
+          <Text style={styles.progressHint}>Progress comes from daily missions ({challenge.goalUnit})</Text>
+        )}
+      </View>
 
       {isPendingTeamInvite && (
         <View style={styles.inviteBanner}>
@@ -218,6 +224,9 @@ const styles = StyleSheet.create({
   },
   progressLabel: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
   progressPct: { fontSize: 12, fontWeight: '800' },
+  metaRow: { marginTop: 8, gap: 3 },
+  rewardText: { fontSize: 12, fontWeight: '700', color: '#8A6D00' },
+  progressHint: { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
