@@ -3,6 +3,7 @@ import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useUserStore } from '@/store/userStore';
 
 const TABS: {
   name: string;
@@ -20,10 +21,12 @@ const TABS: {
 function TabItem({
   tab,
   focused,
+  badgeCount,
   onPress,
 }: {
   tab: (typeof TABS)[0];
   focused: boolean;
+  badgeCount?: number;
   onPress: () => void;
 }) {
   const bg = useRef(new Animated.Value(focused ? 1 : 0)).current;
@@ -44,11 +47,18 @@ function TabItem({
   return (
     <TouchableOpacity style={styles.tabItem} onPress={onPress} activeOpacity={0.7}>
       <Animated.View style={[styles.activePill, { backgroundColor }]}>
-        <Ionicons
-          name={focused ? tab.iconActive : tab.icon}
-          size={22}
-          color={focused ? '#1B2B4B' : '#9CA3AF'}
-        />
+        <View>
+          <Ionicons
+            name={focused ? tab.iconActive : tab.icon}
+            size={22}
+            color={focused ? '#1B2B4B' : '#9CA3AF'}
+          />
+          {!!badgeCount && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{badgeCount > 9 ? '9+' : badgeCount}</Text>
+            </View>
+          )}
+        </View>
         <Text style={[styles.label, focused && styles.labelActive]} numberOfLines={1}>
           {tab.label}
         </Text>
@@ -59,6 +69,7 @@ function TabItem({
 
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const claimableCount = useUserStore((s) => s.claimableCount);
 
   return (
     <View style={[styles.wrapper, { paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 10 }]}>
@@ -72,6 +83,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
               key={route.key}
               tab={tab}
               focused={focused}
+              badgeCount={tab.name === 'challenges' ? claimableCount : undefined}
               onPress={() => {
                 const event = navigation.emit({
                   type: 'tabPress',
@@ -123,6 +135,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     width: '100%',
     gap: 2,
+  },
+  badge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    minWidth: 15,
+    height: 15,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
   },
   label: {
     fontSize: 9,

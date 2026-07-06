@@ -3,7 +3,6 @@ import type { ChallengeWithStatus } from '@/lib/challenges';
 
 type ChallengeCardProps = {
   challenge: ChallengeWithStatus;
-  onJoinIndividual: () => void;
   onOpenTeamPicker: () => void;
   onViewTeam: () => void;
   onInviteFriend: () => void;
@@ -29,7 +28,6 @@ function typeColor(type: ChallengeWithStatus['type']): string {
 
 export function ChallengeCard({
   challenge,
-  onJoinIndividual,
   onOpenTeamPicker,
   onViewTeam,
   onInviteFriend,
@@ -46,11 +44,20 @@ export function ChallengeCard({
   const progressPct = Math.min(100, (currentValue / challenge.goalValue) * 100);
   const isCompleted = isTeam ? currentValue >= challenge.goalValue : (challenge.participation?.completed ?? false);
   const isClaimed = challenge.participation?.claimed ?? false;
-  const canClaim = !isTeam && isCompleted && !isClaimed;
+  // Team deadlines are shared on the team itself, since the goal is collective.
+  // Individual challenges have no personal deadline anymore (everyone auto-enrolls and
+  // shares the challenge's own end date instead).
+  const expiresAt = isTeam ? (myTeam?.expiresAt ?? null) : `${challenge.endDate}T23:59:59`;
+  const isExpired = !isCompleted && !!expiresAt && Date.now() > new Date(expiresAt).getTime();
+  const daysLeft = expiresAt ? Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000) : null;
+  // "No limit" individual/1v1 challenges still have a real (far-future) end date under the
+  // hood, so anything absurdly far out just means there's effectively no deadline to show.
+  const isNoLimit = daysLeft !== null && daysLeft > 365;
   // A team invite isn't "joined" until accepted — pending/declined rows don't count.
   const hasJoined = isTeam
     ? challenge.participation?.status === 'accepted'
     : !!challenge.participation;
+  const canClaim = hasJoined && isCompleted && !isClaimed && !isExpired;
   const isPendingTeamInvite = isTeam && challenge.participation?.status === 'pending';
   const inviterName = myTeam?.members.find((m) => m.userId === challenge.participation?.opponentId)?.name;
   const accent = typeColor(challenge.type);
@@ -66,6 +73,7 @@ export function ChallengeCard({
           <Text style={styles.title} numberOfLines={1}>
             {challenge.title}
           </Text>
+          <Text style={styles.rewardInline}>{`(+${challenge.xpReward.toLocaleString()} XP)`}</Text>
         </View>
         <View style={styles.tagGroup}>
           {showCategoryTag && (
@@ -90,12 +98,13 @@ export function ChallengeCard({
         </Text>
         <Text style={[styles.progressPct, { color: accent }]}>{Math.round(progressPct)}%</Text>
       </View>
-      <View style={styles.metaRow}>
-        <Text style={styles.rewardText}>🏆 {challenge.xpReward.toLocaleString()} XP reward</Text>
-        {!isTeam && !hasJoined && (
-          <Text style={styles.progressHint}>Progress comes from daily missions ({challenge.goalUnit})</Text>
-        )}
-      </View>
+      {hasJoined && !isCompleted && expiresAt && !isNoLimit && (
+        <View style={styles.metaRow}>
+          <Text style={isExpired ? styles.expiredText : styles.progressHint}>
+            {isExpired ? 'Expired — no XP for this attempt' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left to finish`}
+          </Text>
+        </View>
+      )}
 
       {isPendingTeamInvite && (
         <View style={styles.inviteBanner}>
@@ -117,10 +126,12 @@ export function ChallengeCard({
           </View>
         ) : isTeam ? (
           <>
-            {hasJoined ? (
+            {hasJoined && !isCompleted ? (
               <TouchableOpacity onPress={onInviteFriend}>
                 <Text style={styles.linkText}>Invite friend</Text>
               </TouchableOpacity>
+            ) : isClaimed ? (
+              <Text style={styles.linkText}>Completed</Text>
             ) : (
               <View />
             )}
@@ -131,12 +142,28 @@ export function ChallengeCard({
                 </TouchableOpacity>
               )}
               <TouchableOpacity
-                style={hasJoined ? styles.pillDisabled : styles.pillActive}
-                onPress={hasJoined ? undefined : onOpenTeamPicker}
-                disabled={hasJoined}
+                style={canClaim ? styles.claimBtn : hasJoined ? styles.pillDisabled : styles.pillActive}
+                onPress={canClaim ? onClaim : hasJoined ? undefined : onOpenTeamPicker}
+                disabled={hasJoined && !canClaim}
               >
-                <Text style={hasJoined ? styles.pillDisabledText : styles.pillActiveText}>
-                  {hasJoined ? 'Joined' : 'Join'}
+                <Text
+                  style={
+                    canClaim
+                      ? styles.claimBtnText
+                      : hasJoined
+                        ? styles.pillDisabledText
+                        : styles.pillActiveText
+                  }
+                >
+                  {canClaim
+                    ? 'Claim Reward'
+                    : isClaimed
+                      ? 'Completed'
+                      : isExpired
+                        ? 'Expired'
+                        : hasJoined
+                          ? 'Joined'
+                          : 'Join'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -144,23 +171,17 @@ export function ChallengeCard({
         ) : (
           <>
             {isClaimed ? <Text style={styles.linkText}>Completed</Text> : <View />}
-            <TouchableOpacity
-              style={canClaim ? styles.claimBtn : hasJoined ? styles.pillDisabled : styles.pillActive}
-              onPress={canClaim ? onClaim : hasJoined ? undefined : onJoinIndividual}
-              disabled={hasJoined && !canClaim}
-            >
-              <Text
-                style={
-                  canClaim
-                    ? styles.claimBtnText
-                    : hasJoined
-                      ? styles.pillDisabledText
-                      : styles.pillActiveText
-                }
-              >
-                {canClaim ? 'Claim Reward' : isClaimed ? 'Completed' : hasJoined ? 'Joined' : 'Join'}
-              </Text>
-            </TouchableOpacity>
+            {canClaim ? (
+              <TouchableOpacity style={styles.claimBtn} onPress={onClaim}>
+                <Text style={styles.claimBtnText}>Claim Reward</Text>
+              </TouchableOpacity>
+            ) : isExpired ? (
+              <View style={styles.pillDisabled}>
+                <Text style={styles.pillDisabledText}>Expired</Text>
+              </View>
+            ) : (
+              <View />
+            )}
           </>
         )}
       </View>
@@ -225,8 +246,15 @@ const styles = StyleSheet.create({
   progressLabel: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
   progressPct: { fontSize: 12, fontWeight: '800' },
   metaRow: { marginTop: 8, gap: 3 },
-  rewardText: { fontSize: 12, fontWeight: '700', color: '#8A6D00' },
+  rewardInline: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8A6D00',
+    flexShrink: 0,
+    marginLeft: 6,
+  },
   progressHint: { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
+  expiredText: { fontSize: 11, color: '#DC2626', fontWeight: '700' },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

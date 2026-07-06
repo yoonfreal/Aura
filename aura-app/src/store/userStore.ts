@@ -8,6 +8,7 @@ interface UserStore {
   watchSync: WatchSyncStatus;
   activeTab: 'Daily' | 'Weekly';
   weeklyStats: WeeklyStats | null;
+  claimableCount: number;
 
   setUser: (user: User) => void;
   clearUser: () => void;
@@ -16,6 +17,7 @@ interface UserStore {
   setWatchSync: (status: WatchSyncStatus) => void;
   setActiveTab: (tab: 'Daily' | 'Weekly') => void;
   setWeeklyStats: (stats: WeeklyStats) => void;
+  setClaimableCount: (count: number) => void;
 }
 
 export const useUserStore = create<UserStore>((set) => ({
@@ -33,6 +35,7 @@ export const useUserStore = create<UserStore>((set) => ({
   },
   activeTab: 'Daily',
   weeklyStats: null,
+  claimableCount: 0,
 
   setUser: (user) => set({ user }),
   clearUser: () => set({ user: null }),
@@ -41,4 +44,5 @@ export const useUserStore = create<UserStore>((set) => ({
   setWatchSync: (watchSync) => set({ watchSync }),
   setActiveTab: (activeTab) => set({ activeTab }),
   setWeeklyStats: (weeklyStats) => set({ weeklyStats }),
+  setClaimableCount: (claimableCount) => set({ claimableCount }),
 }));

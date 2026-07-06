@@ -16,6 +16,7 @@ type ChallengeRow = {
   start_date: string;
   end_date: string;
   created_by: string;
+  duration_days: number | null;
 };
 
 type ParticipantRow = {
@@ -28,6 +29,7 @@ type ParticipantRow = {
   current_value: number;
   completed: boolean;
   claimed: boolean;
+  expires_at: string | null;
 };
 
 type TeamRow = {
@@ -35,6 +37,7 @@ type TeamRow = {
   challenge_id: string;
   name: string;
   created_by: string;
+  expires_at: string | null;
 };
 
 type ProfileNameRow = {
@@ -96,6 +99,7 @@ function toChallenge(row: ChallengeRow): Challenge {
     startDate: row.start_date,
     endDate: row.end_date,
     createdBy: row.created_by,
+    durationDays: row.duration_days,
   };
 }
 
@@ -110,10 +114,61 @@ function toParticipant(row: ParticipantRow): ChallengeParticipant {
     currentValue: row.current_value,
     completed: row.completed,
     claimed: row.claimed,
+    expiresAt: row.expires_at,
   };
 }
 
+function todayISODate(): string {
+  return new Date().toISOString().split('T')[0];
+}
+
+// Individual challenges no longer need an explicit "Join" — most users never check the
+// Challenges tab, so requiring a tap before their real activity counts meant they'd walk
+// 5,000 steps and never know a matching challenge was sitting there completed. Instead,
+// every user is silently enrolled in every individual challenge that's currently open
+// (today falls within its admin-set start/end window), the first time anything reads the
+// challenge list — so progress and claimability are always accurate without anyone ever
+// tapping Join. 1v1 and team still require explicitly engaging (matching an opponent /
+// joining a team) since those aren't things the app can do on a user's behalf.
+async function autoEnrollIndividualChallenges(userId: string): Promise<void> {
+  const today = todayISODate();
+
+  const { data: openChallenges } = await supabase
+    .from('challenges')
+    .select('id')
+    .eq('type', 'individual')
+    .lte('start_date', today)
+    .gte('end_date', today);
+
+  const openIds = ((openChallenges ?? []) as { id: string }[]).map((c) => c.id);
+  if (openIds.length === 0) return;
+
+  const { data: existing } = await supabase
+    .from('challenge_participants')
+    .select('challenge_id')
+    .eq('user_id', userId)
+    .in('challenge_id', openIds);
+
+  const alreadyEnrolled = new Set(((existing ?? []) as { challenge_id: string }[]).map((p) => p.challenge_id));
+  const missingIds = openIds.filter((id) => !alreadyEnrolled.has(id));
+  if (missingIds.length === 0) return;
+
+  await supabase.from('challenge_participants').insert(
+    missingIds.map((challengeId) => ({
+      user_id: userId,
+      challenge_id: challengeId,
+      status: 'accepted',
+      current_value: 0,
+      completed: false,
+      claimed: false,
+    })),
+  );
+}
+
 export async function fetchChallenges(userId: string): Promise<ChallengeWithStatus[]> {
+  await autoEnrollIndividualChallenges(userId);
+  await refreshStatsBasedProgress(userId);
+
   const { data: challengesData, error } = await supabase
     .from('challenges')
     .select('*')
@@ -169,6 +224,7 @@ export async function fetchChallenges(userId: string): Promise<ChallengeWithStat
           challengeId: t.challenge_id,
           name: t.name,
           createdBy: t.created_by,
+          expiresAt: t.expires_at,
           memberCount: members.length,
           totalValue: members.reduce((sum, m) => sum + m.current_value, 0),
           members: members.map((m) => ({
@@ -200,6 +256,7 @@ export type NewChallenge = {
   xpReward: number;
   startDate: string;
   endDate: string;
+  durationDays: number | null;
 };
 
 export async function createChallenge(
@@ -220,6 +277,7 @@ export async function createChallenge(
       start_date: input.startDate,
       end_date: input.endDate,
       created_by: adminId,
+      duration_days: input.durationDays,
     })
     .select()
     .single();
@@ -231,14 +289,6 @@ export async function createChallenge(
 
 export async function deleteChallenge(challengeId: string): Promise<void> {
   const { error } = await supabase.from('challenges').delete().eq('id', challengeId);
-  if (error) throw error;
-}
-
-export async function joinChallenge(userId: string, challengeId: string): Promise<void> {
-  const { error } = await supabase.from('challenge_participants').insert({
-    user_id: userId,
-    challenge_id: challengeId,
-  });
   if (error) throw error;
 }
 
@@ -373,14 +423,23 @@ export async function respondToInvite(participantId: string, accept: boolean): P
   if (error) throw error;
 }
 
+// durationDays stamps one shared deadline for the whole team from the moment it's
+// created — every member (whoever joins after) races against the same clock, since the
+// goal is collective, unlike individual challenges where each person's clock starts on
+// their own join.
 export async function createTeam(
   userId: string,
   challengeId: string,
   name: string,
+  durationDays: number | null,
 ): Promise<ChallengeTeam> {
+  const expiresAt = durationDays
+    ? new Date(Date.now() + durationDays * 24 * 60 * 60 * 1000).toISOString()
+    : null;
+
   const { data, error } = await supabase
     .from('challenge_teams')
-    .insert({ challenge_id: challengeId, name, created_by: userId })
+    .insert({ challenge_id: challengeId, name, created_by: userId, expires_at: expiresAt })
     .select()
     .single();
 
@@ -405,11 +464,14 @@ export async function createTeam(
   );
   if (joinError) throw joinError;
 
+  await refreshStatsBasedProgress(userId);
+
   return {
     id: team.id,
     challengeId: team.challenge_id,
     name: team.name,
     createdBy: team.created_by,
+    expiresAt: team.expires_at,
   };
 }
 
@@ -434,6 +496,8 @@ export async function joinTeam(
     { onConflict: 'challenge_id,user_id' },
   );
   if (error) throw error;
+
+  await refreshStatsBasedProgress(userId);
 }
 
 // Path A: a team member invites a specific friend — they start 'pending' and must accept
@@ -479,15 +543,43 @@ export async function updateProgress(
   return { completed };
 }
 
+// Powers the Challenges tab badge — a "completed" row is always claimable regardless of
+// type (team members are never marked completed individually, and 1v1 losers are marked
+// claimed automatically), so this stays a simple count with no per-type logic needed.
+export async function countClaimableRewards(userId: string): Promise<number> {
+  const { count } = await supabase
+    .from('challenge_participants')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .eq('completed', true)
+    .eq('claimed', false);
+  return count ?? 0;
+}
+
+// Single entry point for anywhere that needs an up-to-date claimable count without caring
+// about the enrollment/sync plumbing underneath — the Home tab calls this on every load
+// and after every mission log so the Challenges tab badge is correct without the user
+// ever having to open that tab.
+export async function refreshClaimableCount(userId: string): Promise<number> {
+  await autoEnrollIndividualChallenges(userId);
+  await refreshStatsBasedProgress(userId);
+  return countClaimableRewards(userId);
+}
+
 // Awards a challenge's XP reward and marks it claimed. Safe to call more than once —
 // the conditional update only succeeds the first time, so a double-tap can't double-pay.
+// expiresAt guards against claiming a reward after the personal deadline passed — the UI
+// already hides the claim button in that case, but this keeps it enforced either way.
 export async function claimReward(
   participantId: string,
   userId: string,
   xpReward: number,
   currentXp: number,
   currentLevel: number,
+  expiresAt?: string | null,
 ): Promise<{ newXp: number; newLevel: number } | null> {
+  if (expiresAt && Date.now() > new Date(expiresAt).getTime()) return null;
+
   const { data, error } = await supabase
     .from('challenge_participants')
     .update({ claimed: true })
@@ -510,13 +602,22 @@ export async function claimReward(
   return { newXp, newLevel };
 }
 
-type ChallengeJoinFields = { goal_value: number; goal_unit: string; xp_reward: number; type: ChallengeType };
+type ChallengeJoinFields = {
+  goal_value: number;
+  goal_unit: string;
+  xp_reward: number;
+  type: ChallengeType;
+  start_date: string;
+  end_date: string;
+};
 
 type ParticipantWithChallengeRow = {
   id: string;
   challenge_id: string;
   current_value: number;
   opponent_id: string | null;
+  expires_at: string | null;
+  challenge_teams: { expires_at: string | null } | { expires_at: string | null }[] | null;
   challenges: ChallengeJoinFields | ChallengeJoinFields[];
 };
 
@@ -569,25 +670,37 @@ async function applyOneVOneProgress(
 // Called whenever the user logs progress elsewhere (missions, HealthKit, etc.) so any
 // challenge sharing that goal_unit advances too — not just data synced from Apple Watch.
 // Only records progress — never awards XP, since that now only happens via claimReward().
+// Steps/calories are excluded here: those are tracked against the user's real daily_stats
+// total instead (see refreshStatsBasedProgress), so this only still applies to goal units
+// with no daily_stats column (e.g. minutes, or a custom admin-defined unit).
 export async function syncChallengeProgressForUser(
   userId: string,
   goalUnit: string,
   value: number,
 ): Promise<void> {
+  const normalizedUnit = goalUnit.trim().toLowerCase();
+  if (normalizedUnit === 'steps' || normalizedUnit === 'calories') return;
+
   const { data } = await supabase
     .from('challenge_participants')
-    .select('id, challenge_id, current_value, opponent_id, challenges!inner(goal_value, goal_unit, xp_reward, type)')
+    .select('id, challenge_id, current_value, opponent_id, expires_at, challenge_teams(expires_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date)')
     .eq('user_id', userId)
     .eq('completed', false)
     .eq('status', 'accepted');
 
   const rows = (data ?? []) as ParticipantWithChallengeRow[];
-  const normalizedUnit = goalUnit.trim().toLowerCase();
 
   for (const row of rows) {
     const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
     if (!challenge) continue;
     if (challenge.goal_unit.trim().toLowerCase() !== normalizedUnit) continue;
+
+    // Individual challenges are shared: everyone races against the same admin-set end
+    // date, no personal deadline. Team keeps its own shared deadline; 1v1 has none (it
+    // only ends when someone reaches the goal).
+    const team = Array.isArray(row.challenge_teams) ? row.challenge_teams[0] : row.challenge_teams;
+    const deadline = team?.expires_at ?? (challenge.type === 'individual' ? `${challenge.end_date}T23:59:59` : row.expires_at);
+    if (deadline && Date.now() > new Date(deadline).getTime()) continue;
 
     const newValue = row.current_value + value;
 
@@ -595,6 +708,80 @@ export async function syncChallengeProgressForUser(
       await applyOneVOneProgress(row, newValue, challenge);
     } else {
       await updateProgress(row.id, newValue, challenge.goal_value);
+    }
+  }
+}
+
+type StatsParticipantRow = {
+  id: string;
+  challenge_id: string;
+  team_id: string | null;
+  opponent_id: string | null;
+  joined_at: string;
+  current_value: number;
+  expires_at: string | null;
+  challenge_teams: { expires_at: string | null; created_at: string } | { expires_at: string | null; created_at: string }[] | null;
+  challenges: ChallengeJoinFields | ChallengeJoinFields[];
+};
+
+// Steps/calories challenges (individual, team, and 1v1) track the user's real daily_stats
+// total for the window — the same number shown on the Home tab — rather than an
+// independent counter, so joining mid-day picks up whatever was already logged today, and
+// progress can never drift from what the user actually did.
+export async function refreshStatsBasedProgress(userId: string): Promise<void> {
+  const { data } = await supabase
+    .from('challenge_participants')
+    .select(
+      'id, challenge_id, team_id, opponent_id, joined_at, current_value, expires_at, challenge_teams(expires_at, created_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date)',
+    )
+    .eq('user_id', userId)
+    .eq('completed', false)
+    .eq('status', 'accepted');
+
+  const rows = ((data ?? []) as StatsParticipantRow[]).filter((row) => {
+    const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
+    const unit = challenge?.goal_unit.trim().toLowerCase();
+    return unit === 'steps' || unit === 'calories';
+  });
+  if (rows.length === 0) return;
+
+  const { data: statsData } = await supabase
+    .from('daily_stats')
+    .select('date, steps, calories')
+    .eq('user_id', userId);
+  const stats = (statsData ?? []) as { date: string; steps: number; calories: number }[];
+
+  for (const row of rows) {
+    const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
+    if (!challenge) continue;
+    const team = Array.isArray(row.challenge_teams) ? row.challenge_teams[0] : row.challenge_teams;
+
+    // Individual challenges are shared: everyone races against the same admin-set
+    // start/end window, no personal deadline. Team keeps its own shared deadline; 1v1
+    // has none (it only ends when someone reaches the goal).
+    const deadline = team?.expires_at ?? (challenge.type === 'individual' ? `${challenge.end_date}T23:59:59` : row.expires_at);
+    if (deadline && Date.now() > new Date(deadline).getTime()) continue;
+
+    const startDate = team?.created_at.split('T')[0]
+      ?? (challenge.type === 'individual' ? challenge.start_date : row.joined_at.split('T')[0]);
+    const unit = challenge.goal_unit.trim().toLowerCase() as 'steps' | 'calories';
+    const sum = stats
+      .filter((s) => s.date >= startDate)
+      .reduce((acc, s) => acc + s[unit], 0);
+
+    if (row.team_id) {
+      // Team completion is derived client-side from the whole team's total, not any one
+      // member's row — never mark an individual member "completed" here, or their own
+      // contribution would freeze the moment their personal sum alone hit the team goal.
+      const { error } = await supabase
+        .from('challenge_participants')
+        .update({ current_value: sum })
+        .eq('id', row.id);
+      if (error) throw error;
+    } else if (challenge.type === '1v1') {
+      await applyOneVOneProgress(row, sum, challenge);
+    } else {
+      await updateProgress(row.id, sum, challenge.goal_value);
     }
   }
 }

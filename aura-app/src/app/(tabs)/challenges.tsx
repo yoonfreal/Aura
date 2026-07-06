@@ -15,7 +15,6 @@ import { useUserStore } from '@/store/userStore';
 import {
   fetchChallenges,
   fetchChallengeHistory,
-  joinChallenge,
   createTeam,
   joinTeam,
   deleteChallenge,
@@ -24,6 +23,8 @@ import {
   respondToInvite,
   cancelInvite,
   claimReward,
+  refreshStatsBasedProgress,
+  countClaimableRewards,
   type ChallengeWithStatus,
   type ChallengeHistoryEntry,
 } from '@/lib/challenges';
@@ -48,13 +49,9 @@ function matchesFilter(c: ChallengeWithStatus, filter: FilterPill): boolean {
   const category = c.category?.toLowerCase() ?? '';
   const isPendingInvite = c.participation?.status === 'pending';
 
-  // Individual/1v1 only count as "done" once the reward is actually claimed — reaching
-  // the goal alone isn't enough. Team has no claim step, so it goes by the team total.
-  const isDone =
-    c.type === 'team'
-      ? !!c.participation &&
-        (c.teams.find((t) => t.id === c.participation?.teamId)?.totalValue ?? 0) >= c.goalValue
-      : !!c.participation?.claimed;
+  // Only counts as "done" once the reward is actually claimed — reaching the goal alone
+  // isn't enough, for any challenge type.
+  const isDone = !!c.participation?.claimed;
 
   if (filter === 'Completed') return isDone;
   if (filter === 'Pending') return isPendingInvite;
@@ -83,6 +80,7 @@ export default function ChallengesScreen() {
   const insets = useSafeAreaInsets();
   const user = useUserStore((state) => state.user);
   const setUser = useUserStore((state) => state.setUser);
+  const setClaimableCount = useUserStore((state) => state.setClaimableCount);
   const userId = user?.id;
   const userName = user?.username ?? 'You';
   const isAdmin = user?.role === 'admin';
@@ -101,6 +99,8 @@ export default function ChallengesScreen() {
         setChallenges(challengesData);
         setHistory(historyData);
         setLoading(false);
+        // fetchChallenges already auto-enrolled/refreshed progress, so this just re-counts.
+        countClaimableRewards(userId).then(setClaimableCount).catch(() => {});
       })
       .catch((err) => {
         console.error('fetchChallenges failed', err);
@@ -113,6 +113,13 @@ export default function ChallengesScreen() {
 
   async function handleClaim(challenge: ChallengeWithStatus) {
     if (!user || !challenge.participation) return;
+    // Individual/1v1 deadlines are per-participant; team deadlines are shared on the team
+    // itself, since the goal is collective.
+    const myTeam =
+      challenge.type === 'team'
+        ? challenge.teams.find((t) => t.id === challenge.participation?.teamId)
+        : undefined;
+    const expiresAt = challenge.type === 'team' ? (myTeam?.expiresAt ?? null) : challenge.participation.expiresAt;
     try {
       const result = await claimReward(
         challenge.participation.id,
@@ -120,6 +127,7 @@ export default function ChallengesScreen() {
         challenge.xpReward,
         user.xp,
         user.level,
+        expiresAt,
       );
       if (result) {
         setUser({
@@ -303,17 +311,6 @@ function UserChallengesView({
     [challenges, pinnedOneVOne, filter],
   );
 
-  async function handleJoinIndividual(challenge: ChallengeWithStatus) {
-    if (!userId) return;
-    try {
-      await joinChallenge(userId, challenge.id);
-      onReload();
-    } catch (err) {
-      console.error('joinChallenge failed', err);
-      Alert.alert('Could not join', (err as { message?: string })?.message ?? 'Please try again.');
-    }
-  }
-
   async function handleJoinTeam(teamId: string) {
     if (!userId || !teamPickerChallenge) return;
     try {
@@ -329,7 +326,7 @@ function UserChallengesView({
   async function handleCreateTeam(name: string) {
     if (!userId || !teamPickerChallenge) return;
     try {
-      await createTeam(userId, teamPickerChallenge.id, name);
+      await createTeam(userId, teamPickerChallenge.id, name, teamPickerChallenge.durationDays);
       setTeamPickerChallenge(null);
       onReload();
     } catch (err) {
@@ -371,6 +368,7 @@ function UserChallengesView({
     if (!challenge.participation) return;
     try {
       await respondToInvite(challenge.participation.id, accept);
+      if (accept && userId) await refreshStatsBasedProgress(userId);
       onReload();
     } catch (err) {
       console.error('respondToInvite failed', err);
@@ -473,7 +471,6 @@ function UserChallengesView({
             ) : (
               <ChallengeCard
                 challenge={item}
-                onJoinIndividual={() => handleJoinIndividual(item)}
                 onOpenTeamPicker={() => setTeamPickerChallenge(item)}
                 onViewTeam={() => setRosterChallenge(item)}
                 onInviteFriend={() => setTeamInvitePickerChallenge(item)}
@@ -508,6 +505,7 @@ function UserChallengesView({
         teamName={myRosterTeam?.name ?? ''}
         goalUnit={rosterChallenge?.goalUnit ?? ''}
         goalValue={rosterChallenge?.goalValue ?? 0}
+        expiresAt={myRosterTeam?.expiresAt ?? null}
         members={myRosterTeam?.members ?? []}
         currentUserId={userId}
         onClose={() => setRosterChallenge(null)}

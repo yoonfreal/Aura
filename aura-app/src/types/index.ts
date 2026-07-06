@@ -70,6 +70,7 @@ export interface Challenge {
   startDate: string;
   endDate: string;
   createdBy: string;
+  durationDays: number | null;
 }
 
 export interface ChallengeTeam {
@@ -77,6 +78,7 @@ export interface ChallengeTeam {
   challengeId: string;
   name: string;
   createdBy: string;
+  expiresAt: string | null;
 }
 
 export type InviteStatus = 'pending' | 'accepted' | 'declined';
@@ -91,6 +93,7 @@ export interface ChallengeParticipant {
   currentValue: number;
   completed: boolean;
   claimed: boolean;
+  expiresAt: string | null;
 }
 
 export interface LeaderboardEntry {
