@@ -51,6 +51,8 @@ export default function NewChallengeScreen() {
   const [goalUnit, setGoalUnit] = useState('STEPS');
   const [xpReward, setXpReward] = useState('');
   const [durationDays, setDurationDays] = useState<number | null>(7);
+  const [badgeName, setBadgeName] = useState('');
+  const [badgeIcon, setBadgeIcon] = useState('');
   const [saving, setSaving] = useState(false);
 
   async function handleCreate() {
@@ -84,6 +86,8 @@ export default function NewChallengeScreen() {
         // not 7 days after today (which would be 8 days total).
         endDate: addDaysISO(durationDays === null ? NO_LIMIT_DAYS : durationDays - 1),
         durationDays: type === 'team' ? durationDays : null,
+        badgeName: badgeName.trim() || null,
+        badgeIcon: badgeIcon.trim() || null,
       });
       router.back();
     } catch {
@@ -189,6 +193,17 @@ export default function NewChallengeScreen() {
           placeholder="500"
           keyboardType="numeric"
         />
+
+        <Text style={styles.label}>Badge name (optional)</Text>
+        <TextInput
+          style={styles.input}
+          value={badgeName}
+          onChangeText={setBadgeName}
+          placeholder="10K Walker"
+        />
+
+        <Text style={styles.label}>Badge icon (emoji, optional)</Text>
+        <TextInput style={styles.input} value={badgeIcon} onChangeText={setBadgeIcon} placeholder="🥾" />
 
         <TouchableOpacity
           style={[styles.createBtn, saving && styles.createBtnDisabled]}

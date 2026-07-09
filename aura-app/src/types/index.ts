@@ -71,6 +71,8 @@ export interface Challenge {
   endDate: string;
   createdBy: string;
   durationDays: number | null;
+  badgeName: string | null;
+  badgeIcon: string | null;
 }
 
 export interface ChallengeTeam {

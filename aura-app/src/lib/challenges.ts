@@ -17,6 +17,8 @@ type ChallengeRow = {
   end_date: string;
   created_by: string;
   duration_days: number | null;
+  badge_name: string | null;
+  badge_icon: string | null;
 };
 
 type ParticipantRow = {
@@ -73,6 +75,8 @@ export interface ChallengeHistoryEntry {
   opponentFinalValue: number | null;
   won: boolean;
   xpEarned: number;
+  badgeName: string | null;
+  badgeIcon: string | null;
   archivedAt: string;
 }
 
@@ -100,6 +104,8 @@ function toChallenge(row: ChallengeRow): Challenge {
     endDate: row.end_date,
     createdBy: row.created_by,
     durationDays: row.duration_days,
+    badgeName: row.badge_name,
+    badgeIcon: row.badge_icon,
   };
 }
 
@@ -245,6 +251,24 @@ export async function fetchChallenges(userId: string): Promise<ChallengeWithStat
   });
 }
 
+// 1v1 has no separate expiry of its own — it only ends when someone reaches the goal — so
+// this only ever applies to individual (shared end_date) and team (shared expires_at)
+// challenges. Already-claimed or already-completed rows are never "expired": that state
+// only exists for someone who joined, missed the deadline, and has nothing to claim.
+export function isChallengeExpired(challenge: ChallengeWithStatus): boolean {
+  if (challenge.type === '1v1') return false;
+  if (challenge.participation?.claimed) return false;
+
+  const isTeam = challenge.type === 'team';
+  const myTeam = isTeam ? challenge.teams.find((t) => t.id === challenge.participation?.teamId) : undefined;
+  const currentValue = isTeam ? (myTeam?.totalValue ?? 0) : (challenge.participation?.currentValue ?? 0);
+  const isCompleted = isTeam ? currentValue >= challenge.goalValue : (challenge.participation?.completed ?? false);
+  if (isCompleted) return false;
+
+  const expiresAt = isTeam ? (myTeam?.expiresAt ?? null) : `${challenge.endDate}T23:59:59`;
+  return !!expiresAt && Date.now() > new Date(expiresAt).getTime();
+}
+
 export type NewChallenge = {
   title: string;
   description: string | null;
@@ -257,6 +281,8 @@ export type NewChallenge = {
   startDate: string;
   endDate: string;
   durationDays: number | null;
+  badgeName: string | null;
+  badgeIcon: string | null;
 };
 
 export async function createChallenge(
@@ -278,6 +304,8 @@ export async function createChallenge(
       end_date: input.endDate,
       created_by: adminId,
       duration_days: input.durationDays,
+      badge_name: input.badgeName,
+      badge_icon: input.badgeIcon,
     })
     .select()
     .single();
@@ -290,6 +318,48 @@ export async function createChallenge(
 export async function deleteChallenge(challengeId: string): Promise<void> {
   const { error } = await supabase.from('challenges').delete().eq('id', challengeId);
   if (error) throw error;
+}
+
+export async function fetchChallengeById(challengeId: string): Promise<Challenge> {
+  const { data, error } = await supabase
+    .from('challenges')
+    .select('*')
+    .eq('id', challengeId)
+    .single();
+
+  if (error || !data) throw error ?? new Error('Challenge not found');
+
+  return toChallenge(data as ChallengeRow);
+}
+
+export async function updateChallenge(
+  challengeId: string,
+  input: NewChallenge,
+): Promise<Challenge> {
+  const { data, error } = await supabase
+    .from('challenges')
+    .update({
+      title: input.title,
+      description: input.description,
+      icon: input.icon,
+      category: input.category,
+      type: input.type,
+      goal_value: input.goalValue,
+      goal_unit: input.goalUnit,
+      xp_reward: input.xpReward,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      duration_days: input.durationDays,
+      badge_name: input.badgeName,
+      badge_icon: input.badgeIcon,
+    })
+    .eq('id', challengeId)
+    .select()
+    .single();
+
+  if (error || !data) throw error ?? new Error('Failed to update challenge');
+
+  return toChallenge(data as ChallengeRow);
 }
 
 export type UserSearchResult = { id: string; name: string };
@@ -308,7 +378,7 @@ export async function searchUsers(query: string, excludeUserId: string): Promise
   return ((data ?? []) as ProfileNameRow[]).map((p) => ({ id: p.id, name: displayName(p) }));
 }
 
-type ArchiveJoinFields = { goal_value: number; xp_reward: number };
+type ArchiveJoinFields = { goal_value: number; xp_reward: number; badge_name: string | null; badge_icon: string | null };
 
 // If this user already has a claimed (fully resolved) result on this challenge, snapshot
 // it into challenge_history before it gets overwritten by a rematch — otherwise replaying
@@ -316,7 +386,7 @@ type ArchiveJoinFields = { goal_value: number; xp_reward: number };
 async function archiveIfClaimed(challengeId: string, userId: string): Promise<void> {
   const { data, error } = await supabase
     .from('challenge_participants')
-    .select('current_value, opponent_id, claimed, challenges!inner(goal_value, xp_reward)')
+    .select('current_value, opponent_id, claimed, challenges!inner(goal_value, xp_reward, badge_name, badge_icon)')
     .eq('challenge_id', challengeId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -355,6 +425,8 @@ async function archiveIfClaimed(challengeId: string, userId: string): Promise<vo
     opponent_final_value: opponentFinalValue,
     won,
     xp_earned: won ? challenge.xp_reward : 0,
+    badge_name: won ? challenge.badge_name : null,
+    badge_icon: won ? challenge.badge_icon : null,
   });
   if (historyError) throw historyError;
 }
@@ -794,6 +866,8 @@ type HistoryRow = {
   opponent_final_value: number | null;
   won: boolean;
   xp_earned: number;
+  badge_name: string | null;
+  badge_icon: string | null;
   archived_at: string;
   challenges: { title: string; icon: string; goal_unit: string } | { title: string; icon: string; goal_unit: string }[];
 };
@@ -804,7 +878,7 @@ type HistoryRow = {
 export async function fetchChallengeHistory(userId: string): Promise<ChallengeHistoryEntry[]> {
   const { data, error } = await supabase
     .from('challenge_history')
-    .select('id, challenge_id, opponent_id, final_value, opponent_final_value, won, xp_earned, archived_at, challenges!inner(title, icon, goal_unit)')
+    .select('id, challenge_id, opponent_id, final_value, opponent_final_value, won, xp_earned, badge_name, badge_icon, archived_at, challenges!inner(title, icon, goal_unit)')
     .eq('user_id', userId)
     .order('archived_at', { ascending: false });
   if (error) throw error;
@@ -831,6 +905,8 @@ export async function fetchChallengeHistory(userId: string): Promise<ChallengeHi
       opponentFinalValue: row.opponent_final_value,
       won: row.won,
       xpEarned: row.xp_earned,
+      badgeName: row.badge_name,
+      badgeIcon: row.badge_icon,
       archivedAt: row.archived_at,
     };
   });

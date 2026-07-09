@@ -1,5 +1,6 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import type { ChallengeWithStatus } from '@/lib/challenges';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { isChallengeExpired, type ChallengeWithStatus } from '@/lib/challenges';
 
 type ChallengeCardProps = {
   challenge: ChallengeWithStatus;
@@ -48,7 +49,7 @@ export function ChallengeCard({
   // Individual challenges have no personal deadline anymore (everyone auto-enrolls and
   // shares the challenge's own end date instead).
   const expiresAt = isTeam ? (myTeam?.expiresAt ?? null) : `${challenge.endDate}T23:59:59`;
-  const isExpired = !isCompleted && !!expiresAt && Date.now() > new Date(expiresAt).getTime();
+  const isExpired = isChallengeExpired(challenge);
   const daysLeft = expiresAt ? Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000) : null;
   // "No limit" individual/1v1 challenges still have a real (far-future) end date under the
   // hood, so anything absurdly far out just means there's effectively no deadline to show.
@@ -63,6 +64,18 @@ export function ChallengeCard({
   const accent = typeColor(challenge.type);
   const showCategoryTag = challenge.category && challenge.category.toLowerCase() !== challenge.type;
 
+  const earnedBadge =
+    isClaimed && challenge.badgeName ? (
+      <View style={styles.badgePill}>
+        <Text style={styles.badgePillText}>
+          {challenge.badgeIcon ? `${challenge.badgeIcon} ` : ''}
+          {challenge.badgeName}
+        </Text>
+      </View>
+    ) : (
+      <Text style={styles.linkText}>Completed</Text>
+    );
+
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
@@ -73,7 +86,10 @@ export function ChallengeCard({
           <Text style={styles.title} numberOfLines={1}>
             {challenge.title}
           </Text>
-          <Text style={styles.rewardInline}>{`(+${challenge.xpReward.toLocaleString()} XP)`}</Text>
+          <View style={styles.rewardPill}>
+            <MaterialCommunityIcons name="lightning-bolt" size={11} color="#F5B800" />
+            <Text style={styles.rewardPillText}>{challenge.xpReward.toLocaleString()} XP</Text>
+          </View>
         </View>
         <View style={styles.tagGroup}>
           {showCategoryTag && (
@@ -88,6 +104,16 @@ export function ChallengeCard({
       </View>
 
       {challenge.description && <Text style={styles.description}>{challenge.description}</Text>}
+
+      {challenge.badgeName && (
+        <View style={styles.badgePreviewPill}>
+          <MaterialCommunityIcons name="medal-outline" size={12} color="#6D28D9" />
+          <Text style={styles.badgePreviewText}>
+            {challenge.badgeIcon ? `${challenge.badgeIcon} ` : ''}
+            {challenge.badgeName}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.progressTrack}>
         <View style={[styles.progressFill, { width: `${progressPct}%`, backgroundColor: accent }]} />
@@ -131,7 +157,7 @@ export function ChallengeCard({
                 <Text style={styles.linkText}>Invite friend</Text>
               </TouchableOpacity>
             ) : isClaimed ? (
-              <Text style={styles.linkText}>Completed</Text>
+              earnedBadge
             ) : (
               <View />
             )}
@@ -170,7 +196,7 @@ export function ChallengeCard({
           </>
         ) : (
           <>
-            {isClaimed ? <Text style={styles.linkText}>Completed</Text> : <View />}
+            {isClaimed ? earnedBadge : <View />}
             {canClaim ? (
               <TouchableOpacity style={styles.claimBtn} onPress={onClaim}>
                 <Text style={styles.claimBtnText}>Claim Reward</Text>
@@ -192,116 +218,147 @@ export function ChallengeCard({
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 13,
     marginHorizontal: 16,
-    marginBottom: 12,
+    marginBottom: 10,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    elevation: 2,
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexShrink: 1, flex: 1 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, flex: 1 },
   iconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: '#F2F6F9',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  icon: { fontSize: 18 },
-  title: { fontSize: 15, fontWeight: '800', color: '#0D1829', flexShrink: 1, letterSpacing: -0.2 },
+  icon: { fontSize: 15 },
+  title: { fontSize: 14, fontWeight: '800', color: '#0D1829', flexShrink: 1, letterSpacing: -0.2 },
   tagGroup: { flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 },
   categoryPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 20,
     backgroundColor: '#F2F6F9',
   },
-  categoryText: { fontSize: 11, fontWeight: '700', color: '#6B7280' },
+  categoryText: { fontSize: 10, fontWeight: '700', color: '#6B7280' },
   typePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
     borderRadius: 20,
   },
-  typeText: { fontSize: 11, fontWeight: '800', color: '#fff' },
-  description: { fontSize: 12, color: '#6B7280', marginTop: 10, lineHeight: 17 },
+  typeText: { fontSize: 10, fontWeight: '800', color: '#fff' },
+  description: { fontSize: 11.5, color: '#6B7280', marginTop: 8, lineHeight: 16 },
+  badgePreviewPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 4,
+    backgroundColor: '#EDE9FE',
+    borderWidth: 1,
+    borderColor: '#C4B5FD',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 8,
+  },
+  badgePreviewText: { fontSize: 10.5, fontWeight: '800', color: '#6D28D9' },
+  rewardPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#F5D77A',
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  rewardPillText: { fontSize: 10.5, fontWeight: '800', color: '#8A6D00' },
   progressTrack: {
-    height: 9,
-    borderRadius: 5,
+    height: 7,
+    borderRadius: 4,
     backgroundColor: '#E5E9F0',
-    marginTop: 14,
+    marginTop: 10,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', borderRadius: 5 },
+  progressFill: { height: '100%', borderRadius: 4 },
   progressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
-  progressLabel: { fontSize: 12, color: '#6B7280', fontWeight: '600' },
-  progressPct: { fontSize: 12, fontWeight: '800' },
-  metaRow: { marginTop: 8, gap: 3 },
-  rewardInline: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#8A6D00',
-    flexShrink: 0,
-    marginLeft: 6,
-  },
-  progressHint: { fontSize: 11, color: '#9CA3AF', fontWeight: '500' },
-  expiredText: { fontSize: 11, color: '#DC2626', fontWeight: '700' },
+  progressLabel: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
+  progressPct: { fontSize: 11, fontWeight: '800' },
+  metaRow: { marginTop: 6, gap: 3 },
+  progressHint: { fontSize: 10.5, color: '#9CA3AF', fontWeight: '500' },
+  expiredText: { fontSize: 10.5, color: '#DC2626', fontWeight: '700' },
   footerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 14,
+    marginTop: 11,
   },
-  footerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  linkText: { fontSize: 13, fontWeight: '700', color: '#2563EB' },
+  footerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  linkText: { fontSize: 12, fontWeight: '700', color: '#2563EB' },
+  badgePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#F5D77A',
+    borderRadius: 20,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+  },
+  badgePillText: { fontSize: 11, fontWeight: '800', color: '#8A6D00' },
   outlineBtn: {
     borderWidth: 1.5,
     borderColor: '#1B2B4B',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 9,
   },
-  outlineBtnText: { color: '#1B2B4B', fontWeight: '700', fontSize: 12 },
+  outlineBtnText: { color: '#1B2B4B', fontWeight: '700', fontSize: 11 },
   pillActive: {
     backgroundColor: '#1B2B4B',
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 9,
     shadowColor: '#1B2B4B',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
-    shadowRadius: 6,
+    shadowRadius: 5,
     elevation: 3,
   },
-  pillActiveText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  pillActiveText: { color: '#fff', fontWeight: '700', fontSize: 11 },
   pillDisabled: {
     backgroundColor: '#E5E9F0',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 9,
   },
-  pillDisabledText: { color: '#9CA3AF', fontWeight: '700', fontSize: 12 },
+  pillDisabledText: { color: '#9CA3AF', fontWeight: '700', fontSize: 11 },
   claimBtn: {
     backgroundColor: '#16A34A',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 9,
     shadowColor: '#15803D',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 5,
     elevation: 4,
   },
-  claimBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  claimBtnText: { color: '#fff', fontWeight: '800', fontSize: 11 },
   inviteBanner: {
     backgroundColor: '#FFF8E1',
     borderWidth: 1,
