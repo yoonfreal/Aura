@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -7,13 +7,13 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useUserStore } from '@/store/userStore';
-import { createChallenge } from '@/lib/challenges';
-import type { ChallengeType } from '@/types';
+import { fetchChallengeById, updateChallenge, deleteChallenge } from '@/lib/challenges';
+import type { Challenge, ChallengeType } from '@/types';
 
 const TYPE_OPTIONS: { value: ChallengeType; label: string }[] = [
   { value: 'individual', label: 'Individual' },
@@ -32,15 +32,19 @@ const DURATION_OPTIONS: { value: number | null; label: string }[] = [
 // it just uses a date far enough out that it never realistically comes up.
 const NO_LIMIT_DAYS = 36500;
 
-function addDaysISO(days: number): string {
-  const d = new Date();
+function addDaysISO(base: string, days: number): string {
+  const d = new Date(`${base}T00:00:00`);
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
 }
 
-export default function NewChallengeScreen() {
+export default function EditChallengeScreen() {
   const router = useRouter();
-  const userId = useUserStore((state) => state.user?.id);
+  const { id } = useLocalSearchParams<{ id: string }>();
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [challenge, setChallenge] = useState<Challenge | null>(null);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -53,10 +57,30 @@ export default function NewChallengeScreen() {
   const [durationDays, setDurationDays] = useState<number | null>(7);
   const [badgeName, setBadgeName] = useState('');
   const [badgeIcon, setBadgeIcon] = useState('');
-  const [saving, setSaving] = useState(false);
 
-  async function handleCreate() {
-    if (!userId) return;
+  useEffect(() => {
+    if (!id) return;
+    fetchChallengeById(id)
+      .then((data) => {
+        setChallenge(data);
+        setTitle(data.title);
+        setDescription(data.description ?? '');
+        setIcon(data.icon);
+        setCategory(data.category ?? '');
+        setType(data.type);
+        setGoalValue(String(data.goalValue));
+        setGoalUnit(data.goalUnit);
+        setXpReward(String(data.xpReward));
+        setDurationDays(data.durationDays);
+        setBadgeName(data.badgeName ?? '');
+        setBadgeIcon(data.badgeIcon ?? '');
+      })
+      .catch(() => Alert.alert('Error', 'Could not load this challenge.'))
+      .finally(() => setLoading(false));
+  }, [id]);
+
+  async function handleSave() {
+    if (!challenge) return;
 
     const goalValueNum = Number(goalValue);
     const xpRewardNum = Number(xpReward);
@@ -72,7 +96,7 @@ export default function NewChallengeScreen() {
 
     setSaving(true);
     try {
-      await createChallenge(userId, {
+      await updateChallenge(challenge.id, {
         title: title.trim(),
         description: description.trim() || null,
         icon: icon.trim() || '🏆',
@@ -81,20 +105,47 @@ export default function NewChallengeScreen() {
         goalValue: goalValueNum,
         goalUnit: goalUnit.trim(),
         xpReward: xpRewardNum,
-        startDate: addDaysISO(0),
-        // Today counts as day 1, so a 7-day week ends 6 days after today (7 days total),
-        // not 7 days after today (which would be 8 days total).
-        endDate: addDaysISO(durationDays === null ? NO_LIMIT_DAYS : durationDays - 1),
+        startDate: challenge.startDate,
+        // Recomputed off the challenge's original start date, not today — editing an
+        // existing challenge shouldn't shift when it began.
+        endDate: addDaysISO(challenge.startDate, durationDays === null ? NO_LIMIT_DAYS : durationDays - 1),
         durationDays: type === 'team' ? durationDays : null,
         badgeName: badgeName.trim() || null,
         badgeIcon: badgeIcon.trim() || null,
       });
       router.back();
     } catch {
-      Alert.alert('Error', 'Could not create the challenge. Try again.');
+      Alert.alert('Error', 'Could not save the challenge. Try again.');
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleDelete() {
+    if (!challenge) return;
+    Alert.alert(
+      'Delete challenge?',
+      `"${challenge.title}" will be removed for everyone who joined it.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteChallenge(challenge.id);
+            router.back();
+          },
+        },
+      ],
+    );
+  }
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.safe, styles.center]}>
+        <ActivityIndicator size="large" color="#2563EB" />
+      </SafeAreaView>
+    );
   }
 
   return (
@@ -103,8 +154,10 @@ export default function NewChallengeScreen() {
         <TouchableOpacity onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={24} color="#0D1829" />
         </TouchableOpacity>
-        <Text style={styles.title}>New Challenge</Text>
-        <View style={{ width: 24 }} />
+        <Text style={styles.title}>Edit Challenge</Text>
+        <TouchableOpacity onPress={handleDelete}>
+          <Ionicons name="trash-outline" size={20} color="#DC2626" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
@@ -207,10 +260,10 @@ export default function NewChallengeScreen() {
 
         <TouchableOpacity
           style={[styles.createBtn, saving && styles.createBtnDisabled]}
-          onPress={handleCreate}
+          onPress={handleSave}
           disabled={saving}
         >
-          <Text style={styles.createBtnText}>{saving ? 'Creating…' : 'Create Challenge'}</Text>
+          <Text style={styles.createBtnText}>{saving ? 'Saving…' : 'Save Changes'}</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
@@ -219,6 +272,7 @@ export default function NewChallengeScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F2F6F9' },
+  center: { alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -36,6 +36,13 @@ export function ChallengeHistoryCard({ entry }: ChallengeHistoryCardProps) {
       {entry.won && (
         <Text style={styles.xpText}>+{entry.xpEarned} XP earned</Text>
       )}
+
+      {entry.won && entry.badgeName && (
+        <Text style={styles.badgeEarnedText}>
+          {entry.badgeIcon ? `${entry.badgeIcon} ` : ''}
+          {entry.badgeName} earned
+        </Text>
+      )}
     </View>
   );
 }
@@ -70,4 +77,5 @@ const styles = StyleSheet.create({
   badgeTextLost: { color: '#6B7280' },
   subtitle: { fontSize: 12, color: '#6B7280', marginTop: 8, fontWeight: '600' },
   xpText: { fontSize: 12, color: '#16A34A', marginTop: 6, fontWeight: '800' },
+  badgeEarnedText: { fontSize: 12, color: '#8A6D00', marginTop: 4, fontWeight: '800' },
 });

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   ActivityIndicator,
   Alert,
 } from 'react-native';
@@ -25,6 +26,7 @@ import {
   claimReward,
   refreshStatsBasedProgress,
   countClaimableRewards,
+  isChallengeExpired,
   type ChallengeWithStatus,
   type ChallengeHistoryEntry,
 } from '@/lib/challenges';
@@ -58,6 +60,9 @@ function matchesFilter(c: ChallengeWithStatus, filter: FilterPill): boolean {
   // Finished challenges move to Completed, and invites awaiting your response move to
   // Pending — both drop out of every other filter so they don't clutter regular browsing.
   if (isDone || isPendingInvite) return false;
+  // Missed the deadline with nothing to claim — drop it everywhere rather than leaving a
+  // dead "Expired" card in the list until someone manually clears it.
+  if (isChallengeExpired(c)) return false;
 
   switch (filter) {
     case 'All':
@@ -136,7 +141,12 @@ export default function ChallengesScreen() {
           level: result.newLevel,
           xpForNextLevel: xpForLevel(result.newLevel + 1),
         });
-        Alert.alert('Reward claimed!', `You earned ${challenge.xpReward} XP.`);
+        Alert.alert(
+          'Reward claimed!',
+          challenge.badgeName
+            ? `You earned ${challenge.xpReward} XP and the "${challenge.badgeName}" ${challenge.badgeIcon ?? ''} badge!`
+            : `You earned ${challenge.xpReward} XP.`,
+        );
       }
       load();
     } catch (err) {
@@ -153,6 +163,7 @@ export default function ChallengesScreen() {
         error={error}
         insetsTop={insets.top}
         onCreate={() => router.push('/admin/challenges/new')}
+        onOpen={(challenge) => router.push(`/admin/challenges/${challenge.id}`)}
         onDelete={async (challenge) => {
           await deleteChallenge(challenge.id);
           load();
@@ -184,6 +195,7 @@ type AdminChallengesViewProps = {
   error: string | null;
   insetsTop: number;
   onCreate: () => void;
+  onOpen: (challenge: ChallengeWithStatus) => void;
   onDelete: (challenge: ChallengeWithStatus) => void;
 };
 
@@ -193,6 +205,7 @@ function AdminChallengesView({
   error,
   insetsTop,
   onCreate,
+  onOpen,
   onDelete,
 }: AdminChallengesViewProps) {
   function confirmDelete(challenge: ChallengeWithStatus) {
@@ -234,7 +247,7 @@ function AdminChallengesView({
             </View>
           }
           renderItem={({ item }) => (
-            <View style={styles.adminCard}>
+            <TouchableOpacity style={styles.adminCard} onPress={() => onOpen(item)} activeOpacity={0.7}>
               <View style={styles.adminCardHeader}>
                 <Text style={styles.adminCardTitle}>
                   {item.icon} {item.title}
@@ -250,7 +263,7 @@ function AdminChallengesView({
               <Text style={styles.adminCardDates}>
                 {item.startDate} – {item.endDate}
               </Text>
-            </View>
+            </TouchableOpacity>
           )}
         />
       )}
@@ -405,7 +418,12 @@ function UserChallengesView({
         </View>
       </View>
 
-      <View style={styles.pillsWrap}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.pillsScroll}
+        contentContainerStyle={styles.pillsWrap}
+      >
         {FILTERS.map((f) => (
           <TouchableOpacity
             key={f}
@@ -420,7 +438,7 @@ function UserChallengesView({
             )}
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       {loading ? (
         <View style={styles.center}>
@@ -558,12 +576,16 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   adminIconBtn: { backgroundColor: '#1B2B4B' },
+  pillsScroll: {
+    height: 44,
+    flexGrow: 0,
+    marginBottom: 12,
+  },
   pillsWrap: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
     paddingHorizontal: 16,
-    paddingBottom: 12,
   },
   pill: {
     flexDirection: 'row',

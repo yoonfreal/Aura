@@ -244,6 +244,15 @@ export function HeadToHeadCard({
           <Text style={styles.endedText}>This 1v1 has ended.</Text>
         )}
 
+        {iWon && participation.claimed && challenge.badgeName && (
+          <View style={styles.earnedBadgePill}>
+            <Text style={styles.earnedBadgePillText}>
+              {challenge.badgeIcon ? `${challenge.badgeIcon} ` : ''}
+              {challenge.badgeName} earned!
+            </Text>
+          </View>
+        )}
+
         {participation.claimed && (
           <TouchableOpacity style={styles.playAgainBtn} onPress={onPlayAgain}>
             <Ionicons name="refresh" size={15} color="#1B2B4B" />
@@ -523,6 +532,17 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 14,
   },
+  earnedBadgePill: {
+    alignSelf: 'center',
+    backgroundColor: '#FFF8E1',
+    borderWidth: 1,
+    borderColor: '#F5D77A',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 10,
+  },
+  earnedBadgePillText: { color: '#8A6D00', fontWeight: '800', fontSize: 12 },
   emptyAvatarRow: {
     flexDirection: 'row',
     alignItems: 'center',
