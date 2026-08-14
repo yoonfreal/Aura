@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -12,6 +12,8 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { getLevelTitle } from '@/lib/level';
+import { countIncomingRequests } from '@/lib/friends';
+import { useUserStore } from '@/store/userStore';
 
 type LeaderboardEntry = {
   rank: number;
@@ -52,17 +54,27 @@ const PODIUM_CONFIG = {
 } as const;
 
 export default function LeaderboardScreen() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabType>('Overall');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const friendRequestCount = useUserStore((s) => s.friendRequestCount);
+  const setFriendRequestCount = useUserStore((s) => s.setFriendRequestCount);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setCurrentUserId(data.user?.id ?? null);
     });
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentUserId) return;
+      countIncomingRequests(currentUserId).then(setFriendRequestCount).catch(() => {});
+    }, [currentUserId]),
+  );
 
   const fetchOverall = useCallback(async (): Promise<LeaderboardEntry[]> => {
     const { data, error } = await supabase
@@ -353,8 +365,13 @@ export default function LeaderboardScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Leaderboard</Text>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
               <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
+              {friendRequestCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{friendRequestCount > 9 ? '9+' : friendRequestCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn}>
               <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
@@ -426,6 +443,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  notifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   iconBtn: {
     width: 40,
     height: 40,

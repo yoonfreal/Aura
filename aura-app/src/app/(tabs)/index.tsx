@@ -1,7 +1,7 @@
 import { Alert, Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useUserStore } from '@/store/userStore';
@@ -19,13 +19,16 @@ import {
   incrementDailyStat,
 } from '@/lib/api';
 import { syncChallengeProgressForUser, refreshClaimableCount } from '@/lib/challenges';
+import { countIncomingRequests } from '@/lib/friends';
 import { getLevelTitle, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const {
-    user, dailyStats, missions, watchSync, activeTab, weeklyStats,
+    user, dailyStats, missions, watchSync, activeTab, weeklyStats, friendRequestCount,
     setActiveTab, setDailyStats, setWatchSync, setMissions, setUser, setWeeklyStats, setClaimableCount,
+    setFriendRequestCount,
   } = useUserStore();
   const pillAnim = useRef(new Animated.Value(0)).current;
   const [trackWidth, setTrackWidth] = useState(0);
@@ -68,6 +71,9 @@ export default function HomeScreen() {
 
           const claimable = await refreshClaimableCount(user!.id);
           setClaimableCount(claimable);
+
+          const friendRequests = await countIncomingRequests(user!.id);
+          setFriendRequestCount(friendRequests);
         } catch (err) {
           console.error('loadData failed', err);
         }
@@ -127,8 +133,13 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <Text style={styles.username}>{user.username}</Text>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
               <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
+              {friendRequestCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{friendRequestCount > 9 ? '9+' : friendRequestCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn}>
               <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
@@ -284,6 +295,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  notifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   iconBtn: {
     width: 40,
     height: 40,
