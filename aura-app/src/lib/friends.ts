@@ -13,6 +13,7 @@ type ProfileNameRow = {
   first_name: string | null;
   last_name: string | null;
   level: number | null;
+  xp?: number | null;
 };
 
 export type FriendRequestEntry = { id: string; userId: string; name: string; level: number };
@@ -213,4 +214,31 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
     const profile = profileById.get(id);
     return { id, name: displayName(profile), level: profile?.level ?? 1, mutualCount: mutualCountById.get(id) ?? 0 };
   });
+}
+
+export type FriendLeaderboardEntry = { rank: number; userId: string; name: string; level: number; xp: number };
+
+// Includes the current user alongside their accepted friends, ranked together by XP —
+// mirrors the Overall/Weekly leaderboard shape so rank.tsx can reuse the same row renderer.
+export async function fetchFriendsLeaderboard(userId: string): Promise<FriendLeaderboardEntry[]> {
+  const { data: friendshipsData } = await supabase
+    .from('friendships')
+    .select('requester_id, addressee_id, status')
+    .eq('status', 'accepted')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+
+  const friendIds = ((friendshipsData ?? []) as FriendshipRow[]).map((f) =>
+    f.requester_id === userId ? f.addressee_id : f.requester_id,
+  );
+
+  const { data: profilesData, error } = await supabase
+    .from('profiles')
+    .select('id, username, first_name, last_name, level, xp')
+    .in('id', [userId, ...friendIds]);
+  if (error) throw error;
+
+  return ((profilesData ?? []) as ProfileNameRow[])
+    .map((p) => ({ userId: p.id, name: displayName(p), level: p.level ?? 1, xp: p.xp ?? 0 }))
+    .sort((a, b) => b.xp - a.xp)
+    .map((entry, i) => ({ ...entry, rank: i + 1 }));
 }
