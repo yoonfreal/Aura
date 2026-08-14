@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -12,7 +12,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { getLevelTitle } from '@/lib/level';
-import { countIncomingRequests } from '@/lib/friends';
+import { countIncomingRequests, fetchFriendsLeaderboard } from '@/lib/friends';
 import { useUserStore } from '@/store/userStore';
 
 type LeaderboardEntry = {
@@ -55,6 +55,7 @@ const PODIUM_CONFIG = {
 
 export default function LeaderboardScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<TabType>('Overall');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -68,6 +69,16 @@ export default function LeaderboardScreen() {
       setCurrentUserId(data.user?.id ?? null);
     });
   }, []);
+
+  // Lets other screens (e.g. Social's "See full" link) deep-link straight into the Friends
+  // tab. Clears the param right after so returning to this tab later via the bottom bar
+  // doesn't keep forcing Friends.
+  useEffect(() => {
+    if (params.tab === 'Friends') {
+      setActiveTab('Friends');
+      router.setParams({ tab: undefined });
+    }
+  }, [params.tab]);
 
   useFocusEffect(
     useCallback(() => {
@@ -177,21 +188,27 @@ export default function LeaderboardScreen() {
       .map((entry, i) => ({ ...entry, rank: i + 1 }));
   }, []);
 
+  const fetchFriends = useCallback(async (): Promise<LeaderboardEntry[]> => {
+    if (!currentUserId) return [];
+    try {
+      return await fetchFriendsLeaderboard(currentUserId);
+    } catch {
+      setFetchError('Could not load friends leaderboard. Check your connection.');
+      return [];
+    }
+  }, [currentUserId]);
+
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'Friends') {
-        setLeaderboardData([]);
-        setLoading(false);
-        return;
-      }
+      if (activeTab === 'Friends' && !currentUserId) return;
       setLoading(true);
       setFetchError(null);
-      const fetch = activeTab === 'Overall' ? fetchOverall : fetchWeekly;
+      const fetch = activeTab === 'Overall' ? fetchOverall : activeTab === 'Weekly' ? fetchWeekly : fetchFriends;
       fetch().then((entries) => {
         setLeaderboardData(entries);
         setLoading(false);
       });
-    }, [activeTab, fetchOverall, fetchWeekly]),
+    }, [activeTab, fetchOverall, fetchWeekly, fetchFriends, currentUserId]),
   );
 
   const topThree = leaderboardData.slice(0, 3);
@@ -301,7 +318,8 @@ export default function LeaderboardScreen() {
   };
 
   const insets = useSafeAreaInsets();
-  const showPodium = !loading && !fetchError && activeTab !== 'Friends';
+  const showFriendsEmpty = !loading && !fetchError && activeTab === 'Friends' && leaderboardData.length <= 1;
+  const showPodium = !loading && !fetchError && !showFriendsEmpty && leaderboardData.length > 0;
 
   const listHeader = (
     <>
@@ -344,16 +362,16 @@ export default function LeaderboardScreen() {
           </Text>
         </View>
       )}
-      {!loading && !fetchError && activeTab === 'Friends' && (
+      {showFriendsEmpty && (
         <View style={styles.stateContainer}>
           <Ionicons name="people-outline" size={40} color="#C0C8D4" />
           <Text style={[styles.stateText, { marginTop: 12 }]}>
-            Friend connections coming soon
+            Add friends to see them ranked here
           </Text>
         </View>
       )}
-      {!loading && !fetchError && activeTab !== 'Friends' && (
-        <Text style={styles.sectionLabel}>All Players</Text>
+      {!loading && !fetchError && !showFriendsEmpty && (
+        <Text style={styles.sectionLabel}>{activeTab === 'Friends' ? 'Your Friends' : 'All Players'}</Text>
       )}
     </>
   );
@@ -381,7 +399,7 @@ export default function LeaderboardScreen() {
       </View>
 
       <FlatList
-        data={loading || activeTab === 'Friends' || fetchError ? [] : leaderboardData}
+        data={loading || fetchError || showFriendsEmpty ? [] : leaderboardData}
         renderItem={renderRow}
         keyExtractor={(item) => item.userId}
         ListHeaderComponent={listHeader}

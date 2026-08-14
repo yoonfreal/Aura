@@ -53,6 +53,7 @@ export default function FriendsScreen() {
   const [searching, setSearching] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [incomingExpanded, setIncomingExpanded] = useState(false);
+  const [suppressIncomingAnim, setSuppressIncomingAnim] = useState(false);
 
   const loadRequests = useCallback(async () => {
     if (!userId) return;
@@ -102,8 +103,10 @@ export default function FriendsScreen() {
   }
 
   async function handleAccept(requestId: string) {
+    setSuppressIncomingAnim(true);
     await acceptFriendRequest(requestId);
-    loadRequests();
+    await loadRequests();
+    requestAnimationFrame(() => setSuppressIncomingAnim(false));
   }
 
   async function handleAcceptFromSearch(item: FriendSearchResult) {
@@ -217,13 +220,13 @@ export default function FriendsScreen() {
                 return (
                   <Animated.View
                     key={req.id}
-                    layout={LinearTransition.duration(220)}
+                    layout={suppressIncomingAnim ? undefined : LinearTransition.duration(220)}
                     entering={
-                      extraIndex >= 0
+                      !suppressIncomingAnim && extraIndex >= 0
                         ? FadeInUp.duration(220).delay(extraIndex * 40)
                         : undefined
                     }
-                    exiting={FadeOutUp.duration(180)}
+                    exiting={suppressIncomingAnim ? undefined : FadeOutUp.duration(180)}
                     style={styles.row}
                   >
                     <View style={[styles.avatar, { backgroundColor: CARD_COLORS[i % CARD_COLORS.length] }]}>

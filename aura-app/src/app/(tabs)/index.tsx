@@ -88,7 +88,7 @@ export default function HomeScreen() {
     if (!mission) return;
 
     try {
-      const { newXp, newLevel } = await logMissionComplete(
+      const { newXp, newLevel, newStreak } = await logMissionComplete(
         userMissionId,
         user.id,
         mission.goalValue,
@@ -106,13 +106,13 @@ export default function HomeScreen() {
             : m,
         ),
       );
-      setUser({ ...user, xp: newXp, level: newLevel, xpForNextLevel: xpForLevel(newLevel + 1) });
+      setUser({ ...user, xp: newXp, level: newLevel, xpForNextLevel: xpForLevel(newLevel + 1), streak: newStreak });
 
       if (mission.goalUnit === 'steps' || mission.goalUnit === 'calories') {
         const { steps, calories } = await incrementDailyStat(user.id, mission.goalUnit, mission.goalValue);
-        setDailyStats({ ...dailyStats, steps, calories, xpEarned: dailyStats.xpEarned + mission.xpReward });
+        setDailyStats({ ...dailyStats, steps, calories, streakDays: newStreak, xpEarned: dailyStats.xpEarned + mission.xpReward });
       } else {
-        setDailyStats({ ...dailyStats, xpEarned: dailyStats.xpEarned + mission.xpReward });
+        setDailyStats({ ...dailyStats, streakDays: newStreak, xpEarned: dailyStats.xpEarned + mission.xpReward });
       }
 
       const claimable = await refreshClaimableCount(user.id);

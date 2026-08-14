@@ -362,6 +362,61 @@ export async function updateChallenge(
   return toChallenge(data as ChallengeRow);
 }
 
+export type Open1v1Challenge = {
+  id: string;
+  title: string;
+  icon: string;
+  goalValue: number;
+  goalUnit: string;
+  xpReward: number;
+};
+
+// Lightweight listing of currently-open 1v1 challenge templates — used by the Social tab's
+// "Challenge" shortcut, which already knows the opponent (the post's author) and just needs
+// the user to pick which race to invite them to. Skips fetchChallenges' enrollment/progress
+// side effects since nothing here needs them.
+export async function fetchOpen1v1Challenges(): Promise<Open1v1Challenge[]> {
+  const today = todayISODate();
+
+  const { data, error } = await supabase
+    .from('challenges')
+    .select('id, title, icon, goal_value, goal_unit, xp_reward')
+    .eq('type', '1v1')
+    .lte('start_date', today)
+    .gte('end_date', today)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  return (
+    (data ?? []) as { id: string; title: string; icon: string; goal_value: number; goal_unit: string; xp_reward: number }[]
+  ).map((c) => ({
+    id: c.id,
+    title: c.title,
+    icon: c.icon,
+    goalValue: c.goal_value,
+    goalUnit: c.goal_unit,
+    xpReward: c.xp_reward,
+  }));
+}
+
+export type LinkableChallenge = { id: string; title: string; icon: string; type: ChallengeType };
+
+// Any currently-open challenge (any type), for the Create Post composer's "Link to a
+// challenge" picker — readers can jump into the Challenges tab from the post to join it.
+export async function fetchLinkableChallenges(): Promise<LinkableChallenge[]> {
+  const today = todayISODate();
+
+  const { data, error } = await supabase
+    .from('challenges')
+    .select('id, title, icon, type')
+    .lte('start_date', today)
+    .gte('end_date', today)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []) as LinkableChallenge[];
+}
+
 export type UserSearchResult = { id: string; name: string };
 
 export async function searchUsers(query: string, excludeUserId: string): Promise<UserSearchResult[]> {
