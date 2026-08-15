@@ -21,6 +21,8 @@ import {
   Shield,
   HelpCircle,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   Search,
   ArrowLeft,
   User,
@@ -32,6 +34,7 @@ import { useCallback, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/store/userStore';
 import { getLevelTitle } from '@/lib/level';
+import { fetchBadges, type EarnedBadge } from '@/lib/challenges';
 
 const BG = '#E7ECF5';
 const CARD = '#FFFFFF';
@@ -59,40 +62,6 @@ const FRIEND_AVATAR_COLORS = [
   '#8A5A1E',
   '#5D4E8A',
   '#8A2E4E',
-];
-
-type Badge = {
-  label: string;
-  icon: string;
-  earned: boolean;
-};
-
-const BADGES: Badge[] = [
-  {
-    label: '7-day Streak',
-    icon: '🔥',
-    earned: true,
-  },
-  {
-    label: 'Top 15',
-    icon: '🏅',
-    earned: true,
-  },
-  {
-    label: '10K Steps',
-    icon: '👟',
-    earned: true,
-  },
-  {
-    label: 'Early Bird',
-    icon: '🌅',
-    earned: false,
-  },
-  {
-    label: 'Iron Will',
-    icon: '💪',
-    earned: false,
-  },
 ];
 
 type FriendProfile = {
@@ -445,6 +414,32 @@ export default function ProfileScreen() {
   const [friendListVisible, setFriendListVisible] =
     useState(false);
 
+  const [badges, setBadges] =
+    useState<EarnedBadge[]>([]);
+
+  const [badgesExpanded, setBadgesExpanded] =
+    useState(true);
+
+  const loadBadges = useCallback(async () => {
+    if (!user?.id) {
+      setBadges([]);
+      return;
+    }
+
+    try {
+      setBadges(await fetchBadges(user.id));
+    } catch (error) {
+      console.error('Error loading badges:', error);
+      setBadges([]);
+    }
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadBadges();
+    }, [loadBadges])
+  );
+
   const fetchFriends = useCallback(async () => {
     if (!user?.id) {
       setFriends([]);
@@ -578,7 +573,7 @@ export default function ProfileScreen() {
       setFriends([]);
       setFriendCount(0);
     }
-  }, [user?.id]);
+  }, [user]);
 
   /*
    * Refresh whenever Profile becomes active.
@@ -602,7 +597,7 @@ export default function ProfileScreen() {
   );
 
   const earnedCount =
-    BADGES.filter(
+    badges.filter(
       (badge) => badge.earned
     ).length;
 
@@ -911,7 +906,7 @@ export default function ProfileScreen() {
               }
             >
               {earnedCount} of{' '}
-              {BADGES.length}{' '}
+              {badges.length}{' '}
               earned
             </Text>
           </View>
@@ -919,7 +914,7 @@ export default function ProfileScreen() {
           <View
             style={styles.badgeWrap}
           >
-            {BADGES.map(
+            {badges.map(
               (badge, index) => (
                 <View
                   key={index}
