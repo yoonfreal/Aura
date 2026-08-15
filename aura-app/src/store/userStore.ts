@@ -10,6 +10,7 @@ interface UserStore {
   weeklyStats: WeeklyStats | null;
   claimableCount: number;
   friendRequestCount: number;
+  notificationCount: number;
 
   setUser: (user: User) => void;
   clearUser: () => void;
@@ -20,6 +21,7 @@ interface UserStore {
   setWeeklyStats: (stats: WeeklyStats) => void;
   setClaimableCount: (count: number) => void;
   setFriendRequestCount: (count: number) => void;
+  setNotificationCount: (count: number) => void;
 }
 
 export const useUserStore = create<UserStore>((set) => ({
@@ -39,6 +41,7 @@ export const useUserStore = create<UserStore>((set) => ({
   weeklyStats: null,
   claimableCount: 0,
   friendRequestCount: 0,
+  notificationCount: 0,
 
   setUser: (user) => set({ user }),
   clearUser: () => set({ user: null }),
@@ -49,4 +52,5 @@ export const useUserStore = create<UserStore>((set) => ({
   setWeeklyStats: (weeklyStats) => set({ weeklyStats }),
   setClaimableCount: (claimableCount) => set({ claimableCount }),
   setFriendRequestCount: (friendRequestCount) => set({ friendRequestCount }),
+  setNotificationCount: (notificationCount) => set({ notificationCount }),
 }));

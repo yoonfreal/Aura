@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { notifyComment, notifyFriendsOfPost } from '@/lib/notifications';
 
 type ProfileNameRow = {
   id: string;
@@ -24,17 +25,77 @@ async function fetchAcceptedFriendIds(userId: string): Promise<string[]> {
   );
 }
 
-export type AchievementKind = 'mission' | 'badge' | 'challenge_win';
+export type AchievementKind = 'mission' | 'badge' | 'challenge_win' | 'stat';
 
 export type AchievementCandidate = {
   kind: AchievementKind;
   title: string;
   icon: string;
-  xp: number;
+  // null for stat candidates — sharing "today's steps" or "current streak" isn't itself an
+  // XP-earning event, unlike a mission/badge/challenge win.
+  xp: number | null;
   // Sort key only — never shown to the user, since mission completions only carry a date
   // (no time), so this is a same-day anchor, not a real moment.
   sortKey: string;
 };
+
+type TodayStatsRow = { steps: number; calories: number };
+type ProfileStatRow = { streak_days: number | null; level: number | null };
+
+// Candidates for the Achievement post picker built from the user's own current stats —
+// today's steps/calories, active streak, current level — not tied to any specific
+// mission/challenge event, so someone can share "how they're doing" even with nothing
+// freshly completed.
+async function fetchStatCandidates(userId: string): Promise<AchievementCandidate[]> {
+  const today = new Date().toISOString().split('T')[0];
+  // Anchored to the start of today, not the exact current instant — using "now" would always
+  // outrank a mission or challenge win from earlier today (those anchor at noon / their real
+  // completion time), which broke "most recent first" ordering. This still ranks below any
+  // actual completion from today while staying above anything from a prior day.
+  const todayStart = `${today}T00:00:00.000Z`;
+
+  const [{ data: statsData }, { data: profileData }] = await Promise.all([
+    supabase.from('daily_stats').select('steps, calories').eq('user_id', userId).eq('date', today).maybeSingle(),
+    supabase.from('profiles').select('streak_days, level').eq('id', userId).single(),
+  ]);
+
+  const stats = statsData as TodayStatsRow | null;
+  const profile = profileData as ProfileStatRow | null;
+  const candidates: AchievementCandidate[] = [];
+
+  if (stats?.steps) {
+    candidates.push({
+      kind: 'stat',
+      title: `Walked ${stats.steps.toLocaleString()} steps today`,
+      icon: '🦶',
+      xp: null,
+      sortKey: todayStart,
+    });
+  }
+  if (stats?.calories) {
+    candidates.push({
+      kind: 'stat',
+      title: `Burned ${stats.calories.toLocaleString()} calories today`,
+      icon: '🏋️',
+      xp: null,
+      sortKey: todayStart,
+    });
+  }
+  if (profile?.streak_days) {
+    candidates.push({
+      kind: 'stat',
+      title: `On a ${profile.streak_days}-day streak`,
+      icon: '🔥',
+      xp: null,
+      sortKey: todayStart,
+    });
+  }
+  if (profile?.level && profile.level > 1) {
+    candidates.push({ kind: 'stat', title: `Reached Level ${profile.level}`, icon: '⭐', xp: null, sortKey: todayStart });
+  }
+
+  return candidates;
+}
 
 type RecentMissionRow = {
   date: string;
@@ -51,11 +112,12 @@ type RecentHistoryRow = {
 };
 
 // Candidates for the Achievement post picker: completed missions and challenge wins/badges
-// from the last `days` days, newest first.
+// from the last `days` days, plus the user's own current stats (steps/calories/streak/level)
+// so there's always something to share even with nothing freshly completed. Newest first.
 export async function fetchRecentAchievements(userId: string, days = 3): Promise<AchievementCandidate[]> {
   const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
 
-  const [missionsRes, historyRes] = await Promise.all([
+  const [missionsRes, historyRes, statCandidates] = await Promise.all([
     supabase
       .from('user_missions')
       .select('date, missions(title, xp_reward, icon)')
@@ -70,6 +132,7 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
       .eq('won', true)
       .gte('archived_at', since)
       .order('archived_at', { ascending: false }),
+    fetchStatCandidates(userId),
   ]);
 
   const missionItems: AchievementCandidate[] = ((missionsRes.data ?? []) as RecentMissionRow[])
@@ -93,7 +156,7 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
       sortKey: r.archived_at,
     }));
 
-  return [...missionItems, ...historyItems].sort(
+  return [...statCandidates, ...missionItems, ...historyItems].sort(
     (a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime(),
   );
 }
@@ -146,28 +209,48 @@ export type NewPost = {
     activityType: string;
     activityAt: string;
     location: string;
-    peopleNeeded: number;
+    peopleNeeded: number | null;
   };
   expiryOption?: ExpiryOption | null;
   challengeId?: string | null;
 };
 
 export async function createPost(userId: string, input: NewPost): Promise<void> {
-  const { error } = await supabase.from('posts').insert({
-    user_id: userId,
-    type: input.type,
-    caption: input.caption || null,
-    achievement_kind: input.achievement?.kind ?? null,
-    achievement_title: input.achievement?.title ?? null,
-    achievement_icon: input.achievement?.icon ?? null,
-    achievement_xp: input.achievement?.xp ?? null,
-    activity_type: input.partner?.activityType ?? null,
-    activity_at: input.partner?.activityAt ?? null,
-    location: input.partner?.location ?? null,
-    people_needed: input.partner?.peopleNeeded ?? null,
-    expires_at: computeExpiresAt(input.expiryOption, input.partner?.activityAt ?? null),
-    challenge_id: input.challengeId ?? null,
-  });
+  const { data, error } = await supabase
+    .from('posts')
+    .insert({
+      user_id: userId,
+      type: input.type,
+      caption: input.caption || null,
+      achievement_kind: input.achievement?.kind ?? null,
+      achievement_title: input.achievement?.title ?? null,
+      achievement_icon: input.achievement?.icon ?? null,
+      achievement_xp: input.achievement?.xp ?? null,
+      activity_type: input.partner?.activityType ?? null,
+      activity_at: input.partner?.activityAt ?? null,
+      location: input.partner?.location ?? null,
+      people_needed: input.partner?.peopleNeeded ?? null,
+      expires_at: computeExpiresAt(input.expiryOption, input.partner?.activityAt ?? null),
+      challenge_id: input.challengeId ?? null,
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  // The post itself is already saved at this point — a notification failure must not
+  // surface as "post failed", same reasoning as the comment-notification guard below.
+  try {
+    await notifyFriendsOfPost(userId, (data as { id: string }).id);
+  } catch (err) {
+    console.error('notifyFriendsOfPost failed', err);
+  }
+}
+
+// RLS restricts this to the author's own rows, but userId is passed explicitly to match
+// every other write in this file and avoid depending solely on the DB policy to catch a
+// caller's mistake.
+export async function deletePost(userId: string, postId: string): Promise<void> {
+  const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', userId);
   if (error) throw error;
 }
 
@@ -207,31 +290,10 @@ type PostRow = {
   created_at: string;
 };
 
-// Friends' (and your own) posts, newest first — created_at is a real DB timestamp set at
-// post time, so relative-time display is always accurate regardless of timezone. Excludes
-// posts whose expires_at has passed (Partner posts with auto-expiry on).
-export async function fetchFriendPosts(userId: string, limit = 30): Promise<FeedPost[]> {
-  const friendIds = await fetchAcceptedFriendIds(userId);
-  const authorIds = [userId, ...friendIds];
+const POST_SELECT =
+  'id, user_id, type, caption, achievement_title, achievement_icon, achievement_xp, activity_type, activity_at, location, people_needed, challenge_id, challenges(title, icon), created_at';
 
-  const { data, error } = await supabase
-    .from('posts')
-    .select(
-      'id, user_id, type, caption, achievement_title, achievement_icon, achievement_xp, activity_type, activity_at, location, people_needed, challenge_id, challenges(title, icon), created_at',
-    )
-    .in('user_id', authorIds)
-    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
-    .order('created_at', { ascending: false })
-    .limit(limit);
-  if (error) throw error;
-
-  const rows = (data ?? []) as PostRow[];
-  const involvedIds = [...new Set(rows.map((r) => r.user_id))];
-  const { data: profilesData } = involvedIds.length
-    ? await supabase.from('profiles').select('id, username, first_name, last_name').in('id', involvedIds)
-    : { data: [] as ProfileNameRow[] };
-  const profileById = new Map(((profilesData ?? []) as ProfileNameRow[]).map((p) => [p.id, p]));
-
+function mapPostRows(rows: PostRow[], profileById: Map<string, ProfileNameRow>): FeedPost[] {
   return rows.map((r) => {
     const challenge = Array.isArray(r.challenges) ? r.challenges[0] : r.challenges;
     return {
@@ -255,6 +317,47 @@ export async function fetchFriendPosts(userId: string, limit = 30): Promise<Feed
   });
 }
 
+async function fetchProfilesById(userIds: string[]): Promise<Map<string, ProfileNameRow>> {
+  const { data } = userIds.length
+    ? await supabase.from('profiles').select('id, username, first_name, last_name').in('id', userIds)
+    : { data: [] as ProfileNameRow[] };
+  return new Map(((data ?? []) as ProfileNameRow[]).map((p) => [p.id, p]));
+}
+
+// Friends' (and your own) posts, newest first — created_at is a real DB timestamp set at
+// post time, so relative-time display is always accurate regardless of timezone. Excludes
+// posts whose expires_at has passed (Partner posts with auto-expiry on).
+export async function fetchFriendPosts(userId: string, limit = 30): Promise<FeedPost[]> {
+  const friendIds = await fetchAcceptedFriendIds(userId);
+  const authorIds = [userId, ...friendIds];
+
+  const { data, error } = await supabase
+    .from('posts')
+    .select(POST_SELECT)
+    .in('user_id', authorIds)
+    .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  const rows = (data ?? []) as PostRow[];
+  const profileById = await fetchProfilesById([...new Set(rows.map((r) => r.user_id))]);
+  return mapPostRows(rows, profileById);
+}
+
+// Loads one post regardless of the feed's usual friend/limit scoping — used when a
+// notification deep-links straight to a specific post (RLS still applies: this returns
+// nothing if the viewer isn't the author or an accepted friend of theirs).
+export async function fetchPostById(postId: string): Promise<FeedPost | null> {
+  const { data, error } = await supabase.from('posts').select(POST_SELECT).eq('id', postId).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as PostRow;
+  const profileById = await fetchProfilesById([row.user_id]);
+  return mapPostRows([row], profileById)[0];
+}
+
 export function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const minutes = Math.floor(diffMs / 60000);
@@ -265,6 +368,48 @@ export function timeAgo(iso: string): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+export type JoinState = { count: number; joined: boolean };
+const EMPTY_JOIN: JoinState = { count: 0, joined: false };
+
+export async function fetchJoins(postIds: string[], userId: string): Promise<Map<string, JoinState>> {
+  const map = new Map<string, JoinState>();
+  for (const id of postIds) map.set(id, { ...EMPTY_JOIN });
+  if (postIds.length === 0) return map;
+
+  const { data, error } = await supabase.from('post_joins').select('post_id, user_id').in('post_id', postIds);
+  if (error) throw error;
+
+  for (const row of (data ?? []) as { post_id: string; user_id: string }[]) {
+    const entry = map.get(row.post_id);
+    if (!entry) continue;
+    entry.count += 1;
+    if (row.user_id === userId) entry.joined = true;
+  }
+  return map;
+}
+
+// Joins a Partner post if there's still room — peopleNeeded null means unlimited ("Any").
+// Re-checks the live count right before inserting to shrink (not eliminate) the race window
+// where two people tap Join for the last open spot at the same moment.
+export async function joinPost(userId: string, postId: string, peopleNeeded: number | null): Promise<void> {
+  if (peopleNeeded != null) {
+    const { count, error: countError } = await supabase
+      .from('post_joins')
+      .select('id', { count: 'exact', head: true })
+      .eq('post_id', postId);
+    if (countError) throw countError;
+    if ((count ?? 0) >= peopleNeeded) throw new Error('This post just filled up.');
+  }
+
+  const { error } = await supabase.from('post_joins').insert({ post_id: postId, user_id: userId });
+  if (error) throw error;
+}
+
+export async function leavePost(userId: string, postId: string): Promise<void> {
+  const { error } = await supabase.from('post_joins').delete().eq('post_id', postId).eq('user_id', userId);
+  if (error) throw error;
 }
 
 export type ReactionKind = 'fire' | 'like';
@@ -314,4 +459,84 @@ export async function toggleReaction(
     const { error } = await supabase.from('post_reactions').insert({ post_id: postId, user_id: userId, reaction });
     if (error) throw error;
   }
+}
+
+export type Comment = {
+  id: string;
+  postId: string;
+  userId: string;
+  name: string;
+  body: string;
+  createdAt: string;
+};
+
+type CommentRow = { id: string; post_id: string; user_id: string; body: string; created_at: string };
+
+// Lightweight per-post counts for the feed card's "💬 N" button — full comment bodies are
+// only fetched when a thread is actually expanded, not preloaded for every post on scroll.
+export async function fetchCommentCounts(postIds: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  for (const id of postIds) map.set(id, 0);
+  if (postIds.length === 0) return map;
+
+  const { data, error } = await supabase.from('post_comments').select('post_id').in('post_id', postIds);
+  if (error) throw error;
+
+  for (const row of (data ?? []) as { post_id: string }[]) {
+    map.set(row.post_id, (map.get(row.post_id) ?? 0) + 1);
+  }
+  return map;
+}
+
+export async function fetchComments(postId: string): Promise<Comment[]> {
+  const { data, error } = await supabase
+    .from('post_comments')
+    .select('id, post_id, user_id, body, created_at')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const rows = (data ?? []) as CommentRow[];
+  const userIds = [...new Set(rows.map((r) => r.user_id))];
+  const { data: profilesData } = userIds.length
+    ? await supabase.from('profiles').select('id, username, first_name, last_name').in('id', userIds)
+    : { data: [] as ProfileNameRow[] };
+  const profileById = new Map(((profilesData ?? []) as ProfileNameRow[]).map((p) => [p.id, p]));
+
+  return rows.map((r) => ({
+    id: r.id,
+    postId: r.post_id,
+    userId: r.user_id,
+    name: displayName(profileById.get(r.user_id)),
+    body: r.body,
+    createdAt: r.created_at,
+  }));
+}
+
+// postAuthorId identifies who to notify — passed in rather than looked up here since the
+// caller (the feed) already has it on the FeedPost it's commenting on.
+export async function addComment(userId: string, postId: string, postAuthorId: string, body: string): Promise<void> {
+  const trimmed = body.trim();
+  if (!trimmed) return;
+
+  const { data, error } = await supabase
+    .from('post_comments')
+    .insert({ post_id: postId, user_id: userId, body: trimmed })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  // The comment itself is already saved at this point — a notification failure (e.g. the
+  // notifications table/policies not set up yet) must not surface as "comment failed".
+  const commentId = (data as { id: string }).id;
+  try {
+    await notifyComment(postAuthorId, userId, postId, commentId);
+  } catch (err) {
+    console.error('notifyComment failed', err);
+  }
+}
+
+export async function deleteComment(userId: string, commentId: string): Promise<void> {
+  const { error } = await supabase.from('post_comments').delete().eq('id', commentId).eq('user_id', userId);
+  if (error) throw error;
 }
