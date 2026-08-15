@@ -4,9 +4,14 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
+  TextInput,
+  FlatList,
+  Modal,
 } from 'react-native';
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
+
 import {
   Share2,
   Pencil,
@@ -16,25 +21,35 @@ import {
   Shield,
   HelpCircle,
   ChevronRight,
+  Search,
+  ArrowLeft,
+  User,
 } from 'lucide-react-native';
+
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState } from 'react';
+
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/store/userStore';
 import { getLevelTitle } from '@/lib/level';
-import { useRouter } from 'expo-router';
 
 const BG = '#E7ECF5';
 const CARD = '#FFFFFF';
 const BORDER = '#E3E7F0';
 const TEXT_DARK = '#1E2430';
 const TEXT_MUTED = '#8A93A6';
+
 const AVATAR_GREEN = '#2F5D4E';
 const SHARE_NAVY = '#1B2A41';
+
 const GOLD = '#F4B942';
 const GOLD_PILL = '#EFC988';
 const GOLD_PILL_TEXT = '#8A5A1E';
+
 const FLAME_ORANGE = '#F5822A';
 const MEDAL_RED = '#E0552B';
 const ICON_BG_PEACH = '#FBDCC8';
+
 const RING_TRACK = '#D3DAE6';
 const SIGN_OUT_RED = '#E53935';
 
@@ -53,27 +68,46 @@ type Badge = {
 };
 
 const BADGES: Badge[] = [
-  { label: '7-day Streak', icon: '🔥', earned: true },
-  { label: 'Top 15', icon: '🏅', earned: true },
-  { label: '10K Steps', icon: '👟', earned: true },
-  { label: 'Early Bird', icon: '🌅', earned: false },
-  { label: 'Iron Will', icon: '💪', earned: false },
+  {
+    label: '7-day Streak',
+    icon: '🔥',
+    earned: true,
+  },
+  {
+    label: 'Top 15',
+    icon: '🏅',
+    earned: true,
+  },
+  {
+    label: '10K Steps',
+    icon: '👟',
+    earned: true,
+  },
+  {
+    label: 'Early Bird',
+    icon: '🌅',
+    earned: false,
+  },
+  {
+    label: 'Iron Will',
+    icon: '💪',
+    earned: false,
+  },
 ];
 
-type Friend = {
-  name: string;
-  active?: boolean;
+type FriendProfile = {
+  id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  level?: number | null;
+  last_active_date?: string | null;
 };
 
-const FRIENDS: Friend[] = [
-  { name: 'Alex', active: true },
-  { name: 'Maria', active: true },
-  { name: 'Sam' },
-  { name: 'Priya', active: true },
-  { name: 'Leo' },
-];
-
-const FRIEND_COUNT = 142;
+type FriendshipRow = {
+  requester_id: string;
+  addressee_id: string;
+};
 
 function FriendAvatar({
   name,
@@ -93,7 +127,7 @@ function FriendAvatar({
       ]}
     >
       <Text style={styles.friendAvatarInitial}>
-        {name.charAt(0)}
+        {name.charAt(0).toUpperCase()}
       </Text>
     </View>
   );
@@ -160,65 +194,505 @@ function StatPill({
       activeOpacity={0.7}
     >
       <Text style={styles.statIcon}>{icon}</Text>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+
+      <Text style={styles.statValue}>
+        {value}
+      </Text>
+
+      <Text style={styles.statLabel}>
+        {label}
+      </Text>
     </TouchableOpacity>
   );
 }
 
+/* =========================================================
+   FRIEND LIST
+   ========================================================= */
+
+function FriendListModal({
+  visible,
+  friends,
+  onClose,
+}: {
+  visible: boolean;
+  friends: FriendProfile[];
+  onClose: () => void;
+}) {
+  const [searchText, setSearchText] = useState('');
+
+  const filteredFriends = friends.filter((friend) => {
+    const search = searchText.toLowerCase().trim();
+
+    if (!search) {
+      return true;
+    }
+
+    const username =
+      friend.username?.toLowerCase() ?? '';
+
+    const firstName =
+      friend.first_name?.toLowerCase() ?? '';
+
+    const lastName =
+      friend.last_name?.toLowerCase() ?? '';
+
+    const fullName =
+      `${firstName} ${lastName}`.trim();
+
+    return (
+      username.includes(search) ||
+      firstName.includes(search) ||
+      lastName.includes(search) ||
+      fullName.includes(search)
+    );
+  });
+
+  const getDisplayName = (
+    friend: FriendProfile
+  ) => {
+    if (friend.username) {
+      return friend.username;
+    }
+
+    const fullName =
+      `${friend.first_name ?? ''} ${
+        friend.last_name ?? ''
+      }`.trim();
+
+    return fullName || 'Friend';
+  };
+
+  const renderFriend = ({
+    item,
+    index,
+  }: {
+    item: FriendProfile;
+    index: number;
+  }) => {
+    const displayName =
+      getDisplayName(item);
+
+    return (
+      <View style={styles.friendListItem}>
+        <View
+          style={[
+            styles.friendListAvatar,
+            {
+              backgroundColor:
+                FRIEND_AVATAR_COLORS[
+                  index %
+                    FRIEND_AVATAR_COLORS.length
+                ],
+            },
+          ]}
+        >
+          <Text style={styles.friendListAvatarText}>
+            {displayName
+              .charAt(0)
+              .toUpperCase()}
+          </Text>
+        </View>
+
+        <View style={styles.friendListInfo}>
+          <Text
+            style={styles.friendListName}
+            numberOfLines={1}
+          >
+            {displayName}
+          </Text>
+
+          <Text style={styles.friendListLevel}>
+            Level {item.level ?? 1}
+          </Text>
+        </View>
+
+        {item.last_active_date && (
+          <View
+            style={[
+              styles.activeDot,
+              {
+                backgroundColor:
+                  item.last_active_date ===
+                  new Date()
+                    .toISOString()
+                    .split('T')[0]
+                    ? '#45A36B'
+                    : '#C8CED9',
+              },
+            ]}
+          />
+        )}
+      </View>
+    );
+  };
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      presentationStyle="pageSheet"
+      onRequestClose={onClose}
+    >
+      <SafeAreaView
+        style={styles.friendListContainer}
+      >
+        {/* Header */}
+        <View style={styles.friendListHeader}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.friendBackButton}
+            activeOpacity={0.7}
+          >
+            <ArrowLeft
+              size={22}
+              color={TEXT_DARK}
+            />
+          </TouchableOpacity>
+
+          <Text style={styles.friendListTitle}>
+            Friends
+          </Text>
+
+          <View style={{ width: 40 }} />
+        </View>
+
+        {/* Search */}
+        <View style={styles.friendSearchContainer}>
+          <Search
+            size={18}
+            color={TEXT_MUTED}
+          />
+
+          <TextInput
+            style={styles.friendSearchInput}
+            placeholder="Search friends"
+            placeholderTextColor="#A6ADBB"
+            value={searchText}
+            onChangeText={setSearchText}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+
+        {/* Friend count */}
+        <View style={styles.friendListSectionHeader}>
+          <Text style={styles.friendListSectionTitle}>
+            Your Friends
+          </Text>
+
+          <Text style={styles.friendListCount}>
+            {friends.length}
+          </Text>
+        </View>
+
+        {/* Friends */}
+        {filteredFriends.length > 0 ? (
+          <FlatList
+            data={filteredFriends}
+            keyExtractor={(item) => item.id}
+            renderItem={renderFriend}
+            contentContainerStyle={
+              styles.friendListContent
+            }
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          />
+        ) : (
+          <View style={styles.emptyFriends}>
+            <View
+              style={styles.emptyFriendIcon}
+            >
+              <User
+                size={28}
+                color={TEXT_MUTED}
+              />
+            </View>
+
+            <Text style={styles.emptyFriendsTitle}>
+              {friends.length === 0
+                ? 'No friends yet'
+                : 'No friends found'}
+            </Text>
+
+            <Text style={styles.emptyFriendsText}>
+              {friends.length === 0
+                ? 'Your accepted friends will appear here.'
+                : 'Try searching for another friend.'}
+            </Text>
+          </View>
+        )}
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+/* =========================================================
+   PROFILE
+   ========================================================= */
+
 export default function ProfileScreen() {
   const router = useRouter();
+
   const { user } = useUserStore();
 
-  if (!user) return null;
+  const [friends, setFriends] =
+    useState<FriendProfile[]>([]);
+
+  const [friendCount, setFriendCount] =
+    useState(0);
+
+  const [friendListVisible, setFriendListVisible] =
+    useState(false);
+
+  const fetchFriends = useCallback(async () => {
+    if (!user?.id) {
+      setFriends([]);
+      setFriendCount(0);
+      return;
+    }
+
+    try {
+      /*
+       * ONLY accepted friendships.
+       *
+       * The current user can be either:
+       * - requester
+       * - addressee
+       */
+      const {
+        data: friendshipRows,
+        error: friendshipError,
+      } = await supabase
+        .from('friendships')
+        .select(
+          'requester_id, addressee_id'
+        )
+        .eq('status', 'accepted')
+        .or(
+          `requester_id.eq.${user.id},addressee_id.eq.${user.id}`
+        );
+
+      if (friendshipError) {
+        console.error(
+          'Error loading friendships:',
+          friendshipError
+        );
+
+        setFriends([]);
+        setFriendCount(0);
+        return;
+      }
+
+      const rows =
+        (friendshipRows ??
+          []) as FriendshipRow[];
+
+      /*
+       * Get the other user's ID from
+       * each accepted friendship.
+       */
+      const friendIds = rows
+        .map((friendship) => {
+          if (
+            friendship.requester_id ===
+            user.id
+          ) {
+            return friendship.addressee_id;
+          }
+
+          return friendship.requester_id;
+        })
+        .filter(
+          (id, index, array) =>
+            id &&
+            array.indexOf(id) === index
+        );
+
+      setFriendCount(friendIds.length);
+
+      if (friendIds.length === 0) {
+        setFriends([]);
+        return;
+      }
+
+      /*
+       * Get the actual friend profiles.
+       */
+      const {
+        data: profileRows,
+        error: profileError,
+      } = await supabase
+        .from('profiles')
+        .select(
+          `
+          id,
+          username,
+          first_name,
+          last_name,
+          level,
+          last_active_date
+          `
+        )
+        .in('id', friendIds);
+
+      if (profileError) {
+        console.error(
+          'Error loading friend profiles:',
+          profileError
+        );
+
+        setFriends([]);
+        return;
+      }
+
+      /*
+       * Keep the order consistent with the
+       * friendship IDs.
+       */
+      const profileMap = new Map(
+        (profileRows ?? []).map(
+          (profile) => [
+            profile.id,
+            profile,
+          ]
+        )
+      );
+
+      const orderedFriends =
+        friendIds
+          .map((id) =>
+            profileMap.get(id)
+          )
+          .filter(
+            Boolean
+          ) as FriendProfile[];
+
+      setFriends(orderedFriends);
+    } catch (error) {
+      console.error(
+        'Unexpected error loading friends:',
+        error
+      );
+
+      setFriends([]);
+      setFriendCount(0);
+    }
+  }, [user?.id]);
+
+  /*
+   * Refresh whenever Profile becomes active.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      fetchFriends();
+    }, [fetchFriends])
+  );
+
+  if (!user) {
+    return null;
+  }
 
   const pct = Math.min(
     100,
-    Math.round((user.xp / user.xpForNextLevel) * 100)
+    Math.round(
+      (user.xp / user.xpForNextLevel) *
+        100
+    )
   );
 
-  const earnedCount = BADGES.filter((b) => b.earned).length;
+  const earnedCount =
+    BADGES.filter(
+      (badge) => badge.earned
+    ).length;
+
+  /*
+   * Show up to 5 friend avatars on Profile.
+   */
+  const displayedFriends =
+    friends.slice(0, 5);
+
+  const today =
+    new Date()
+      .toISOString()
+      .split('T')[0];
+
+  const activeFriends =
+    friends.filter(
+      (friend) =>
+        friend.last_active_date ===
+        today
+    ).length;
 
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={
+          styles.scrollContent
+        }
         showsVerticalScrollIndicator={false}
       >
-        {/* Header row */}
+        {/* Header */}
         <View style={styles.headerRow}>
           <TouchableOpacity
             style={styles.shareButton}
             activeOpacity={0.8}
           >
-            <Share2 size={13} color="#fff" />
-            <Text style={styles.shareText}>Share</Text>
+            <Share2
+              size={13}
+              color="#fff"
+            />
+
+            <Text style={styles.shareText}>
+              Share
+            </Text>
           </TouchableOpacity>
         </View>
 
         {/* Avatar + identity */}
-        <View style={styles.identityBlock}>
+        <View
+          style={styles.identityBlock}
+        >
           <View style={styles.avatarWrap}>
             <XpRing pct={pct} />
 
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarInitial}>
-                {user.username.charAt(0).toUpperCase()}
+            <View
+              style={styles.avatarCircle}
+            >
+              <Text
+                style={styles.avatarInitial}
+              >
+                {user.username
+                  .charAt(0)
+                  .toUpperCase()}
               </Text>
             </View>
 
             <TouchableOpacity
-              style={styles.avatarEditBadge}
+              style={
+                styles.avatarEditBadge
+              }
               activeOpacity={0.7}
-              onPress={() => router.push('/edit-profile')}
+              onPress={() =>
+                router.push(
+                  '/edit-profile'
+                )
+              }
             >
-              <Pencil size={12} color={TEXT_DARK} />
+              <Pencil
+                size={12}
+                color={TEXT_DARK}
+              />
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity
             style={styles.nameRow}
-            onPress={() => router.push('/edit-profile')}
+            onPress={() =>
+              router.push(
+                '/edit-profile'
+              )
+            }
             activeOpacity={0.7}
           >
             <Text style={styles.nameText}>
@@ -232,26 +706,36 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <Text style={styles.levelText}>
-            Level {user.level} - {getLevelTitle(user.level)}
+            Level {user.level} -{' '}
+            {getLevelTitle(user.level)}
           </Text>
 
-          <View style={styles.xpBarRow}>
-            <View style={styles.xpTrack}>
+          <View
+            style={styles.xpBarRow}
+          >
+            <View
+              style={styles.xpTrack}
+            >
               <View
                 style={[
                   styles.xpFill,
-                  { width: `${pct}%` },
+                  {
+                    width: `${pct}%`,
+                  },
                 ]}
               />
             </View>
 
-            <Text style={styles.xpLabel}>
-              {user.xp}/{user.xpForNextLevel} XP
+            <Text
+              style={styles.xpLabel}
+            >
+              {user.xp}/
+              {user.xpForNextLevel} XP
             </Text>
           </View>
         </View>
 
-        {/* Stats row */}
+        {/* Stats */}
         <View style={styles.statsRow}>
           <StatPill
             icon="🏆"
@@ -261,30 +745,52 @@ export default function ProfileScreen() {
 
           <StatPill
             icon="🔥"
-            value={String(user.streak)}
+            value={String(
+              user.streak
+            )}
             label="Streak"
           />
 
           <StatPill
             icon="🎖️"
-            value={String(earnedCount)}
+            value={String(
+              earnedCount
+            )}
             label="Badges"
           />
         </View>
 
-        {/* Friends */}
+        {/* =================================================
+            FRIENDS CARD
+            Clicking this opens ONLY accepted friends.
+            ================================================= */}
         <TouchableOpacity
           style={styles.card}
-          activeOpacity={0.7}
+          activeOpacity={0.75}
+          onPress={() =>
+            setFriendListVisible(true)
+          }
         >
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardTitle}>
+          <View
+            style={
+              styles.cardHeaderRow
+            }
+          >
+            <Text
+              style={styles.cardTitle}
+            >
               Friends
             </Text>
 
-            <View style={styles.friendsViewAll}>
-              <Text style={styles.cardMeta}>
-                {FRIEND_COUNT} friends
+            <View
+              style={
+                styles.friendsViewAll
+              }
+            >
+              <Text
+                style={styles.cardMeta}
+              >
+                {friendCount} friends
               </Text>
 
               <ChevronRight
@@ -294,37 +800,102 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          <View style={styles.friendsRow}>
-            {FRIENDS.map((f, i) => (
-              <FriendAvatar
-                key={f.name}
-                name={f.name}
-                first={i === 0}
-                color={
-                  FRIEND_AVATAR_COLORS[
-                    i % FRIEND_AVATAR_COLORS.length
-                  ]
+          {displayedFriends.length >
+          0 ? (
+            <>
+              <View
+                style={styles.friendsRow}
+              >
+                {displayedFriends.map(
+                  (
+                    friend,
+                    index
+                  ) => {
+                    const displayName =
+                      friend.username ||
+                      friend.first_name ||
+                      'Friend';
+
+                    return (
+                      <FriendAvatar
+                        key={
+                          friend.id
+                        }
+                        name={
+                          displayName
+                        }
+                        first={
+                          index ===
+                          0
+                        }
+                        color={
+                          FRIEND_AVATAR_COLORS[
+                            index %
+                              FRIEND_AVATAR_COLORS.length
+                          ]
+                        }
+                      />
+                    );
+                  }
+                )}
+
+                {friendCount >
+                  5 && (
+                  <View
+                    style={
+                      styles.friendsMoreCircle
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.friendsMoreText
+                      }
+                    >
+                      +
+                      {friendCount -
+                        5}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              <Text
+                style={
+                  styles.friendsActiveText
                 }
-              />
-            ))}
-
-            <View style={styles.friendsMoreCircle}>
-              <Text style={styles.friendsMoreText}>
-                +{FRIEND_COUNT - FRIENDS.length}
+              >
+                {activeFriends}{' '}
+                active today
               </Text>
-            </View>
-          </View>
-
-          <Text style={styles.friendsActiveText}>
-            {FRIENDS.filter((f) => f.active).length} active today
-          </Text>
+            </>
+          ) : (
+            <Text
+              style={
+                styles.noFriendsText
+              }
+            >
+              No friends yet
+            </Text>
+          )}
         </TouchableOpacity>
 
         {/* Badge collection */}
         <View style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <View style={styles.badgeTitleRow}>
-              <Text style={styles.cardTitleCaps}>
+          <View
+            style={
+              styles.cardHeaderRow
+            }
+          >
+            <View
+              style={
+                styles.badgeTitleRow
+              }
+            >
+              <Text
+                style={
+                  styles.cardTitleCaps
+                }
+              >
                 BADGE COLLECTION
               </Text>
 
@@ -334,64 +905,88 @@ export default function ProfileScreen() {
               />
             </View>
 
-            <Text style={styles.badgeCountText}>
-              {earnedCount} of {BADGES.length} earned
+            <Text
+              style={
+                styles.badgeCountText
+              }
+            >
+              {earnedCount} of{' '}
+              {BADGES.length}{' '}
+              earned
             </Text>
           </View>
 
-          <View style={styles.badgeWrap}>
-            {BADGES.map((b, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.badgePill,
-                  {
-                    backgroundColor: b.earned
-                      ? GOLD_PILL
-                      : '#EEF0F5',
-                  },
-                ]}
-              >
-                {b.earned ? (
-                  <Text style={styles.badgeEmoji}>
-                    {b.icon}
-                  </Text>
-                ) : (
-                  <Lock
-                    size={11}
-                    color="#A6ADBB"
-                  />
-                )}
-
-                <Text
+          <View
+            style={styles.badgeWrap}
+          >
+            {BADGES.map(
+              (badge, index) => (
+                <View
+                  key={index}
                   style={[
-                    styles.badgeLabel,
+                    styles.badgePill,
                     {
-                      color: b.earned
-                        ? GOLD_PILL_TEXT
-                        : '#A6ADBB',
+                      backgroundColor:
+                        badge.earned
+                          ? GOLD_PILL
+                          : '#EEF0F5',
                     },
                   ]}
                 >
-                  {b.label}
-                </Text>
-              </View>
-            ))}
+                  {badge.earned ? (
+                    <Text
+                      style={
+                        styles.badgeEmoji
+                      }
+                    >
+                      {
+                        badge.icon
+                      }
+                    </Text>
+                  ) : (
+                    <Lock
+                      size={11}
+                      color="#A6ADBB"
+                    />
+                  )}
+
+                  <Text
+                    style={[
+                      styles.badgeLabel,
+                      {
+                        color:
+                          badge.earned
+                            ? GOLD_PILL_TEXT
+                            : '#A6ADBB',
+                      },
+                    ]}
+                  >
+                    {
+                      badge.label
+                    }
+                  </Text>
+                </View>
+              )
+            )}
           </View>
         </View>
 
-        {/* Menu list */}
+        {/* Menu */}
         <View style={styles.menuList}>
           <MenuRow
             icon={
               <UserCog
                 size={18}
-                color={FLAME_ORANGE}
+                color={
+                  FLAME_ORANGE
+                }
               />
             }
             label="Edit Profile"
             onPress={() =>
-              router.push('/edit-profile')
+              router.push(
+                '/edit-profile'
+              )
             }
           />
 
@@ -399,12 +994,16 @@ export default function ProfileScreen() {
             icon={
               <Settings
                 size={18}
-                color={FLAME_ORANGE}
+                color={
+                  FLAME_ORANGE
+                }
               />
             }
             label="Settings"
             onPress={() =>
-              router.push('/settings')
+              router.push(
+                '/settings'
+              )
             }
           />
 
@@ -412,12 +1011,16 @@ export default function ProfileScreen() {
             icon={
               <Shield
                 size={18}
-                color={MEDAL_RED}
+                color={
+                  MEDAL_RED
+                }
               />
             }
             label="Terms and Conditions"
             onPress={() =>
-              router.push('/terms')
+              router.push(
+                '/terms'
+              )
             }
           />
 
@@ -425,30 +1028,57 @@ export default function ProfileScreen() {
             icon={
               <HelpCircle
                 size={18}
-                color={MEDAL_RED}
+                color={
+                  MEDAL_RED
+                }
               />
             }
             label="Help & Support"
             onPress={() =>
-              router.push('/help')
+              router.push(
+                '/help'
+              )
             }
           />
         </View>
 
-        {/* Sign out */}
+        {/* Sign Out */}
         <TouchableOpacity
           style={styles.signOut}
-          onPress={() => supabase.auth.signOut()}
+          onPress={async () => {
+            await supabase.auth.signOut();
+          }}
           activeOpacity={0.85}
         >
-          <Text style={styles.signOutText}>
+          <Text
+            style={
+              styles.signOutText
+            }
+          >
             Sign Out
           </Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* Friend List */}
+      <FriendListModal
+        visible={
+          friendListVisible
+        }
+        friends={friends}
+        onClose={() =>
+          setFriendListVisible(
+            false
+          )
+        }
+      />
     </SafeAreaView>
   );
 }
+
+/* =========================================================
+   MENU ROW
+   ========================================================= */
 
 function MenuRow({
   icon,
@@ -465,12 +1095,20 @@ function MenuRow({
       activeOpacity={0.7}
       onPress={onPress}
     >
-      <View style={styles.menuLeft}>
-        <View style={styles.menuIconCircle}>
+      <View
+        style={styles.menuLeft}
+      >
+        <View
+          style={
+            styles.menuIconCircle
+          }
+        >
           {icon}
         </View>
 
-        <Text style={styles.menuLabel}>
+        <Text
+          style={styles.menuLabel}
+        >
           {label}
         </Text>
       </View>
@@ -483,17 +1121,18 @@ function MenuRow({
   );
 }
 
+/* =========================================================
+   STYLES
+   ========================================================= */
+
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: BG,
   },
 
-  // Increased from 32 to 120 so the
-  // Sign Out button can scroll above
-  // the bottom tab bar.
   scrollContent: {
-    paddingBottom: 120,
+    paddingBottom: 32,
   },
 
   headerRow: {
@@ -727,6 +1366,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
 
+  noFriendsText: {
+    fontSize: 12,
+    color: TEXT_MUTED,
+    marginTop: 2,
+  },
+
   badgeTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -815,5 +1460,163 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
+  },
+
+  /* =====================================================
+     FRIEND LIST MODAL
+     ===================================================== */
+
+  friendListContainer: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+
+  friendListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+
+  friendBackButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  friendListTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: TEXT_DARK,
+  },
+
+  friendSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    marginHorizontal: 16,
+    paddingHorizontal: 14,
+    height: 46,
+  },
+
+  friendSearchInput: {
+    flex: 1,
+    marginLeft: 10,
+    fontSize: 14,
+    color: TEXT_DARK,
+    height: 46,
+  },
+
+  friendListSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: 22,
+    paddingBottom: 10,
+  },
+
+  friendListSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: TEXT_DARK,
+  },
+
+  friendListCount: {
+    fontSize: 13,
+    color: TEXT_MUTED,
+    fontWeight: '600',
+  },
+
+  friendListContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 30,
+  },
+
+  friendListItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 8,
+  },
+
+  friendListAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  friendListAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+
+  friendListInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+
+  friendListName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: TEXT_DARK,
+  },
+
+  friendListLevel: {
+    fontSize: 12,
+    color: TEXT_MUTED,
+    marginTop: 3,
+  },
+
+  activeDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    marginRight: 4,
+  },
+
+  emptyFriends: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 40,
+    paddingBottom: 100,
+  },
+
+  emptyFriendIcon: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#EEF0F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+
+  emptyFriendsTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: TEXT_DARK,
+  },
+
+  emptyFriendsText: {
+    fontSize: 13,
+    color: TEXT_MUTED,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 19,
   },
 });
