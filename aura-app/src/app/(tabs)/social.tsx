@@ -10,28 +10,40 @@ import {
   fetchFriendPosts,
   fetchReactions,
   toggleReaction,
-  timeAgo,
-  ACTIVITY_TYPES,
+  fetchJoins,
+  joinPost,
+  leavePost,
+  deletePost,
+  fetchCommentCounts,
+  fetchComments,
+  addComment,
+  deleteComment,
   type FeedPost,
   type ReactionCounts,
   type ReactionKind,
+  type JoinState,
+  type Comment,
 } from '@/lib/posts';
 import { fetchOpen1v1Challenges, inviteOpponent, type Open1v1Challenge } from '@/lib/challenges';
+import {
+  countUnreadNotifications,
+  fetchNotifications,
+  markAllNotificationsRead,
+  type AppNotification,
+} from '@/lib/notifications';
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
+import { NotificationsModal } from '@/components/NotificationsModal';
+import { PostCard } from '@/components/PostCard';
 
 const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F'];
 const EMPTY_REACTION: ReactionCounts = { fire: 0, like: 0, userFire: false, userLike: false };
+const EMPTY_JOIN: JoinState = { count: 0, joined: false };
 type FilterType = 'All' | 'Feed' | 'Leaderboard' | 'Streaks';
+type PostFilter = 'All' | 'Mine' | 'Partner' | 'Achievement' | 'General';
+const POST_FILTERS: PostFilter[] = ['All', 'Mine', 'Partner', 'Achievement', 'General'];
 
 function avatarColor(i: number): string {
   return AVATAR_COLORS[i % AVATAR_COLORS.length];
-}
-
-function formatPartnerDate(iso: string): string {
-  const d = new Date(iso);
-  const datePart = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  const timePart = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-  return `${datePart} · ${timePart}`;
 }
 
 export default function SocialScreen() {
@@ -39,16 +51,29 @@ export default function SocialScreen() {
   const userId = useUserStore((state) => state.user?.id);
   const friendRequestCount = useUserStore((state) => state.friendRequestCount);
   const setFriendRequestCount = useUserStore((state) => state.setFriendRequestCount);
+  const unreadNotifications = useUserStore((state) => state.notificationCount);
+  const setUnreadNotifications = useUserStore((state) => state.setNotificationCount);
 
   const [filter, setFilter] = useState<FilterType>('All');
+  const [postFilter, setPostFilter] = useState<PostFilter>('All');
   const [loading, setLoading] = useState(true);
   const [streaks, setStreaks] = useState<StreakEntry[]>([]);
   const [leaderboard, setLeaderboard] = useState<FriendLeaderboardEntry[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [reactions, setReactions] = useState<Map<string, ReactionCounts>>(new Map());
+  const [joins, setJoins] = useState<Map<string, JoinState>>(new Map());
+  const [commentCounts, setCommentCounts] = useState<Map<string, number>>(new Map());
+  const [expandedPostId, setExpandedPostId] = useState<string | null>(null);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [commentDraft, setCommentDraft] = useState('');
+  const [postingComment, setPostingComment] = useState(false);
   const [challengeTarget, setChallengeTarget] = useState<FeedPost | null>(null);
   const [open1v1, setOpen1v1] = useState<Open1v1Challenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -63,7 +88,10 @@ export default function SocialScreen() {
     setPosts(postsData);
     setLoading(false);
 
+    countUnreadNotifications(userId).then(setUnreadNotifications).catch(() => {});
     fetchReactions(postsData.map((p) => p.id), userId).then(setReactions).catch(() => {});
+    fetchJoins(postsData.map((p) => p.id), userId).then(setJoins).catch(() => {});
+    fetchCommentCounts(postsData.map((p) => p.id)).then(setCommentCounts).catch(() => {});
     countIncomingRequests(userId).then(setFriendRequestCount).catch(() => {});
   }, [userId]);
 
@@ -93,6 +121,33 @@ export default function SocialScreen() {
     }
   }
 
+  async function handleJoinToggle(post: FeedPost) {
+    if (!userId) return;
+    const current = joins.get(post.id) ?? EMPTY_JOIN;
+    const optimistic = new Map(joins);
+
+    if (current.joined) {
+      optimistic.set(post.id, { count: Math.max(0, current.count - 1), joined: false });
+      setJoins(optimistic);
+      try {
+        await leavePost(userId, post.id);
+      } catch {
+        setJoins(joins);
+      }
+      return;
+    }
+
+    if (post.peopleNeeded != null && current.count >= post.peopleNeeded) return;
+    optimistic.set(post.id, { count: current.count + 1, joined: true });
+    setJoins(optimistic);
+    try {
+      await joinPost(userId, post.id, post.peopleNeeded);
+    } catch (err) {
+      setJoins(joins);
+      Alert.alert('Could not join', (err as { message?: string })?.message ?? 'Please try again.');
+    }
+  }
+
   function handleOpenChallenge(post: FeedPost) {
     setChallengeTarget(post);
     setLoadingChallenges(true);
@@ -114,6 +169,115 @@ export default function SocialScreen() {
     }
   }
 
+  function handleDeletePost(post: FeedPost) {
+    if (!userId) return;
+    Alert.alert('Delete post?', 'This removes it for everyone who could see it.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const previous = posts;
+          setPosts((prev) => prev.filter((p) => p.id !== post.id));
+          try {
+            await deletePost(userId, post.id);
+          } catch (err) {
+            setPosts(previous);
+            Alert.alert('Could not delete', (err as { message?: string })?.message ?? 'Please try again.');
+          }
+        },
+      },
+    ]);
+  }
+
+  function handleToggleComments(postId: string) {
+    if (expandedPostId === postId) {
+      setExpandedPostId(null);
+      return;
+    }
+    setExpandedPostId(postId);
+    setCommentDraft('');
+    setLoadingComments(true);
+    fetchComments(postId)
+      .then(setComments)
+      .catch(() => setComments([]))
+      .finally(() => setLoadingComments(false));
+  }
+
+  async function handleAddComment(post: FeedPost) {
+    if (!userId || !commentDraft.trim() || postingComment) return;
+    setPostingComment(true);
+    try {
+      await addComment(userId, post.id, post.userId, commentDraft);
+      setCommentDraft('');
+      const updated = await fetchComments(post.id);
+      setComments(updated);
+      setCommentCounts((prev) => new Map(prev).set(post.id, updated.length));
+    } catch (err) {
+      Alert.alert('Could not comment', (err as { message?: string })?.message ?? 'Please try again.');
+    } finally {
+      setPostingComment(false);
+    }
+  }
+
+  function handleOpenNotifications() {
+    if (!userId) return;
+    setShowNotifications(true);
+    setLoadingNotifications(true);
+    fetchNotifications(userId)
+      .then(setNotifications)
+      .catch(() => setNotifications([]))
+      .finally(() => setLoadingNotifications(false));
+    markAllNotificationsRead(userId)
+      .then(() => setUnreadNotifications(0))
+      .catch(() => {});
+  }
+
+  function handleNotificationPress(notification: AppNotification) {
+    setShowNotifications(false);
+    if (!notification.postId) return;
+    router.push(`/post/${notification.postId}`);
+  }
+
+  function handleDeleteComment(comment: Comment) {
+    if (!userId) return;
+    Alert.alert('Delete comment?', undefined, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const previous = comments;
+          const next = comments.filter((c) => c.id !== comment.id);
+          setComments(next);
+          setCommentCounts((prev) => new Map(prev).set(comment.postId, next.length));
+          try {
+            await deleteComment(userId, comment.id);
+          } catch (err) {
+            setComments(previous);
+            setCommentCounts((prev) => new Map(prev).set(comment.postId, previous.length));
+            Alert.alert('Could not delete', (err as { message?: string })?.message ?? 'Please try again.');
+          }
+        },
+      },
+    ]);
+  }
+
+  const filteredPosts = posts.filter((post) => {
+    switch (postFilter) {
+      case 'Mine':
+        return post.userId === userId;
+      case 'Partner':
+        return post.type === 'partner';
+      case 'Achievement':
+        return post.type === 'achievement';
+      case 'General':
+        return post.type === 'thoughts';
+      default:
+        return true;
+    }
+  });
+
   const showStreaks = filter === 'All' || filter === 'Streaks';
   const showLeaderboard = filter === 'All' || filter === 'Leaderboard';
   const showFeed = filter === 'All' || filter === 'Feed';
@@ -123,6 +287,14 @@ export default function SocialScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Social</Text>
         <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications}>
+            <Ionicons name="notifications-outline" size={20} color="#1B2B4B" />
+            {unreadNotifications > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/create-post')}>
             <Ionicons name="add-circle-outline" size={22} color="#1B2B4B" />
           </TouchableOpacity>
@@ -206,103 +378,53 @@ export default function SocialScreen() {
           {showFeed && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>ACTIVITY FEED</Text>
-              {posts.length === 0 ? (
-                <Text style={styles.emptyText}>No posts yet. Share an achievement or a thought to get started.</Text>
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.postFilterRow}>
+                {POST_FILTERS.map((f) => (
+                  <TouchableOpacity
+                    key={f}
+                    style={[styles.postFilterPill, postFilter === f && styles.postFilterPillActive]}
+                    onPress={() => setPostFilter(f)}
+                  >
+                    <Text style={[styles.postFilterPillText, postFilter === f && styles.postFilterPillTextActive]}>
+                      {f === 'General' ? 'General' : f}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {filteredPosts.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  {postFilter === 'Mine'
+                    ? "You haven't posted anything yet."
+                    : 'No posts yet. Share an achievement or a thought to get started.'}
+                </Text>
               ) : (
-                posts.map((post, i) => {
-                  const r = reactions.get(post.id) ?? EMPTY_REACTION;
-                  const isSelf = post.userId === userId;
-                  return (
-                    <View key={post.id} style={styles.feedCard}>
-                      <View style={styles.feedTopRow}>
-                        <View style={[styles.avatar, { backgroundColor: avatarColor(i) }]}>
-                          <Text style={styles.avatarText}>{post.name.charAt(0).toUpperCase()}</Text>
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.feedName}>{isSelf ? 'You' : post.name}</Text>
-                          <Text style={styles.feedTime}>{timeAgo(post.createdAt)}</Text>
-                        </View>
-                      </View>
-
-                      {post.caption && <Text style={styles.feedCaption}>{post.caption}</Text>}
-
-                      {post.achievementTitle && (
-                        <View style={styles.achievementPill}>
-                          <Text style={styles.achievementPillIcon}>{post.achievementIcon}</Text>
-                          <Text style={styles.achievementPillText}>{post.achievementTitle}</Text>
-                          {post.achievementXp != null && (
-                            <Text style={styles.achievementPillXp}>+{post.achievementXp} XP</Text>
-                          )}
-                        </View>
-                      )}
-
-                      {post.type === 'partner' && (
-                        <View style={styles.partnerCard}>
-                          <View style={styles.partnerRow}>
-                            <Text style={styles.partnerIcon}>
-                              {ACTIVITY_TYPES.find((a) => a.value === post.activityType)?.icon ?? '⚡'}
-                            </Text>
-                            <Text style={styles.partnerText}>
-                              {ACTIVITY_TYPES.find((a) => a.value === post.activityType)?.label ?? post.activityType}
-                            </Text>
-                          </View>
-                          {post.activityAt && (
-                            <View style={styles.partnerRow}>
-                              <Ionicons name="calendar-outline" size={14} color="#6B7280" />
-                              <Text style={styles.partnerText}>{formatPartnerDate(post.activityAt)}</Text>
-                            </View>
-                          )}
-                          {post.location && (
-                            <View style={styles.partnerRow}>
-                              <Ionicons name="location-outline" size={14} color="#6B7280" />
-                              <Text style={styles.partnerText}>{post.location}</Text>
-                            </View>
-                          )}
-                          {post.peopleNeeded != null && (
-                            <View style={styles.partnerRow}>
-                              <Ionicons name="people-outline" size={14} color="#6B7280" />
-                              <Text style={styles.partnerText}>{post.peopleNeeded} people needed</Text>
-                            </View>
-                          )}
-                        </View>
-                      )}
-
-                      {post.linkedChallengeTitle && (
-                        <TouchableOpacity
-                          style={styles.linkedChallengePill}
-                          onPress={() => router.push('/(tabs)/challenges')}
-                        >
-                          <Text style={styles.linkedChallengePillIcon}>{post.linkedChallengeIcon}</Text>
-                          <Text style={styles.linkedChallengePillText}>Linked: {post.linkedChallengeTitle}</Text>
-                          <Ionicons name="chevron-forward" size={14} color="#1B2B4B" />
-                        </TouchableOpacity>
-                      )}
-
-                      <View style={styles.feedFooterRow}>
-                        <TouchableOpacity
-                          style={[styles.reactPill, r.userFire && styles.reactPillActive]}
-                          onPress={() => handleReact(post.id, 'fire')}
-                        >
-                          <Text style={styles.reactEmoji}>🔥</Text>
-                          <Text style={[styles.reactCount, r.userFire && styles.reactCountActive]}>{r.fire}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.reactPill, r.userLike && styles.reactPillActive]}
-                          onPress={() => handleReact(post.id, 'like')}
-                        >
-                          <Ionicons name="thumbs-up" size={14} color={r.userLike ? '#1B2B4B' : '#8A9BB0'} />
-                          <Text style={[styles.reactCount, r.userLike && styles.reactCountActive]}>{r.like}</Text>
-                        </TouchableOpacity>
-                        {!isSelf && (
-                          <TouchableOpacity style={styles.challengeBtn} onPress={() => handleOpenChallenge(post)}>
-                            <Ionicons name="flash" size={14} color="#F5B800" />
-                            <Text style={styles.challengeBtnText}>Challenge</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  );
-                })
+                filteredPosts.map((post, i) => (
+                  <PostCard
+                    key={post.id}
+                    post={post}
+                    avatarColor={avatarColor(i)}
+                    currentUserId={userId}
+                    onDelete={() => handleDeletePost(post)}
+                    onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
+                    reaction={reactions.get(post.id) ?? EMPTY_REACTION}
+                    onReact={(kind) => handleReact(post.id, kind)}
+                    join={joins.get(post.id) ?? EMPTY_JOIN}
+                    onToggleJoin={() => handleJoinToggle(post)}
+                    onOpenChallenge={() => handleOpenChallenge(post)}
+                    commentCount={commentCounts.get(post.id) ?? 0}
+                    commentsExpanded={expandedPostId === post.id}
+                    onToggleComments={() => handleToggleComments(post.id)}
+                    comments={expandedPostId === post.id ? comments : []}
+                    loadingComments={loadingComments}
+                    commentDraft={commentDraft}
+                    onChangeCommentDraft={setCommentDraft}
+                    onSubmitComment={() => handleAddComment(post)}
+                    postingComment={postingComment}
+                    onDeleteComment={handleDeleteComment}
+                  />
+                ))
               )}
             </View>
           )}
@@ -325,6 +447,14 @@ export default function SocialScreen() {
         loading={loadingChallenges}
         onClose={() => setChallengeTarget(null)}
         onConfirm={handleConfirmChallenge}
+      />
+
+      <NotificationsModal
+        visible={showNotifications}
+        notifications={notifications}
+        loading={loadingNotifications}
+        onClose={() => setShowNotifications(false)}
+        onPressNotification={handleNotificationPress}
       />
     </SafeAreaView>
   );
@@ -394,6 +524,19 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
 
+  postFilterRow: { gap: 8, paddingRight: 8, marginBottom: 14 },
+  postFilterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  postFilterPillActive: { backgroundColor: '#1B2B4B', borderColor: '#1B2B4B' },
+  postFilterPillText: { fontSize: 12, fontWeight: '700', color: '#0D1829' },
+  postFilterPillTextActive: { color: '#fff' },
+
   streakRow: { gap: 12, paddingRight: 8 },
   streakCard: {
     width: 92,
@@ -439,90 +582,6 @@ const styles = StyleSheet.create({
   xpPillSelf: { backgroundColor: '#1B2B4B' },
   xpPillText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
   xpPillTextSelf: { color: '#fff' },
-
-  feedCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  feedTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  feedName: { fontSize: 14, fontWeight: '800', color: '#0D1829' },
-  feedTime: { fontSize: 11, color: '#9CA3AF', marginTop: 1 },
-  feedCaption: { fontSize: 14, color: '#374151', lineHeight: 19, marginTop: 10 },
-
-  achievementPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FDF3D6',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  achievementPillIcon: { fontSize: 14 },
-  achievementPillText: { fontSize: 12, fontWeight: '700', color: '#8A6D00' },
-  achievementPillXp: { fontSize: 11, fontWeight: '700', color: '#8A6D00', opacity: 0.8 },
-
-  partnerCard: {
-    backgroundColor: '#F0F4F8',
-    borderRadius: 12,
-    padding: 10,
-    marginTop: 10,
-    gap: 6,
-  },
-  partnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  partnerIcon: { fontSize: 14 },
-  partnerText: { fontSize: 12, fontWeight: '600', color: '#374151' },
-
-  linkedChallengePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#EBF2FF',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    marginTop: 10,
-  },
-  linkedChallengePillIcon: { fontSize: 13 },
-  linkedChallengePillText: { fontSize: 12, fontWeight: '700', color: '#1B2B4B' },
-
-  feedFooterRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 12 },
-  reactPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  reactPillActive: { backgroundColor: '#EBF2FF', borderColor: '#93B4E0' },
-  reactEmoji: { fontSize: 13 },
-  reactCount: { fontSize: 12, fontWeight: '700', color: '#8A9BB0' },
-  reactCountActive: { color: '#1B2B4B' },
-  challengeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginLeft: 'auto',
-  },
-  challengeBtnText: { fontSize: 12, fontWeight: '700', color: '#0D1829' },
 
   emptyText: { color: '#9CA3AF', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },

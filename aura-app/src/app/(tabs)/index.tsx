@@ -20,6 +20,7 @@ import {
 } from '@/lib/api';
 import { syncChallengeProgressForUser, refreshClaimableCount } from '@/lib/challenges';
 import { countIncomingRequests } from '@/lib/friends';
+import { countUnreadNotifications } from '@/lib/notifications';
 import { getLevelTitle, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
@@ -28,7 +29,7 @@ export default function HomeScreen() {
   const {
     user, dailyStats, missions, watchSync, activeTab, weeklyStats, friendRequestCount,
     setActiveTab, setDailyStats, setWatchSync, setMissions, setUser, setWeeklyStats, setClaimableCount,
-    setFriendRequestCount,
+    setFriendRequestCount, setNotificationCount,
   } = useUserStore();
   const pillAnim = useRef(new Animated.Value(0)).current;
   const [trackWidth, setTrackWidth] = useState(0);
@@ -74,6 +75,9 @@ export default function HomeScreen() {
 
           const friendRequests = await countIncomingRequests(user!.id);
           setFriendRequestCount(friendRequests);
+
+          const unreadNotifications = await countUnreadNotifications(user!.id);
+          setNotificationCount(unreadNotifications);
         } catch (err) {
           console.error('loadData failed', err);
         }

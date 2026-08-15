@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useUserStore } from '@/store/userStore';
 import { getLevelTitle } from '@/lib/level';
 import {
@@ -39,6 +38,28 @@ function formatDateTime(d: Date): string {
   return `${datePart} · ${timePart}`;
 }
 
+// No native date/time picker here on purpose — this screen needs to keep working in plain
+// Expo Go, which can't load native modules. Plain typed fields instead of an exact picker.
+// Accepts DD/MM/YYYY and HH:MM (24h); returns null while either field is incomplete/invalid
+// (including calendar-invalid dates like 31/02, which the Date object would otherwise silently
+// roll over into March).
+function parseActivityAt(dateText: string, timeText: string): Date | null {
+  const dateMatch = dateText.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const timeMatch = timeText.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) return null;
+
+  const day = Number(dateMatch[1]);
+  const month = Number(dateMatch[2]);
+  const year = Number(dateMatch[3]);
+  const hour = Number(timeMatch[1]);
+  const minute = Number(timeMatch[2]);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+
+  const d = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (d.getMonth() !== month - 1 || d.getDate() !== day) return null;
+  return d;
+}
+
 export default function CreatePostScreen() {
   const router = useRouter();
   const user = useUserStore((state) => state.user);
@@ -54,10 +75,10 @@ export default function CreatePostScreen() {
 
   // Partner
   const [activityType, setActivityType] = useState<string | null>(null);
-  const [activityAt, setActivityAt] = useState<Date | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateText, setDateText] = useState('');
+  const [timeText, setTimeText] = useState('');
   const [location, setLocation] = useState<string | null>(null);
-  const [peopleNeeded, setPeopleNeeded] = useState(2);
+  const [peopleNeeded, setPeopleNeeded] = useState<number | null>(2);
   const [autoExpire, setAutoExpire] = useState(false);
   const [expiryOption, setExpiryOption] = useState<ExpiryOption | null>(null);
 
@@ -91,6 +112,9 @@ export default function CreatePostScreen() {
         .finally(() => setLoadingLinkable(false));
     }
   }
+
+  const activityAt = parseActivityAt(dateText, timeText);
+  const dateTimeInvalid = (dateText.length > 0 || timeText.length > 0) && !activityAt;
 
   const partnerValid = type === 'partner' && !!activityType && !!activityAt && !!location;
   const canPost =
@@ -197,7 +221,7 @@ export default function CreatePostScreen() {
                     <Text style={styles.achievementIcon}>{a.icon}</Text>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.achievementTitle}>{a.title}</Text>
-                      <Text style={styles.achievementXp}>+{a.xp} XP</Text>
+                      {a.xp != null && <Text style={styles.achievementXp}>+{a.xp} XP</Text>}
                     </View>
                     <Ionicons
                       name={selected ? 'checkmark-circle' : 'ellipse-outline'}
@@ -231,21 +255,38 @@ export default function CreatePostScreen() {
               </ScrollView>
 
               <Text style={styles.fieldLabel}>Date & time</Text>
-              <TouchableOpacity style={styles.dateRow} onPress={() => setShowDatePicker(true)}>
-                <Ionicons name="calendar-outline" size={18} color="#1B2B4B" />
-                <Text style={styles.dateText}>{activityAt ? formatDateTime(activityAt) : 'Select date & time'}</Text>
-              </TouchableOpacity>
-              {showDatePicker && (
-                <DateTimePicker
-                  value={activityAt ?? new Date()}
-                  mode="datetime"
-                  minimumDate={new Date()}
-                  onChange={(_, date) => {
-                    setShowDatePicker(false);
-                    if (date) setActivityAt(date);
-                  }}
-                />
-              )}
+              <View style={styles.dateTimeRow}>
+                <View style={styles.dateTimeField}>
+                  <Ionicons name="calendar-outline" size={16} color="#8A9BB0" />
+                  <TextInput
+                    style={styles.dateTimeInput}
+                    placeholder="DD/MM/YYYY"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={10}
+                    value={dateText}
+                    onChangeText={setDateText}
+                  />
+                </View>
+                <View style={styles.dateTimeField}>
+                  <Ionicons name="time-outline" size={16} color="#8A9BB0" />
+                  <TextInput
+                    style={styles.dateTimeInput}
+                    placeholder="HH:MM"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={5}
+                    value={timeText}
+                    onChangeText={setTimeText}
+                  />
+                </View>
+              </View>
+
+              {activityAt ? (
+                <Text style={styles.dateSummary}>{formatDateTime(activityAt)}</Text>
+              ) : dateTimeInvalid ? (
+                <Text style={styles.dateError}>Use DD/MM/YYYY and 24h HH:MM (e.g. 25/12/2026 and 18:30)</Text>
+              ) : null}
 
               <Text style={styles.fieldLabel}>Location on campus</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -264,18 +305,28 @@ export default function CreatePostScreen() {
                 <Text style={styles.fieldLabel}>People needed</Text>
                 <View style={styles.stepper}>
                   <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => setPeopleNeeded((n) => Math.max(1, n - 1))}
+                    style={[styles.anyPill, peopleNeeded === null && styles.anyPillActive]}
+                    onPress={() => setPeopleNeeded((n) => (n === null ? 2 : null))}
                   >
-                    <Ionicons name="remove" size={16} color="#0D1829" />
+                    <Text style={[styles.anyPillText, peopleNeeded === null && styles.anyPillTextActive]}>Any</Text>
                   </TouchableOpacity>
-                  <Text style={styles.stepperValue}>{peopleNeeded}</Text>
-                  <TouchableOpacity
-                    style={styles.stepperBtn}
-                    onPress={() => setPeopleNeeded((n) => Math.min(20, n + 1))}
-                  >
-                    <Ionicons name="add" size={16} color="#0D1829" />
-                  </TouchableOpacity>
+                  {peopleNeeded !== null && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => setPeopleNeeded((n) => Math.max(1, (n ?? 1) - 1))}
+                      >
+                        <Ionicons name="remove" size={16} color="#0D1829" />
+                      </TouchableOpacity>
+                      <Text style={styles.stepperValue}>{peopleNeeded}</Text>
+                      <TouchableOpacity
+                        style={styles.stepperBtn}
+                        onPress={() => setPeopleNeeded((n) => Math.min(20, (n ?? 1) + 1))}
+                      >
+                        <Ionicons name="add" size={16} color="#0D1829" />
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             </View>
@@ -402,19 +453,19 @@ const styles = StyleSheet.create({
   },
   section: { marginTop: 20 },
 
-  typeRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
+  typeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
   typeCard: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 16,
-    borderRadius: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   typeCardActive: { backgroundColor: '#EBF2FF', borderColor: '#93B4E0' },
-  typeEmoji: { fontSize: 26 },
-  typeLabel: { fontSize: 13, fontWeight: '700', color: '#0D1829', marginTop: 6 },
+  typeEmoji: { fontSize: 18 },
+  typeLabel: { fontSize: 12, fontWeight: '700', color: '#0D1829', marginTop: 3 },
 
   userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#4A5568', alignItems: 'center', justifyContent: 'center' },
@@ -470,10 +521,12 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 13, fontWeight: '700', color: '#0D1829' },
   chipTextActive: { color: '#1B2B4B' },
 
-  dateRow: {
+  dateTimeRow: { flexDirection: 'row', gap: 8 },
+  dateTimeField: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     backgroundColor: '#fff',
     borderRadius: 12,
     borderWidth: 1,
@@ -481,7 +534,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  dateText: { fontSize: 14, color: '#0D1829', fontWeight: '600' },
+  dateTimeInput: { flex: 1, fontSize: 14, color: '#0D1829', fontWeight: '600', padding: 0 },
+  dateSummary: { fontSize: 12, color: '#1B2B4B', fontWeight: '700', marginTop: 8 },
+  dateError: { fontSize: 12, color: '#DC2626', marginTop: 8, lineHeight: 17 },
 
   peopleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -496,6 +551,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   stepperValue: { fontSize: 15, fontWeight: '800', color: '#0D1829', minWidth: 18, textAlign: 'center' },
+  anyPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  anyPillActive: { backgroundColor: '#1B2B4B', borderColor: '#1B2B4B' },
+  anyPillText: { fontSize: 12, fontWeight: '700', color: '#0D1829' },
+  anyPillTextActive: { color: '#fff' },
 
   expiryCard: {
     backgroundColor: '#fff',
