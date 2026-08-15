@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   View,
@@ -12,6 +12,8 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { getLevelTitle } from '@/lib/level';
+import { countIncomingRequests, fetchFriendsLeaderboard } from '@/lib/friends';
+import { useUserStore } from '@/store/userStore';
 
 type LeaderboardEntry = {
   rank: number;
@@ -52,17 +54,38 @@ const PODIUM_CONFIG = {
 } as const;
 
 export default function LeaderboardScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const [activeTab, setActiveTab] = useState<TabType>('Overall');
   const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const friendRequestCount = useUserStore((s) => s.friendRequestCount);
+  const setFriendRequestCount = useUserStore((s) => s.setFriendRequestCount);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       setCurrentUserId(data.user?.id ?? null);
     });
   }, []);
+
+  // Lets other screens (e.g. Social's "See full" link) deep-link straight into the Friends
+  // tab. Clears the param right after so returning to this tab later via the bottom bar
+  // doesn't keep forcing Friends.
+  useEffect(() => {
+    if (params.tab === 'Friends') {
+      setActiveTab('Friends');
+      router.setParams({ tab: undefined });
+    }
+  }, [params.tab]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!currentUserId) return;
+      countIncomingRequests(currentUserId).then(setFriendRequestCount).catch(() => {});
+    }, [currentUserId]),
+  );
 
   const fetchOverall = useCallback(async (): Promise<LeaderboardEntry[]> => {
     const { data, error } = await supabase
@@ -165,21 +188,27 @@ export default function LeaderboardScreen() {
       .map((entry, i) => ({ ...entry, rank: i + 1 }));
   }, []);
 
+  const fetchFriends = useCallback(async (): Promise<LeaderboardEntry[]> => {
+    if (!currentUserId) return [];
+    try {
+      return await fetchFriendsLeaderboard(currentUserId);
+    } catch {
+      setFetchError('Could not load friends leaderboard. Check your connection.');
+      return [];
+    }
+  }, [currentUserId]);
+
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'Friends') {
-        setLeaderboardData([]);
-        setLoading(false);
-        return;
-      }
+      if (activeTab === 'Friends' && !currentUserId) return;
       setLoading(true);
       setFetchError(null);
-      const fetch = activeTab === 'Overall' ? fetchOverall : fetchWeekly;
+      const fetch = activeTab === 'Overall' ? fetchOverall : activeTab === 'Weekly' ? fetchWeekly : fetchFriends;
       fetch().then((entries) => {
         setLeaderboardData(entries);
         setLoading(false);
       });
-    }, [activeTab, fetchOverall, fetchWeekly]),
+    }, [activeTab, fetchOverall, fetchWeekly, fetchFriends, currentUserId]),
   );
 
   const topThree = leaderboardData.slice(0, 3);
@@ -289,7 +318,8 @@ export default function LeaderboardScreen() {
   };
 
   const insets = useSafeAreaInsets();
-  const showPodium = !loading && !fetchError && activeTab !== 'Friends';
+  const showFriendsEmpty = !loading && !fetchError && activeTab === 'Friends' && leaderboardData.length <= 1;
+  const showPodium = !loading && !fetchError && !showFriendsEmpty && leaderboardData.length > 0;
 
   const listHeader = (
     <>
@@ -332,16 +362,16 @@ export default function LeaderboardScreen() {
           </Text>
         </View>
       )}
-      {!loading && !fetchError && activeTab === 'Friends' && (
+      {showFriendsEmpty && (
         <View style={styles.stateContainer}>
           <Ionicons name="people-outline" size={40} color="#C0C8D4" />
           <Text style={[styles.stateText, { marginTop: 12 }]}>
-            Friend connections coming soon
+            Add friends to see them ranked here
           </Text>
         </View>
       )}
-      {!loading && !fetchError && activeTab !== 'Friends' && (
-        <Text style={styles.sectionLabel}>All Players</Text>
+      {!loading && !fetchError && !showFriendsEmpty && (
+        <Text style={styles.sectionLabel}>{activeTab === 'Friends' ? 'Your Friends' : 'All Players'}</Text>
       )}
     </>
   );
@@ -353,8 +383,13 @@ export default function LeaderboardScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>Leaderboard</Text>
           <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn}>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
               <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
+              {friendRequestCount > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>{friendRequestCount > 9 ? '9+' : friendRequestCount}</Text>
+                </View>
+              )}
             </TouchableOpacity>
             <TouchableOpacity style={styles.iconBtn}>
               <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
@@ -364,7 +399,7 @@ export default function LeaderboardScreen() {
       </View>
 
       <FlatList
-        data={loading || activeTab === 'Friends' || fetchError ? [] : leaderboardData}
+        data={loading || fetchError || showFriendsEmpty ? [] : leaderboardData}
         renderItem={renderRow}
         keyExtractor={(item) => item.userId}
         ListHeaderComponent={listHeader}
@@ -426,6 +461,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
+  notifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   iconBtn: {
     width: 40,
     height: 40,
