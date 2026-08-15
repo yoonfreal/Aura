@@ -65,7 +65,7 @@ export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
     .eq('user_id', userId)
     .eq('date', today);
 
-  const rows = (data ?? []) as UserMissionRow[];
+  const rows = (data ?? []) as unknown as UserMissionRow[];
 
   return rows
     .filter((row) => row.missions !== null)

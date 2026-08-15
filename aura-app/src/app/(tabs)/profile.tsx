@@ -5,6 +5,7 @@ import { Share2, Pencil, Lock, UserCog, Settings, Shield, HelpCircle, ChevronRig
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/store/userStore';
 import { getLevelTitle } from '@/lib/level';
+import { useRouter } from 'expo-router';
 
 const BG = '#E7ECF5';
 const CARD = '#FFFFFF';
@@ -35,7 +36,7 @@ const BADGES: Badge[] = [
 
 type Friend = { name: string; active?: boolean };
 
-// TODO: replace with real friends data from Supabase
+
 const FRIENDS: Friend[] = [
   { name: 'Alex', active: true },
   { name: 'Maria', active: true },
@@ -87,6 +88,7 @@ function StatPill({ icon, value, label }: { icon: string; value: string; label: 
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user } = useUserStore();
 
   if (!user) return null;
@@ -112,15 +114,29 @@ export default function ProfileScreen() {
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarInitial}>{user.username.charAt(0).toUpperCase()}</Text>
             </View>
-            <TouchableOpacity style={styles.avatarEditBadge} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.avatarEditBadge}
+              activeOpacity={0.7}
+              onPress={() => router.push('/edit-profile')}
+            >
               <Pencil size={12} color={TEXT_DARK} />
             </TouchableOpacity>
           </View>
 
-          <View style={styles.nameRow}>
-            <Text style={styles.nameText}>{user.username}</Text>
-            <Pencil size={14} color={TEXT_DARK} />
-          </View>
+          <TouchableOpacity
+            style={styles.nameRow}
+            onPress={() => router.push('/edit-profile')}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.nameText}>
+              {user.username}
+            </Text>
+
+            <Pencil
+              size={14}
+              color={TEXT_DARK}
+            />
+          </TouchableOpacity>
           <Text style={styles.levelText}>
             Level {user.level} - {getLevelTitle(user.level)}
           </Text>
@@ -201,11 +217,30 @@ export default function ProfileScreen() {
 
         {/* Menu list */}
         <View style={styles.menuList}>
-          <MenuRow icon={<UserCog size={18} color={FLAME_ORANGE} />} label="Edit Profile" />
-          <MenuRow icon={<Settings size={18} color={FLAME_ORANGE} />} label="Settings" />
-          <MenuRow icon={<Shield size={18} color={MEDAL_RED} />} label="Terms and Conditions" />
-          <MenuRow icon={<HelpCircle size={18} color={MEDAL_RED} />} label="Help & Support" />
-        </View>
+  <MenuRow
+    icon={<UserCog size={18} color={FLAME_ORANGE} />}
+    label="Edit Profile"
+    onPress={() => router.push('/edit-profile')}
+  />
+
+  <MenuRow
+    icon={<Settings size={18} color={FLAME_ORANGE} />}
+    label="Settings"
+    onPress={() => router.push('/settings')}
+  />
+
+  <MenuRow
+    icon={<Shield size={18} color={MEDAL_RED} />}
+    label="Terms and Conditions"
+    onPress={() => router.push('/terms')}
+  />
+
+  <MenuRow
+    icon={<HelpCircle size={18} color={MEDAL_RED} />}
+    label="Help & Support"
+    onPress={() => router.push('/help')}
+  />
+</View>
 
         {/* Sign out */}
         <TouchableOpacity style={styles.signOut} onPress={() => supabase.auth.signOut()} activeOpacity={0.85}>
@@ -216,13 +251,31 @@ export default function ProfileScreen() {
   );
 }
 
-function MenuRow({ icon, label }: { icon: React.ReactNode; label: string }) {
+function MenuRow({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onPress: () => void;
+}) {
   return (
-    <TouchableOpacity style={styles.menuRow} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={styles.menuRow}
+      activeOpacity={0.7}
+      onPress={onPress}
+    >
       <View style={styles.menuLeft}>
-        <View style={styles.menuIconCircle}>{icon}</View>
-        <Text style={styles.menuLabel}>{label}</Text>
+        <View style={styles.menuIconCircle}>
+          {icon}
+        </View>
+
+        <Text style={styles.menuLabel}>
+          {label}
+        </Text>
       </View>
+
       <ChevronRight size={16} color="#B7BECC" />
     </TouchableOpacity>
   );
