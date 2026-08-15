@@ -203,6 +203,37 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   };
 }
 
+// Bumps streak_days once per calendar day: +1 if the user was also active yesterday,
+// reset to 1 if there's a gap (or this is the first day ever), unchanged if already
+// counted today. Called from logMissionComplete since that's the one "did something
+// today" moment the app already gates XP on.
+async function updateStreak(userId: string): Promise<number> {
+  const today = todayISO();
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('streak_days, last_active_date')
+    .eq('id', userId)
+    .single();
+  if (error) throw error;
+
+  const row = data as { streak_days: number | null; last_active_date: string | null };
+  if (row.last_active_date === today) {
+    return row.streak_days ?? 0;
+  }
+
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const newStreak = row.last_active_date === yesterday ? (row.streak_days ?? 0) + 1 : 1;
+
+  const { error: updateError } = await supabase
+    .from('profiles')
+    .update({ streak_days: newStreak, last_active_date: today })
+    .eq('id', userId);
+  if (updateError) throw updateError;
+
+  return newStreak;
+}
+
 export async function logMissionComplete(
   userMissionId: string,
   userId: string,
@@ -210,7 +241,7 @@ export async function logMissionComplete(
   xpReward: number,
   currentXp: number,
   currentLevel: number,
-): Promise<{ newXp: number; newLevel: number }> {
+): Promise<{ newXp: number; newLevel: number; newStreak: number }> {
   const { error: missionError } = await supabase
     .from('user_missions')
     .update({ current_value: goalValue, completed: true })
@@ -218,6 +249,7 @@ export async function logMissionComplete(
   if (missionError) throw missionError;
 
   await incrementDailyStat(userId, 'xp_earned', xpReward);
+  const newStreak = await updateStreak(userId);
 
   const newXp = currentXp + xpReward;
   let newLevel = currentLevel;
@@ -231,5 +263,5 @@ export async function logMissionComplete(
     .eq('id', userId);
   if (profileError) throw profileError;
 
-  return { newXp, newLevel };
+  return { newXp, newLevel, newStreak };
 }

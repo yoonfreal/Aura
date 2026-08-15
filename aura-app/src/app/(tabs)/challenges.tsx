@@ -31,6 +31,7 @@ import {
   type ChallengeHistoryEntry,
 } from '@/lib/challenges';
 import { xpForLevel } from '@/lib/level';
+import { countIncomingRequests } from '@/lib/friends';
 import { ChallengeCard } from '@/components/ChallengeCard';
 import { HeadToHeadCard } from '@/components/HeadToHeadCard';
 import { ChallengeHistoryCard } from '@/components/ChallengeHistoryCard';
@@ -86,6 +87,7 @@ export default function ChallengesScreen() {
   const user = useUserStore((state) => state.user);
   const setUser = useUserStore((state) => state.setUser);
   const setClaimableCount = useUserStore((state) => state.setClaimableCount);
+  const setFriendRequestCount = useUserStore((state) => state.setFriendRequestCount);
   const userId = user?.id;
   const userName = user?.username ?? 'You';
   const isAdmin = user?.role === 'admin';
@@ -106,6 +108,7 @@ export default function ChallengesScreen() {
         setLoading(false);
         // fetchChallenges already auto-enrolled/refreshed progress, so this just re-counts.
         countClaimableRewards(userId).then(setClaimableCount).catch(() => {});
+        countIncomingRequests(userId).then(setFriendRequestCount).catch(() => {});
       })
       .catch((err) => {
         console.error('fetchChallenges failed', err);
@@ -296,6 +299,8 @@ function UserChallengesView({
   onReload,
   onClaim,
 }: UserChallengesViewProps) {
+  const router = useRouter();
+  const friendRequestCount = useUserStore((s) => s.friendRequestCount);
   const [filter, setFilter] = useState<FilterPill>('All');
   const [teamPickerChallenge, setTeamPickerChallenge] = useState<ChallengeWithStatus | null>(null);
   const [rosterChallenge, setRosterChallenge] = useState<ChallengeWithStatus | null>(null);
@@ -409,8 +414,13 @@ function UserChallengesView({
       <View style={[styles.header, { paddingTop: insetsTop + 8 }]}>
         <Text style={styles.title}>Challenges</Text>
         <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
             <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
+            {friendRequestCount > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{friendRequestCount > 9 ? '9+' : friendRequestCount}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn}>
             <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
@@ -562,6 +572,19 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 26, fontWeight: '800', color: '#0D1829', letterSpacing: -0.3 },
   headerIcons: { flexDirection: 'row', gap: 8 },
+  notifBadge: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
   iconBtn: {
     width: 40,
     height: 40,
