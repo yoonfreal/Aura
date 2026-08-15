@@ -913,6 +913,58 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
   }
 }
 
+export type EarnedBadge = { label: string; icon: string; earned: boolean };
+
+type BadgeDefRow = { badge_name: string | null; badge_icon: string | null };
+type ParticipantBadgeRow = { challenges: BadgeDefRow | BadgeDefRow[] };
+
+// The full badge collection is every distinct badge any admin-created challenge offers —
+// "earned" is true once the user has claimed a challenge/team reward for that badge, or
+// (for 1v1) won an archived round that awarded it. This keeps Profile's badge grid in sync
+// with whatever admins define, instead of a hardcoded list.
+export async function fetchBadges(userId: string): Promise<EarnedBadge[]> {
+  const { data: defsData } = await supabase
+    .from('challenges')
+    .select('badge_name, badge_icon')
+    .not('badge_name', 'is', null);
+
+  const iconByName = new Map<string, string>();
+  for (const row of (defsData ?? []) as BadgeDefRow[]) {
+    if (row.badge_name && !iconByName.has(row.badge_name)) {
+      iconByName.set(row.badge_name, row.badge_icon ?? '🏅');
+    }
+  }
+
+  const [{ data: participantData }, { data: historyData }] = await Promise.all([
+    supabase
+      .from('challenge_participants')
+      .select('challenges!inner(badge_name, badge_icon)')
+      .eq('user_id', userId)
+      .eq('claimed', true),
+    supabase
+      .from('challenge_history')
+      .select('badge_name, badge_icon')
+      .eq('user_id', userId)
+      .not('badge_name', 'is', null),
+  ]);
+
+  const earnedNames = new Set<string>();
+
+  for (const row of (participantData ?? []) as ParticipantBadgeRow[]) {
+    const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
+    if (challenge?.badge_name) earnedNames.add(challenge.badge_name);
+  }
+  for (const row of (historyData ?? []) as BadgeDefRow[]) {
+    if (row.badge_name) earnedNames.add(row.badge_name);
+  }
+
+  return [...iconByName.entries()].map(([label, icon]) => ({
+    label,
+    icon,
+    earned: earnedNames.has(label),
+  }));
+}
+
 type HistoryRow = {
   id: string;
   challenge_id: string;
