@@ -36,32 +36,32 @@ import { useUserStore } from '@/store/userStore';
 import { getLevelTitle } from '@/lib/level';
 import { fetchBadges, type EarnedBadge } from '@/lib/challenges';
 
-const BG = '#E7ECF5';
+const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
 const BORDER = '#E3E7F0';
 const TEXT_DARK = '#1E2430';
 const TEXT_MUTED = '#8A93A6';
 
 const AVATAR_GREEN = '#2F5D4E';
-const SHARE_NAVY = '#1B2A41';
+const SHARE_NAVY = '#1B2B4B';
 
-const GOLD = '#F4B942';
-const GOLD_PILL = '#EFC988';
-const GOLD_PILL_TEXT = '#8A5A1E';
+const GOLD = '#F5B800';
+const GOLD_PILL = '#FEF3C7';
+const GOLD_PILL_TEXT = '#D97706';
 
 const FLAME_ORANGE = '#F5822A';
 const MEDAL_RED = '#E0552B';
 const ICON_BG_PEACH = '#FBDCC8';
 
 const RING_TRACK = '#D3DAE6';
-const SIGN_OUT_RED = '#E53935';
+const SIGN_OUT_RED = '#DC2626';
 
 const FRIEND_AVATAR_COLORS = [
-  '#2F5D4E',
-  '#3E6B8A',
-  '#8A5A1E',
-  '#5D4E8A',
-  '#8A2E4E',
+  '#1E4D8C',
+  '#4A5568',
+  '#744210',
+  '#065F46',
+  '#5B21B6',
 ];
 
 type FriendProfile = {
