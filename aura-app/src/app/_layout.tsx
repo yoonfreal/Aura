@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
+import { ensureActiveToday } from '@/lib/api';
 import { useUserStore } from '@/store/userStore';
 
 type ProfileRow = {
@@ -58,6 +59,8 @@ async function fetchAndSetUser(
 
   const profile = data as ProfileRow | null;
   if (!profile) return true;
+
+  ensureActiveToday(userId);
 
   setUser({
     id: profile.id,

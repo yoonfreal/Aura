@@ -81,6 +81,28 @@ export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
     }));
 }
 
+// Guarantees a daily_stats row exists for today the moment the app opens, even if the
+// user never completes a mission or claims a challenge — otherwise daily_stats only
+// reflects "did something," not "opened the app," which is what admin's daily active
+// users chart needs. Silently no-ops on failure so a hiccup here never blocks login.
+export async function ensureActiveToday(userId: string): Promise<void> {
+  try {
+    const today = todayISO();
+    const { data } = await supabase
+      .from('daily_stats')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('date', today)
+      .maybeSingle();
+
+    if (!data) {
+      await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps: 0, calories: 0, xp_earned: 0 });
+    }
+  } catch {
+    // Best-effort activity ping — never let this break app startup.
+  }
+}
+
 export async function fetchDailyStats(
   userId: string,
 ): Promise<Pick<DailyStats, 'steps' | 'calories' | 'xpEarned'>> {
