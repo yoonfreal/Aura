@@ -130,16 +130,21 @@ export default function LeaderboardScreen() {
   const fetchWeekly = useCallback(async (): Promise<LeaderboardEntry[]> => {
     const monday = getMondayDate();
 
-    // Fetch all profiles and this week's completed missions in parallel
-    const [profilesRes, missionsRes] = await Promise.all([
+    // Fetch all profiles and this week's XP ledger in parallel. daily_stats.xp_earned is
+    // bumped both when a mission completes and when a challenge reward is claimed (see
+    // incrementDailyStat calls in lib/api.ts and claimReward in lib/challenges.ts), so it
+    // covers both XP sources rather than just completed missions. This requires
+    // daily_stats' SELECT policy to allow any authenticated user to read all rows (not
+    // just their own) — added directly in Supabase; without it this silently returns 0
+    // for every user but the querying session.
+    const [profilesRes, statsRes] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, username, first_name, last_name, level')
         .limit(50),
       supabase
-        .from('user_missions')
-        .select('user_id, missions(xp_reward)')
-        .eq('completed', true)
+        .from('daily_stats')
+        .select('user_id, xp_earned')
         .gte('date', monday),
     ]);
 
@@ -152,16 +157,11 @@ export default function LeaderboardScreen() {
       return [];
     }
 
-    // Build weekly XP map from completed missions
+    // Build weekly XP map from daily_stats (missions + claimed challenges combined)
     const xpMap: Record<string, number> = {};
-    if (missionsRes.data) {
-      for (const row of missionsRes.data as unknown as {
-        user_id: string;
-        missions: { xp_reward: number } | { xp_reward: number }[] | null;
-      }[]) {
-        const m = row.missions;
-        const reward = Array.isArray(m) ? (m[0]?.xp_reward ?? 0) : (m?.xp_reward ?? 0);
-        xpMap[row.user_id] = (xpMap[row.user_id] ?? 0) + reward;
+    if (statsRes.data) {
+      for (const row of statsRes.data as { user_id: string; xp_earned: number | null }[]) {
+        xpMap[row.user_id] = (xpMap[row.user_id] ?? 0) + (row.xp_earned ?? 0);
       }
     }
 

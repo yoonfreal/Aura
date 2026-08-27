@@ -42,9 +42,10 @@ export default function LoginScreen() {
     setLoading(false);
     if (error) {
       Alert.alert('Login Failed', error.message);
-    } else {
-      router.replace('/(tabs)' as any);
     }
+    // On success, the root layout's onAuthStateChange listener handles routing (tabs,
+    // onboarding, or back here if the account turns out to be suspended) — navigating
+    // here too would race past that suspension check.
   }
 
   return (

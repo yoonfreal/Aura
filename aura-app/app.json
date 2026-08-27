@@ -39,7 +39,13 @@
         }
       ],
       "expo-image",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "AUra uses your location to confirm you're at the gym when you check in."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

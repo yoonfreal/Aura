@@ -28,7 +28,7 @@ export default function NewChallengePage() {
           );
 
           await createChallenge(user.id, { ...draft, startDate, endDate });
-          router.push('/');
+          router.push('/challenges');
         }}
       />
     </div>

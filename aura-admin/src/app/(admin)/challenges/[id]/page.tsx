@@ -49,7 +49,7 @@ export default function EditChallengePage() {
             startDate: challenge.startDate,
             endDate,
           });
-          router.push('/');
+          router.push('/challenges');
         }}
       />
     </div>

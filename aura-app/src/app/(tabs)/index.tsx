@@ -9,6 +9,7 @@ import { StatCard } from '@/components/StatCard';
 import { MissionCard } from '@/components/MissionCard';
 import { XPBar } from '@/components/XPBar';
 import { WatchSyncCard } from '@/components/WatchSyncCard';
+import { GymCheckInIcon } from '@/components/GymCheckInIcon';
 import { WeeklyView } from '@/components/WeeklyView';
 import { fetchWatchSyncStatus } from '@/lib/healthkit';
 import {
@@ -137,6 +138,7 @@ export default function HomeScreen() {
         <View style={styles.header}>
           <Text style={styles.username}>{user.username}</Text>
           <View style={styles.headerIcons}>
+            <GymCheckInIcon userId={user.id} />
             <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
               <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
               {friendRequestCount > 0 && (
