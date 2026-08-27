@@ -670,6 +670,28 @@ export async function updateProgress(
   return { completed };
 }
 
+// Team goals are collective — no single member's row can say "done" on its own — so this
+// re-adds every accepted member's current progress and, once the team clears the goal,
+// marks all of them completed together. Without this, "the team finished" only ever
+// existed as a number recomputed live on screen and was never actually saved anywhere.
+async function checkTeamCompletion(teamId: string, goalValue: number): Promise<void> {
+  const { data } = await supabase
+    .from('challenge_participants')
+    .select('current_value')
+    .eq('team_id', teamId)
+    .eq('status', 'accepted');
+
+  const total = ((data ?? []) as { current_value: number }[]).reduce((sum, r) => sum + r.current_value, 0);
+  if (total < goalValue) return;
+
+  const { error } = await supabase
+    .from('challenge_participants')
+    .update({ completed: true })
+    .eq('team_id', teamId)
+    .eq('completed', false);
+  if (error) throw error;
+}
+
 // Powers the Challenges tab badge — a "completed" row is always claimable regardless of
 // type (team members are never marked completed individually, and 1v1 losers are marked
 // claimed automatically), so this stays a simple count with no per-type logic needed.
@@ -741,6 +763,7 @@ type ChallengeJoinFields = {
 type ParticipantWithChallengeRow = {
   id: string;
   challenge_id: string;
+  team_id: string | null;
   current_value: number;
   opponent_id: string | null;
   expires_at: string | null;
@@ -810,7 +833,7 @@ export async function syncChallengeProgressForUser(
 
   const { data } = await supabase
     .from('challenge_participants')
-    .select('id, challenge_id, current_value, opponent_id, expires_at, challenge_teams(expires_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date)')
+    .select('id, challenge_id, team_id, current_value, opponent_id, expires_at, challenge_teams(expires_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date)')
     .eq('user_id', userId)
     .eq('completed', false)
     .eq('status', 'accepted');
@@ -831,7 +854,17 @@ export async function syncChallengeProgressForUser(
 
     const newValue = row.current_value + value;
 
-    if (challenge.type === '1v1') {
+    if (row.team_id) {
+      // Same rule as the steps/calories path: a team member's own row is never marked
+      // "completed" off their own number — checkTeamCompletion decides that from the
+      // team's combined total.
+      const { error } = await supabase
+        .from('challenge_participants')
+        .update({ current_value: newValue })
+        .eq('id', row.id);
+      if (error) throw error;
+      await checkTeamCompletion(row.team_id, challenge.goal_value);
+    } else if (challenge.type === '1v1') {
       await applyOneVOneProgress(row, newValue, challenge);
     } else {
       await updateProgress(row.id, newValue, challenge.goal_value);
@@ -897,14 +930,14 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
       .reduce((acc, s) => acc + s[unit], 0);
 
     if (row.team_id) {
-      // Team completion is derived client-side from the whole team's total, not any one
-      // member's row — never mark an individual member "completed" here, or their own
-      // contribution would freeze the moment their personal sum alone hit the team goal.
+      // No single member's row is ever marked "completed" off their own number alone —
+      // only the team's combined total decides that, via checkTeamCompletion below.
       const { error } = await supabase
         .from('challenge_participants')
         .update({ current_value: sum })
         .eq('id', row.id);
       if (error) throw error;
+      await checkTeamCompletion(row.team_id, challenge.goal_value);
     } else if (challenge.type === '1v1') {
       await applyOneVOneProgress(row, sum, challenge);
     } else {

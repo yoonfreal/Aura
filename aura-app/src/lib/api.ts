@@ -103,6 +103,17 @@ export async function ensureActiveToday(userId: string): Promise<void> {
   }
 }
 
+// Powers admin's Active/Offline column — a user is "Active" if their last_seen_at is
+// recent (see _layout.tsx's ping interval), "Offline" otherwise. Best-effort, silently
+// no-ops on failure since presence is a nice-to-have, never something to block on.
+export async function updateLastSeen(userId: string): Promise<void> {
+  try {
+    await supabase.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', userId);
+  } catch {
+    // Best-effort presence ping.
+  }
+}
+
 export async function fetchDailyStats(
   userId: string,
 ): Promise<Pick<DailyStats, 'steps' | 'calories' | 'xpEarned'>> {

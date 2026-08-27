@@ -49,6 +49,41 @@ export async function fetchAllChallenges(): Promise<Challenge[]> {
   return ((data ?? []) as ChallengeRow[]).map(toChallenge);
 }
 
+export type ChallengeParticipantCounts = { joined: number; completed: number };
+
+export type ChallengeParticipantData = {
+  // Per-challenge joined/completed counts — keyed by challenge_id, used for the table's
+  // Joined/Completed columns and for the per-type completion rate (where counting the
+  // same person once per challenge they joined is correct).
+  countsByChallenge: Map<string, ChallengeParticipantCounts>;
+  // Distinct people who have joined at least one challenge — someone in three challenges
+  // counts once here, not three times, since this answers "how many people", not "how
+  // many joins".
+  totalParticipants: number;
+};
+
+// "Joined" means status = 'accepted' — the same definition aura-app uses for an active
+// participant (pending invites and declines don't count).
+export async function fetchChallengeParticipantData(): Promise<ChallengeParticipantData> {
+  const { data, error } = await supabase
+    .from('challenge_participants')
+    .select('challenge_id, user_id, completed')
+    .eq('status', 'accepted');
+
+  if (error) throw error;
+
+  const countsByChallenge = new Map<string, ChallengeParticipantCounts>();
+  const uniqueUserIds = new Set<string>();
+  for (const row of (data ?? []) as { challenge_id: string; user_id: string; completed: boolean }[]) {
+    const entry = countsByChallenge.get(row.challenge_id) ?? { joined: 0, completed: 0 };
+    entry.joined += 1;
+    if (row.completed) entry.completed += 1;
+    countsByChallenge.set(row.challenge_id, entry);
+    uniqueUserIds.add(row.user_id);
+  }
+  return { countsByChallenge, totalParticipants: uniqueUserIds.size };
+}
+
 export async function fetchChallengeById(challengeId: string): Promise<Challenge> {
   const { data, error } = await supabase
     .from('challenges')

@@ -35,6 +35,7 @@ import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/store/userStore';
 import { getLevelTitle } from '@/lib/level';
 import { fetchBadges, type EarnedBadge } from '@/lib/challenges';
+import { CheckInCalendar } from '@/components/CheckInCalendar';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -873,6 +874,10 @@ export default function ProfileScreen() {
             </Text>
           )}
         </TouchableOpacity>
+
+        {/* Gym check-ins */}
+        <Text style={[styles.cardTitleCaps, { marginHorizontal: 16, marginTop: 16 }]}>GYM CHECK-INS</Text>
+        <CheckInCalendar userId={user.id} />
 
         {/* Badge collection */}
         <View style={styles.card}>

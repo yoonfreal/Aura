@@ -1,13 +1,14 @@
 import "../../global.css";
 
 import { useEffect, useState } from 'react';
+import { Alert } from 'react-native';
 import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
-import { ensureActiveToday } from '@/lib/api';
+import { ensureActiveToday, updateLastSeen } from '@/lib/api';
 import { useUserStore } from '@/store/userStore';
 
 type ProfileRow = {
@@ -20,18 +21,21 @@ type ProfileRow = {
   streak_days: number;
   role: 'user' | 'admin';
   onboarding_completed: boolean;
+  suspended: boolean;
 };
+
+type FetchUserResult = 'tabs' | 'onboarding' | 'suspended';
 
 async function fetchAndSetUser(
   authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> },
   setUser: ReturnType<typeof useUserStore.getState>['setUser'],
-): Promise<boolean> {
+): Promise<FetchUserResult> {
   const userId = authUser.id;
   const email = authUser.email ?? '';
 
   let { data, error } = await supabase
     .from('profiles')
-    .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed')
+    .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed, suspended')
     .eq('id', userId)
     .single();
 
@@ -47,20 +51,26 @@ async function fetchAndSetUser(
 
     ({ data, error } = await supabase
       .from('profiles')
-      .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed')
+      .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed, suspended')
       .eq('id', userId)
       .single());
   }
 
   if (error) {
     console.error('fetchAndSetUser: could not load profile', userId, error);
-    return true;
+    return 'tabs';
   }
 
   const profile = data as ProfileRow | null;
-  if (!profile) return true;
+  if (!profile) return 'tabs';
+
+  if (profile.suspended) {
+    await supabase.auth.signOut();
+    return 'suspended';
+  }
 
   ensureActiveToday(userId);
+  updateLastSeen(userId);
 
   setUser({
     id: profile.id,
@@ -73,7 +83,7 @@ async function fetchAndSetUser(
     role: profile.role ?? 'user',
   });
 
-  return profile.onboarding_completed ?? false;
+  return profile.onboarding_completed ? 'tabs' : 'onboarding';
 }
 
 export default function RootLayout() {
@@ -88,8 +98,13 @@ export default function RootLayout() {
           (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           session?.user
         ) {
-          const onboardingCompleted = await fetchAndSetUser(session.user, setUser);
-          setPendingRedirect(onboardingCompleted ? '/(tabs)' : '/(onboarding)');
+          const result = await fetchAndSetUser(session.user, setUser);
+          if (result === 'suspended') {
+            Alert.alert('Account Suspended', 'Your account has been suspended. Contact support for more information.');
+            setPendingRedirect('/(auth)/signup');
+          } else {
+            setPendingRedirect(result === 'tabs' ? '/(tabs)' : '/(onboarding)');
+          }
         } else if (
           event === 'SIGNED_OUT' ||
           (event === 'INITIAL_SESSION' && !session)
@@ -101,6 +116,17 @@ export default function RootLayout() {
     );
 
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Keeps last_seen_at fresh while the app stays open, not just at launch — otherwise
+  // someone who's been on the app for 10 minutes would show as "Offline" to admin.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const userId = useUserStore.getState().user?.id;
+      if (userId) updateLastSeen(userId);
+    }, 2 * 60 * 1000);
+
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
