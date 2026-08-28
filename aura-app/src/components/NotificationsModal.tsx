@@ -52,6 +52,9 @@ export function NotificationsModal({
       case 'challenge_response':
         return 'checkmark-circle';
 
+      case 'challenge_complete':
+        return 'ribbon';
+
       case 'team_invite':
         return 'people';
 
@@ -81,6 +84,9 @@ export function NotificationsModal({
 
       case 'challenge_response':
         return 'responded to your challenge';
+
+      case 'challenge_complete':
+        return 'completed a challenge';
 
       case 'team_invite':
         return 'invited you to a team';
@@ -201,7 +207,9 @@ export function NotificationsModal({
                           styles.rowName
                         }
                       >
-                        {item.actorName}
+                        {item.type === 'challenge_complete'
+                          ? 'You'
+                          : item.actorName}
                       </Text>
 
                       {' '}

@@ -10,6 +10,7 @@ type ChallengeCardProps = {
   onClaim: () => void;
   onAcceptTeamInvite: () => void;
   onDeclineTeamInvite: () => void;
+  highlighted?: boolean;
 };
 
 const TYPE_LABEL: Record<ChallengeWithStatus['type'], string> = {
@@ -35,6 +36,7 @@ export function ChallengeCard({
   onClaim,
   onAcceptTeamInvite,
   onDeclineTeamInvite,
+  highlighted,
 }: ChallengeCardProps) {
   const isTeam = challenge.type === 'team';
   const myTeam = isTeam
@@ -77,7 +79,7 @@ export function ChallengeCard({
     );
 
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, highlighted && styles.cardHighlighted]}>
       <View style={styles.headerRow}>
         <View style={styles.titleRow}>
           <View style={styles.iconCircle}>
@@ -227,6 +229,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 5,
     elevation: 2,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  cardHighlighted: {
+    borderColor: '#F5B800',
   },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1, flex: 1 },

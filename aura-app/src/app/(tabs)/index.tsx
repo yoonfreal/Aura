@@ -186,6 +186,14 @@ export default function HomeScreen() {
   ) {
     setShowNotifications(false);
 
+    if (notification.type === 'challenge_complete' && notification.challengeId) {
+      router.push({
+        pathname: '/(tabs)/challenges',
+        params: { openChallengeId: notification.challengeId },
+      });
+      return;
+    }
+
     if (!notification.postId) return;
 
     router.push(`/post/${notification.postId}`);
@@ -305,7 +313,12 @@ export default function HomeScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.username}>
+          <Text
+            style={styles.username}
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
             {user.username}
           </Text>
 
@@ -580,11 +593,14 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#1B2B4B',
     letterSpacing: -0.5,
+    flexShrink: 1,
+    marginRight: 8,
   },
 
   headerIcons: {
     flexDirection: 'row',
     gap: 8,
+    flexShrink: 0,
   },
 
   notifBadge: {

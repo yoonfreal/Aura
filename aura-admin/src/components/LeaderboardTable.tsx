@@ -36,9 +36,9 @@ type SortDir = 'asc' | 'desc';
 
 const COLUMNS: { key: SortKey; label: string }[] = [
   { key: 'username', label: 'Name' },
-  { key: 'challengesJoined', label: 'Challenges Joined' },
   { key: 'level', label: 'Level' },
   { key: 'xp', label: 'XP' },
+  { key: 'challengesJoined', label: 'Challenges Joined' },
 ];
 
 const SORT_OPTIONS: { value: string; label: string; key: SortKey; dir: SortDir }[] = [
@@ -219,16 +219,16 @@ export function LeaderboardTable() {
         <table className="w-full table-fixed text-sm">
           <colgroup>
             <col className="w-[8%]" />
-            <col className="w-[26%]" />
-            <col className="w-[18%]" />
+            <col className="w-[24%]" />
             <col className="w-[10%]" />
-            <col className="w-[20%]" />
             <col className="w-[18%]" />
+            <col className="w-[16%]" />
+            <col className="w-[24%]" />
           </colgroup>
           <thead>
             <tr className="bg-gray-50 text-left text-xs font-bold text-gray-500">
               <th className="rounded-l-lg px-3 py-2">Rank</th>
-              {COLUMNS.map((col) => (
+              {COLUMNS.slice(0, 2).map((col) => (
                 <th key={col.key} className="px-3 py-2">
                   <button onClick={() => handleSort(col.key)} className="flex items-center gap-1 hover:text-[#1B2B4B]">
                     {col.label}
@@ -236,7 +236,15 @@ export function LeaderboardTable() {
                   </button>
                 </th>
               ))}
-              <th className="rounded-r-lg px-3 py-2">Title</th>
+              <th className="px-3 py-2">Title</th>
+              {COLUMNS.slice(2).map((col, i, arr) => (
+                <th key={col.key} className={`px-3 py-2 ${i === arr.length - 1 ? 'rounded-r-lg' : ''}`}>
+                  <button onClick={() => handleSort(col.key)} className="flex items-center gap-1 hover:text-[#1B2B4B]">
+                    {col.label}
+                    {sortKey === col.key && <span>{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                  </button>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -256,14 +264,14 @@ export function LeaderboardTable() {
                     <span className="truncate font-bold text-[#0D1829]">{e.username}</span>
                   </div>
                 </td>
-                <td className="px-3 py-3 text-gray-600">{e.challengesJoined}</td>
                 <td className="px-3 py-3 text-gray-600">{e.level}</td>
-                <td className="px-3 py-3 text-gray-600">{e.xp.toLocaleString()}</td>
                 <td className="px-3 py-3">
                   <span className={`rounded-full px-2.5 py-1 text-xs font-bold ${TITLE_STYLES[e.levelTitle]}`}>
                     {e.levelTitle}
                   </span>
                 </td>
+                <td className="px-3 py-3 text-gray-600">{e.xp.toLocaleString()}</td>
+                <td className="px-3 py-3 text-gray-600">{e.challengesJoined}</td>
               </tr>
             ))}
             {sorted.length === 0 && (
