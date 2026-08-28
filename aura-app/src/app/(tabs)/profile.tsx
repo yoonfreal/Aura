@@ -184,10 +184,12 @@ function FriendListModal({
   visible,
   friends,
   onClose,
+  onFriendPress,
 }: {
   visible: boolean;
   friends: FriendProfile[];
   onClose: () => void;
+  onFriendPress: (friend: FriendProfile) => void;
 }) {
   const [searchText, setSearchText] = useState('');
 
@@ -244,7 +246,11 @@ function FriendListModal({
       getDisplayName(item);
 
     return (
-      <View style={styles.friendListItem}>
+      <TouchableOpacity
+  style={styles.friendListItem}
+  activeOpacity={0.7}
+  onPress={() => onFriendPress(item)}
+>
         <View
           style={[
             styles.friendListAvatar,
@@ -293,7 +299,7 @@ function FriendListModal({
             ]}
           />
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -1062,16 +1068,16 @@ export default function ProfileScreen() {
 
       {/* Friend List */}
       <FriendListModal
-        visible={
-          friendListVisible
-        }
-        friends={friends}
-        onClose={() =>
-          setFriendListVisible(
-            false
-          )
-        }
-      />
+  visible={friendListVisible}
+  friends={friends}
+  onClose={() =>
+    setFriendListVisible(false)
+  }
+  onFriendPress={(friend) => {
+    setFriendListVisible(false);
+    router.push(`/friend/${friend.id}`);
+  }}
+/>
     </SafeAreaView>
   );
 }
