@@ -17,6 +17,7 @@ export default function PrivacyScreen() {
   const [profilePublic, setProfilePublic] = useState(true);
   const [activityVisible, setActivityVisible] = useState(true);
   const [friendRequests, setFriendRequests] = useState(true);
+  const [activeStatus, setActiveStatus] = useState(true);
 
   const handleProfileVisibility = () => {
     Alert.alert(
@@ -30,46 +31,91 @@ export default function PrivacyScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+
       {/* Header */}
+
       <View style={styles.header}>
+
         <TouchableOpacity
           onPress={() => router.back()}
           style={styles.backButton}
           activeOpacity={0.7}
         >
-          <Text style={styles.backText}>‹</Text>
+          <Text style={styles.backText}>
+            ‹
+          </Text>
         </TouchableOpacity>
 
-        <Text style={styles.title}>Privacy</Text>
+        <Text style={styles.title}>
+          Privacy
+        </Text>
 
         <View style={{ width: 40 }} />
+
       </View>
 
       {/* Privacy Settings */}
+
       <View style={styles.content}>
 
         {/* Profile Visibility */}
+
         <TouchableOpacity
           style={styles.row}
           onPress={handleProfileVisibility}
           activeOpacity={0.7}
         >
+
           <View style={styles.textContainer}>
-            <Text style={styles.rowText}>Profile Visibility</Text>
+
+            <Text style={styles.rowText}>
+              Profile Visibility
+            </Text>
 
             <Text style={styles.description}>
               {profilePublic
                 ? 'Your profile is visible to other users'
                 : 'Your profile is private'}
             </Text>
+
           </View>
 
-          <Text style={styles.chevron}>›</Text>
+          <Text style={styles.chevron}>
+            ›
+          </Text>
+
         </TouchableOpacity>
 
+        {/* Who Can Challenge Me */}
+
+<TouchableOpacity
+  style={styles.row}
+  onPress={() =>
+    router.push('/challenge_privacy')
+  }
+  activeOpacity={0.7}
+>
+  <View style={styles.textContainer}>
+    <Text style={styles.rowText}>
+      Who Can Challenge Me
+    </Text>
+
+    <Text style={styles.description}>
+      Choose who can send you challenge invitations
+    </Text>
+  </View>
+
+  <Text style={styles.chevron}>
+    ›
+  </Text>
+</TouchableOpacity>
+
         {/* Activity Visibility */}
+
         <View style={styles.row}>
+
           <View style={styles.textContainer}>
+
             <Text style={styles.rowText}>
               Show Activity to Friends
             </Text>
@@ -77,17 +123,22 @@ export default function PrivacyScreen() {
             <Text style={styles.description}>
               Allow friends to see your XP, streaks and badges
             </Text>
+
           </View>
 
           <Switch
             value={activityVisible}
             onValueChange={setActivityVisible}
           />
+
         </View>
 
         {/* Friend Requests */}
+
         <View style={styles.row}>
+
           <View style={styles.textContainer}>
+
             <Text style={styles.rowText}>
               Allow Friend Requests
             </Text>
@@ -95,20 +146,47 @@ export default function PrivacyScreen() {
             <Text style={styles.description}>
               Allow other users to send you friend requests
             </Text>
+
           </View>
 
           <Switch
             value={friendRequests}
             onValueChange={setFriendRequests}
           />
+
+        </View>
+
+        {/* Active Status */}
+
+        <View style={styles.row}>
+
+          <View style={styles.textContainer}>
+
+            <Text style={styles.rowText}>
+              Show Active Status
+            </Text>
+
+            <Text style={styles.description}>
+              Let friends see when you are active
+            </Text>
+
+          </View>
+
+          <Switch
+            value={activeStatus}
+            onValueChange={setActiveStatus}
+          />
+
         </View>
 
       </View>
+
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+
   container: {
     flex: 1,
     backgroundColor: '#E7ECF5',
@@ -177,4 +255,5 @@ const styles = StyleSheet.create({
     fontSize: 25,
     color: '#8A93A6',
   },
+
 });

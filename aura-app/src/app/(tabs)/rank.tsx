@@ -1,6 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import {
+  useFocusEffect,
+  useLocalSearchParams,
+  useRouter,
+} from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import {
   View,
   Text,
@@ -9,11 +14,30 @@ import {
   FlatList,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+
+import {
+  Ionicons,
+  MaterialCommunityIcons,
+} from '@expo/vector-icons';
+
 import { supabase } from '@/lib/supabase';
 import { getLevelTitle } from '@/lib/level';
-import { countIncomingRequests, fetchFriendsLeaderboard } from '@/lib/friends';
+
+import {
+  countIncomingRequests,
+  fetchFriendsLeaderboard,
+} from '@/lib/friends';
+
 import { useUserStore } from '@/store/userStore';
+
+import {
+  countUnreadNotifications,
+  fetchNotifications,
+  markAllNotificationsRead,
+  type AppNotification,
+} from '@/lib/notifications';
+
+import { NotificationsModal } from '@/components/NotificationsModal';
 
 type LeaderboardEntry = {
   rank: number;
@@ -26,8 +50,14 @@ type LeaderboardEntry = {
 type TabType = 'Overall' | 'Weekly' | 'Friends';
 
 const AVATAR_COLORS = [
-  '#1E4D8C', '#4A5568', '#744210', '#065F46',
-  '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F',
+  '#1E4D8C',
+  '#4A5568',
+  '#744210',
+  '#065F46',
+  '#5B21B6',
+  '#831843',
+  '#1E3A5F',
+  '#3D2B1F',
 ];
 
 function getAvatarColor(rankIndex: number): string {
@@ -42,201 +72,439 @@ function formatXP(xp: number): string {
 function getMondayDate(): string {
   const d = new Date();
   const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const diff =
+    d.getDate() - day + (day === 0 ? -6 : 1);
+
   d.setDate(diff);
+
   return d.toISOString().split('T')[0];
 }
 
 const PODIUM_CONFIG = {
-  1: { ringColor: '#F5B800', avatarSize: 66, barHeight: 96 },
-  2: { ringColor: '#9BA4B4', avatarSize: 54, barHeight: 68 },
-  3: { ringColor: '#CD7F32', avatarSize: 50, barHeight: 52 },
+  1: {
+    ringColor: '#F5B800',
+    avatarSize: 66,
+    barHeight: 96,
+  },
+  2: {
+    ringColor: '#9BA4B4',
+    avatarSize: 54,
+    barHeight: 68,
+  },
+  3: {
+    ringColor: '#CD7F32',
+    avatarSize: 50,
+    barHeight: 52,
+  },
 } as const;
 
 export default function LeaderboardScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ tab?: string }>();
-  const [activeTab, setActiveTab] = useState<TabType>('Overall');
-  const [leaderboardData, setLeaderboardData] = useState<LeaderboardEntry[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const friendRequestCount = useUserStore((s) => s.friendRequestCount);
-  const setFriendRequestCount = useUserStore((s) => s.setFriendRequestCount);
+
+  const params =
+    useLocalSearchParams<{ tab?: string }>();
+
+  const [activeTab, setActiveTab] =
+    useState<TabType>('Overall');
+
+  const [leaderboardData, setLeaderboardData] =
+    useState<LeaderboardEntry[]>([]);
+
+  const [currentUserId, setCurrentUserId] =
+    useState<string | null>(null);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [fetchError, setFetchError] =
+    useState<string | null>(null);
+
+  const friendRequestCount = useUserStore(
+    (s) => s.friendRequestCount
+  );
+
+  const setFriendRequestCount =
+    useUserStore(
+      (s) => s.setFriendRequestCount
+    );
+
+  const notificationCount = useUserStore(
+    (s) => s.notificationCount
+  );
+
+  const setNotificationCount =
+    useUserStore(
+      (s) => s.setNotificationCount
+    );
+
+  const [showNotifications, setShowNotifications] =
+    useState(false);
+
+  const [notifications, setNotifications] =
+    useState<AppNotification[]>([]);
+
+  const [loadingNotifications, setLoadingNotifications] =
+    useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data.user?.id ?? null);
-    });
+    supabase.auth
+      .getUser()
+      .then(({ data }) => {
+        setCurrentUserId(
+          data.user?.id ?? null
+        );
+      });
   }, []);
 
-  // Lets other screens (e.g. Social's "See full" link) deep-link straight into the Friends
-  // tab. Clears the param right after so returning to this tab later via the bottom bar
-  // doesn't keep forcing Friends.
+  // Lets other screens deep-link into Friends
   useEffect(() => {
     if (params.tab === 'Friends') {
       setActiveTab('Friends');
-      router.setParams({ tab: undefined });
+      router.setParams({
+        tab: undefined,
+      });
     }
   }, [params.tab]);
 
   useFocusEffect(
     useCallback(() => {
       if (!currentUserId) return;
-      countIncomingRequests(currentUserId).then(setFriendRequestCount).catch(() => {});
-    }, [currentUserId]),
+
+      countIncomingRequests(
+        currentUserId
+      )
+        .then(setFriendRequestCount)
+        .catch(() => {});
+
+      countUnreadNotifications(
+        currentUserId
+      )
+        .then(setNotificationCount)
+        .catch(() => {});
+    }, [
+      currentUserId,
+      setFriendRequestCount,
+      setNotificationCount,
+    ]),
   );
 
-  const fetchOverall = useCallback(async (): Promise<LeaderboardEntry[]> => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, username, first_name, last_name, level, xp')
-      .order('xp', { ascending: false })
-      .limit(50);
+  async function handleOpenNotifications() {
+    if (!currentUserId) return;
 
-    if (error) {
-      setFetchError('Could not load leaderboard. Check your connection.');
-      return [];
-    }
-    if (!data || data.length === 0) {
-      setFetchError('No users found. Make sure the leaderboard RLS policy allows reading all profiles.');
-      return [];
-    }
+    setShowNotifications(true);
+    setLoadingNotifications(true);
 
-    return data.map(
-      (
-        u: {
+    try {
+      const data =
+        await fetchNotifications(
+          currentUserId
+        );
+
+      setNotifications(data);
+
+      await markAllNotificationsRead(
+        currentUserId
+      );
+
+      setNotificationCount(0);
+    } catch (err) {
+      console.error(
+        'Failed to load notifications',
+        err
+      );
+
+      setNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }
+
+  function handleNotificationPress(
+    notification: AppNotification
+  ) {
+    setShowNotifications(false);
+
+    if (!notification.postId) return;
+
+    router.push(
+      `/post/${notification.postId}`
+    );
+  }
+
+  const fetchOverall = useCallback(
+    async (): Promise<
+      LeaderboardEntry[]
+    > => {
+      const { data, error } =
+        await supabase
+          .from('profiles')
+          .select(
+            'id, username, first_name, last_name, level, xp'
+          )
+          .order('xp', {
+            ascending: false,
+          })
+          .limit(50);
+
+      if (error) {
+        setFetchError(
+          'Could not load leaderboard. Check your connection.'
+        );
+
+        return [];
+      }
+
+      if (!data || data.length === 0) {
+        setFetchError(
+          'No users found. Make sure the leaderboard RLS policy allows reading all profiles.'
+        );
+
+        return [];
+      }
+
+      return data.map(
+        (
+          u: {
+            id: string;
+            username?: string;
+            first_name?: string;
+            last_name?: string;
+            level?: number;
+            xp?: number;
+          },
+          i: number
+        ) => ({
+          rank: i + 1,
+          userId: u.id,
+          name:
+            u.username ||
+            `${u.first_name ?? ''} ${
+              u.last_name ?? ''
+            }`.trim() ||
+            'Unknown',
+          level: u.level ?? 1,
+          xp: u.xp ?? 0,
+        })
+      );
+    },
+    []
+  );
+
+  const fetchWeekly = useCallback(
+    async (): Promise<
+      LeaderboardEntry[]
+    > => {
+      const monday =
+        getMondayDate();
+
+      const [
+        profilesRes,
+        statsRes,
+      ] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select(
+            'id, username, first_name, last_name, level'
+          )
+          .limit(50),
+
+        supabase
+          .from('daily_stats')
+          .select(
+            'user_id, xp_earned'
+          )
+          .gte('date', monday),
+      ]);
+
+      if (profilesRes.error) {
+        setFetchError(
+          'Could not load leaderboard. Check your connection.'
+        );
+
+        return [];
+      }
+
+      if (
+        !profilesRes.data ||
+        profilesRes.data.length === 0
+      ) {
+        setFetchError(
+          'No users found. Make sure the leaderboard RLS policy allows reading all profiles.'
+        );
+
+        return [];
+      }
+
+      const xpMap: Record<
+        string,
+        number
+      > = {};
+
+      if (statsRes.data) {
+        for (
+          const row of statsRes.data as {
+            user_id: string;
+            xp_earned: number | null;
+          }[]
+        ) {
+          xpMap[row.user_id] =
+            (xpMap[row.user_id] ?? 0) +
+            (row.xp_earned ?? 0);
+        }
+      }
+
+      return (
+        profilesRes.data as {
           id: string;
           username?: string;
           first_name?: string;
           last_name?: string;
           level?: number;
-          xp?: number;
-        },
-        i: number
-      ) => ({
-        rank: i + 1,
-        userId: u.id,
-        name:
-          u.username ||
-          `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() ||
-          'Unknown',
-        level: u.level ?? 1,
-        xp: u.xp ?? 0,
-      })
+        }[]
+      )
+        .map((u) => ({
+          rank: 0,
+          userId: u.id,
+          name:
+            u.username ||
+            `${u.first_name ?? ''} ${
+              u.last_name ?? ''
+            }`.trim() ||
+            'Unknown',
+          level: u.level ?? 1,
+          xp: xpMap[u.id] ?? 0,
+        }))
+        .sort(
+          (a, b) => b.xp - a.xp
+        )
+        .map(
+          (entry, i) => ({
+            ...entry,
+            rank: i + 1,
+          })
+        );
+    },
+    []
+  );
+
+  const fetchFriends =
+    useCallback(
+      async (): Promise<
+        LeaderboardEntry[]
+      > => {
+        if (!currentUserId)
+          return [];
+
+        try {
+          return await fetchFriendsLeaderboard(
+            currentUserId
+          );
+        } catch {
+          setFetchError(
+            'Could not load friends leaderboard. Check your connection.'
+          );
+
+          return [];
+        }
+      },
+      [currentUserId]
     );
-  }, []);
-
-  const fetchWeekly = useCallback(async (): Promise<LeaderboardEntry[]> => {
-    const monday = getMondayDate();
-
-    // Fetch all profiles and this week's XP ledger in parallel. daily_stats.xp_earned is
-    // bumped both when a mission completes and when a challenge reward is claimed (see
-    // incrementDailyStat calls in lib/api.ts and claimReward in lib/challenges.ts), so it
-    // covers both XP sources rather than just completed missions. This requires
-    // daily_stats' SELECT policy to allow any authenticated user to read all rows (not
-    // just their own) — added directly in Supabase; without it this silently returns 0
-    // for every user but the querying session.
-    const [profilesRes, statsRes] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, username, first_name, last_name, level')
-        .limit(50),
-      supabase
-        .from('daily_stats')
-        .select('user_id, xp_earned')
-        .gte('date', monday),
-    ]);
-
-    if (profilesRes.error) {
-      setFetchError('Could not load leaderboard. Check your connection.');
-      return [];
-    }
-    if (!profilesRes.data || profilesRes.data.length === 0) {
-      setFetchError('No users found. Make sure the leaderboard RLS policy allows reading all profiles.');
-      return [];
-    }
-
-    // Build weekly XP map from daily_stats (missions + claimed challenges combined)
-    const xpMap: Record<string, number> = {};
-    if (statsRes.data) {
-      for (const row of statsRes.data as { user_id: string; xp_earned: number | null }[]) {
-        xpMap[row.user_id] = (xpMap[row.user_id] ?? 0) + (row.xp_earned ?? 0);
-      }
-    }
-
-    return (
-      profilesRes.data as {
-        id: string;
-        username?: string;
-        first_name?: string;
-        last_name?: string;
-        level?: number;
-      }[]
-    )
-      .map((u) => ({
-        rank: 0,
-        userId: u.id,
-        name:
-          u.username ||
-          `${u.first_name ?? ''} ${u.last_name ?? ''}`.trim() ||
-          'Unknown',
-        level: u.level ?? 1,
-        xp: xpMap[u.id] ?? 0,
-      }))
-      .sort((a, b) => b.xp - a.xp)
-      .map((entry, i) => ({ ...entry, rank: i + 1 }));
-  }, []);
-
-  const fetchFriends = useCallback(async (): Promise<LeaderboardEntry[]> => {
-    if (!currentUserId) return [];
-    try {
-      return await fetchFriendsLeaderboard(currentUserId);
-    } catch {
-      setFetchError('Could not load friends leaderboard. Check your connection.');
-      return [];
-    }
-  }, [currentUserId]);
 
   useFocusEffect(
     useCallback(() => {
-      if (activeTab === 'Friends' && !currentUserId) return;
+      if (
+        activeTab === 'Friends' &&
+        !currentUserId
+      ) {
+        return;
+      }
+
       setLoading(true);
       setFetchError(null);
-      const fetch = activeTab === 'Overall' ? fetchOverall : activeTab === 'Weekly' ? fetchWeekly : fetchFriends;
+
+      const fetch =
+        activeTab === 'Overall'
+          ? fetchOverall
+          : activeTab === 'Weekly'
+            ? fetchWeekly
+            : fetchFriends;
+
       fetch().then((entries) => {
         setLeaderboardData(entries);
         setLoading(false);
       });
-    }, [activeTab, fetchOverall, fetchWeekly, fetchFriends, currentUserId]),
+    }, [
+      activeTab,
+      fetchOverall,
+      fetchWeekly,
+      fetchFriends,
+      currentUserId,
+    ]),
   );
 
-  const topThree = leaderboardData.slice(0, 3);
+  const topThree =
+    leaderboardData.slice(0, 3);
+
   const currentUser = currentUserId
-    ? (leaderboardData.find((u) => u.userId === currentUserId) ?? null)
+    ? (
+        leaderboardData.find(
+          (u) =>
+            u.userId ===
+            currentUserId
+        ) ?? null
+      )
     : null;
 
-  const renderPodiumUser = (user: LeaderboardEntry, place: 1 | 2 | 3) => {
-    const cfg = PODIUM_CONFIG[place];
-    const avatarBg = { 1: '#1E4D8C', 2: '#374151', 3: '#78350F' }[place];
+  const renderPodiumUser = (
+    user: LeaderboardEntry,
+    place: 1 | 2 | 3
+  ) => {
+    const cfg =
+      PODIUM_CONFIG[place];
+
+    const avatarBg = {
+      1: '#1E4D8C',
+      2: '#374151',
+      3: '#78350F',
+    }[place];
 
     return (
-      <View key={user.userId} style={styles.podiumSlot}>
-        <View style={styles.crownContainer}>
+      <View
+        key={user.userId}
+        style={styles.podiumSlot}
+      >
+        <View
+          style={styles.crownContainer}
+        >
           {place === 1 && (
-            <MaterialCommunityIcons name="crown" size={20} color="#F5B800" />
+            <MaterialCommunityIcons
+              name="crown"
+              size={20}
+              color="#F5B800"
+            />
           )}
         </View>
 
-        <View style={{ position: 'relative', marginBottom: 8 }}>
+        <View
+          style={{
+            position: 'relative',
+            marginBottom: 8,
+          }}
+        >
           <View
             style={[
               styles.podiumAvatarRing,
               {
-                width: cfg.avatarSize + 8,
-                height: cfg.avatarSize + 8,
-                borderRadius: (cfg.avatarSize + 8) / 2,
-                borderColor: cfg.ringColor,
+                width:
+                  cfg.avatarSize + 8,
+                height:
+                  cfg.avatarSize + 8,
+                borderRadius:
+                  (cfg.avatarSize +
+                    8) /
+                  2,
+                borderColor:
+                  cfg.ringColor,
               },
             ]}
           >
@@ -244,72 +512,170 @@ export default function LeaderboardScreen() {
               style={[
                 styles.podiumAvatar,
                 {
-                  width: cfg.avatarSize,
-                  height: cfg.avatarSize,
-                  borderRadius: cfg.avatarSize / 2,
-                  backgroundColor: avatarBg,
+                  width:
+                    cfg.avatarSize,
+                  height:
+                    cfg.avatarSize,
+                  borderRadius:
+                    cfg.avatarSize /
+                    2,
+                  backgroundColor:
+                    avatarBg,
                 },
               ]}
             >
-              <Text style={[styles.avatarLetter, { fontSize: cfg.avatarSize * 0.33 }]}>
-                {user.name.charAt(0).toUpperCase()}
+              <Text
+                style={[
+                  styles.avatarLetter,
+                  {
+                    fontSize:
+                      cfg.avatarSize *
+                      0.33,
+                  },
+                ]}
+              >
+                {user.name
+                  .charAt(0)
+                  .toUpperCase()}
               </Text>
             </View>
           </View>
-          <View style={[styles.rankBadge, { backgroundColor: cfg.ringColor }]}>
-            <Text style={styles.rankBadgeText}>{place}</Text>
+
+          <View
+            style={[
+              styles.rankBadge,
+              {
+                backgroundColor:
+                  cfg.ringColor,
+              },
+            ]}
+          >
+            <Text
+              style={
+                styles.rankBadgeText
+              }
+            >
+              {place}
+            </Text>
           </View>
         </View>
 
-        <Text style={styles.podiumName} numberOfLines={1}>
+        <Text
+          style={styles.podiumName}
+          numberOfLines={1}
+        >
           {user.name}
         </Text>
-        <Text style={styles.podiumXp}>{formatXP(user.xp)} XP</Text>
+
+        <Text
+          style={styles.podiumXp}
+        >
+          {formatXP(user.xp)} XP
+        </Text>
 
         <View
           style={[
             styles.podiumBar,
-            { height: cfg.barHeight, backgroundColor: cfg.ringColor + '22' },
+            {
+              height:
+                cfg.barHeight,
+              backgroundColor:
+                cfg.ringColor + '22',
+            },
           ]}
         />
       </View>
     );
   };
 
-  const renderRow = ({ item: user }: { item: LeaderboardEntry }) => {
-    const isCurrentUser = user.userId === currentUserId;
+  const renderRow = ({
+    item: user,
+  }: {
+    item: LeaderboardEntry;
+  }) => {
+    const isCurrentUser =
+      user.userId ===
+      currentUserId;
+
     const rankColor =
       user.rank === 1
         ? '#F5B800'
         : user.rank === 2
-        ? '#9BA4B4'
-        : user.rank === 3
-        ? '#CD7F32'
-        : '#C0C8D4';
+          ? '#9BA4B4'
+          : user.rank === 3
+            ? '#CD7F32'
+            : '#C0C8D4';
 
     return (
-      <View style={[styles.row, isCurrentUser && styles.currentUserRow]}>
-        <Text style={[styles.rankNumber, { color: rankColor }]}>
+      <View
+        style={[
+          styles.row,
+          isCurrentUser &&
+            styles.currentUserRow,
+        ]}
+      >
+        <Text
+          style={[
+            styles.rankNumber,
+            { color: rankColor },
+          ]}
+        >
           {user.rank}
         </Text>
+
         <View
           style={[
             styles.avatar,
-            { backgroundColor: getAvatarColor(user.rank - 1) },
+            {
+              backgroundColor:
+                getAvatarColor(
+                  user.rank - 1
+                ),
+            },
           ]}
         >
-          <Text style={styles.avatarText}>
-            {user.name.charAt(0).toUpperCase()}
+          <Text
+            style={styles.avatarText}
+          >
+            {user.name
+              .charAt(0)
+              .toUpperCase()}
           </Text>
         </View>
-        <View style={styles.userInfo}>
-          <Text style={styles.name}>{user.name}</Text>
-          <Text style={styles.subtitle}>
-            Lv {user.level} · {getLevelTitle(user.level)}
+
+        <View
+          style={styles.userInfo}
+        >
+          <Text
+            style={styles.name}
+          >
+            {user.name}
+          </Text>
+
+          <Text
+            style={styles.subtitle}
+          >
+            Lv {user.level} ·{' '}
+            {getLevelTitle(
+              user.level
+            )}
           </Text>
         </View>
-        <View style={[styles.xpBadge, isCurrentUser && styles.xpBadgeCurrent]}>
-          <Text style={[styles.xpText, isCurrentUser && styles.xpTextCurrent]}>
+
+        <View
+          style={[
+            styles.xpBadge,
+            isCurrentUser &&
+              styles.xpBadgeCurrent,
+          ]}
+        >
+          <Text
+            style={[
+              styles.xpText,
+              isCurrentUser &&
+                styles.xpTextCurrent,
+            ]}
+          >
             {formatXP(user.xp)} XP
           </Text>
         </View>
@@ -317,23 +683,56 @@ export default function LeaderboardScreen() {
     );
   };
 
-  const insets = useSafeAreaInsets();
-  const showFriendsEmpty = !loading && !fetchError && activeTab === 'Friends' && leaderboardData.length <= 1;
-  const showPodium = !loading && !fetchError && !showFriendsEmpty && leaderboardData.length > 0;
+  const insets =
+    useSafeAreaInsets();
+
+  const showFriendsEmpty =
+    !loading &&
+    !fetchError &&
+    activeTab === 'Friends' &&
+    leaderboardData.length <= 1;
+
+  const showPodium =
+    !loading &&
+    !fetchError &&
+    !showFriendsEmpty &&
+    leaderboardData.length > 0;
 
   const listHeader = (
     <>
       {/* Podium section */}
-      <View style={styles.podiumSection}>
+      <View
+        style={styles.podiumSection}
+      >
         {/* Segmented tabs */}
-        <View style={styles.tabBar}>
-          {(['Overall', 'Weekly', 'Friends'] as TabType[]).map((tab) => (
+        <View
+          style={styles.tabBar}
+        >
+          {(
+            [
+              'Overall',
+              'Weekly',
+              'Friends',
+            ] as TabType[]
+          ).map((tab) => (
             <TouchableOpacity
               key={tab}
-              style={[styles.tab, activeTab === tab && styles.activeTab]}
-              onPress={() => setActiveTab(tab)}
+              style={[
+                styles.tab,
+                activeTab === tab &&
+                  styles.activeTab,
+              ]}
+              onPress={() =>
+                setActiveTab(tab)
+              }
             >
-              <Text style={activeTab === tab ? styles.activeTabText : styles.tabText}>
+              <Text
+                style={
+                  activeTab === tab
+                    ? styles.activeTabText
+                    : styles.tabText
+                }
+              >
                 {tab}
               </Text>
             </TouchableOpacity>
@@ -341,89 +740,377 @@ export default function LeaderboardScreen() {
         </View>
 
         {showPodium && (
-          <View style={styles.podiumContainer}>
-            {topThree[1] && renderPodiumUser(topThree[1], 2)}
-            {topThree[0] && renderPodiumUser(topThree[0], 1)}
-            {topThree[2] && renderPodiumUser(topThree[2], 3)}
+          <View
+            style={
+              styles.podiumContainer
+            }
+          >
+            {topThree[1] &&
+              renderPodiumUser(
+                topThree[1],
+                2
+              )}
+
+            {topThree[0] &&
+              renderPodiumUser(
+                topThree[0],
+                1
+              )}
+
+            {topThree[2] &&
+              renderPodiumUser(
+                topThree[2],
+                3
+              )}
           </View>
         )}
       </View>
 
       {/* State messages */}
       {loading && (
-        <View style={styles.stateContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
+        <View
+          style={
+            styles.stateContainer
+          }
+        >
+          <ActivityIndicator
+            size="large"
+            color="#2563EB"
+          />
         </View>
       )}
+
       {fetchError && (
-        <View style={styles.stateContainer}>
-          <Text style={[styles.stateText, { color: '#DC2626', textAlign: 'center', paddingHorizontal: 32 }]}>
+        <View
+          style={
+            styles.stateContainer
+          }
+        >
+          <Text
+            style={[
+              styles.stateText,
+              {
+                color: '#DC2626',
+                textAlign: 'center',
+                paddingHorizontal: 32,
+              },
+            ]}
+          >
             {fetchError}
           </Text>
         </View>
       )}
+
       {showFriendsEmpty && (
-        <View style={styles.stateContainer}>
-          <Ionicons name="people-outline" size={40} color="#C0C8D4" />
-          <Text style={[styles.stateText, { marginTop: 12 }]}>
-            Add friends to see them ranked here
+        <View
+          style={
+            styles.stateContainer
+          }
+        >
+          <Ionicons
+            name="people-outline"
+            size={40}
+            color="#C0C8D4"
+          />
+
+          <Text
+            style={[
+              styles.stateText,
+              { marginTop: 12 },
+            ]}
+          >
+            Add friends to see them
+            ranked here
           </Text>
         </View>
       )}
-      {!loading && !fetchError && !showFriendsEmpty && (
-        <Text style={styles.sectionLabel}>{activeTab === 'Friends' ? 'Your Friends' : 'All Players'}</Text>
-      )}
+
+      {!loading &&
+        !fetchError &&
+        !showFriendsEmpty && (
+          <Text
+            style={
+              styles.sectionLabel
+            }
+          >
+            {activeTab ===
+            'Friends'
+              ? 'Your Friends'
+              : 'All Players'}
+          </Text>
+        )}
     </>
   );
 
   return (
     <View style={styles.safe}>
       {/* Sticky header */}
-      <View style={[styles.stickyHeader, { paddingTop: insets.top }]}>
+      <View
+        style={[
+          styles.stickyHeader,
+          {
+            paddingTop:
+              insets.top,
+          },
+        ]}
+      >
         <View style={styles.header}>
-          <Text style={styles.title}>Leaderboard</Text>
-          <View style={styles.headerIcons}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
-              <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
-              {friendRequestCount > 0 && (
-                <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>{friendRequestCount > 9 ? '9+' : friendRequestCount}</Text>
+          <Text
+            style={styles.title}
+          >
+            Leaderboard
+          </Text>
+
+          <View
+            style={
+              styles.headerIcons
+            }
+          >
+            {/* Friend Requests */}
+            <TouchableOpacity
+              style={
+                styles.iconBtn
+              }
+              onPress={() =>
+                router.push(
+                  '/friends'
+                )
+              }
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="person-add-outline"
+                size={20}
+                color="#1B2B4B"
+              />
+
+              {friendRequestCount >
+                0 && (
+                <View
+                  style={
+                    styles.notifBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.notifBadgeText
+                    }
+                  >
+                    {friendRequestCount >
+                    9
+                      ? '9+'
+                      : friendRequestCount}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
+
+            {/* Messages */}
+            <TouchableOpacity
+              style={
+                styles.iconBtn
+              }
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={20}
+                color="#1B2B4B"
+              />
+            </TouchableOpacity>
+
+            {/* Notifications */}
+            <TouchableOpacity
+              style={
+                styles.iconBtn
+              }
+              onPress={
+                handleOpenNotifications
+              }
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={20}
+                color="#1B2B4B"
+              />
+
+              {notificationCount >
+                0 && (
+                <View
+                  style={
+                    styles.notifBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.notifBadgeText
+                    }
+                  >
+                    {notificationCount >
+                    9
+                      ? '9+'
+                      : notificationCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
       </View>
 
       <FlatList
-        data={loading || fetchError || showFriendsEmpty ? [] : leaderboardData}
-        renderItem={renderRow}
-        keyExtractor={(item) => item.userId}
-        ListHeaderComponent={listHeader}
-        contentContainerStyle={{ paddingBottom: currentUser && !loading ? 100 : 24 }}
-        showsVerticalScrollIndicator={false}
+        data={
+          loading ||
+          fetchError ||
+          showFriendsEmpty
+            ? []
+            : leaderboardData
+        }
+        renderItem={
+          renderRow
+        }
+        keyExtractor={(item) =>
+          item.userId
+        }
+        ListHeaderComponent={
+          listHeader
+        }
+        contentContainerStyle={{
+          paddingBottom:
+            currentUser &&
+            !loading
+              ? 100
+              : 24,
+        }}
+        showsVerticalScrollIndicator={
+          false
+        }
       />
 
-      {currentUser && !loading && (
-        <View style={[styles.pinnedWrapper, { paddingBottom: insets.bottom + 65 }]}>
-<View style={[styles.row, styles.currentUserRow, { marginBottom: 0 }]}>
-            <Text style={[styles.rankNumber, { color: '#2563EB' }]}>{currentUser.rank}</Text>
-            <View style={[styles.avatar, { backgroundColor: getAvatarColor(currentUser.rank - 1) }]}>
-              <Text style={styles.avatarText}>{currentUser.name.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View style={styles.userInfo}>
-              <Text style={styles.name}>{currentUser.name}</Text>
-              <Text style={styles.subtitle}>Lv {currentUser.level} · {getLevelTitle(currentUser.level)}</Text>
-            </View>
-            <View style={[styles.xpBadge, styles.xpBadgeCurrent]}>
-              <Text style={[styles.xpText, styles.xpTextCurrent]}>{formatXP(currentUser.xp)} XP</Text>
+      {currentUser &&
+        !loading && (
+          <View
+            style={[
+              styles.pinnedWrapper,
+              {
+                paddingBottom:
+                  insets.bottom +
+                  65,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.row,
+                styles.currentUserRow,
+                {
+                  marginBottom: 0,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.rankNumber,
+                  {
+                    color:
+                      '#2563EB',
+                  },
+                ]}
+              >
+                {currentUser.rank}
+              </Text>
+
+              <View
+                style={[
+                  styles.avatar,
+                  {
+                    backgroundColor:
+                      getAvatarColor(
+                        currentUser.rank -
+                          1
+                      ),
+                  },
+                ]}
+              >
+                <Text
+                  style={
+                    styles.avatarText
+                  }
+                >
+                  {currentUser.name
+                    .charAt(0)
+                    .toUpperCase()}
+                </Text>
+              </View>
+
+              <View
+                style={
+                  styles.userInfo
+                }
+              >
+                <Text
+                  style={
+                    styles.name
+                  }
+                >
+                  {currentUser.name}
+                </Text>
+
+                <Text
+                  style={
+                    styles.subtitle
+                  }
+                >
+                  Lv{' '}
+                  {currentUser.level}{' '}
+                  ·{' '}
+                  {getLevelTitle(
+                    currentUser.level
+                  )}
+                </Text>
+              </View>
+
+              <View
+                style={[
+                  styles.xpBadge,
+                  styles.xpBadgeCurrent,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.xpText,
+                    styles.xpTextCurrent,
+                  ]}
+                >
+                  {formatXP(
+                    currentUser.xp
+                  )}{' '}
+                  XP
+                </Text>
+              </View>
             </View>
           </View>
-        </View>
-      )}
+        )}
+
+      {/* Notifications Popup */}
+      <NotificationsModal
+        visible={
+          showNotifications
+        }
+        notifications={
+          notifications
+        }
+        loading={
+          loadingNotifications
+        }
+        onClose={() =>
+          setShowNotifications(false)
+        }
+        onPressNotification={
+          handleNotificationPress
+        }
+      />
     </View>
   );
 }
@@ -431,12 +1118,16 @@ export default function LeaderboardScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#F0F4F8',
+    backgroundColor:
+      '#F0F4F8',
   },
+
   stickyHeader: {
-    backgroundColor: '#F0F4F8',
+    backgroundColor:
+      '#F0F4F8',
     paddingBottom: 4,
   },
+
   podiumSection: {
     backgroundColor: '#fff',
     paddingBottom: 12,
@@ -448,19 +1139,23 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 12,
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     alignItems: 'center',
   },
+
   title: {
     fontSize: 26,
     fontWeight: '800',
     color: '#0D1829',
     letterSpacing: -0.3,
   },
+
   headerIcons: {
     flexDirection: 'row',
     gap: 8,
   },
+
   notifBadge: {
     position: 'absolute',
     top: -2,
@@ -468,21 +1163,34 @@ const styles = StyleSheet.create({
     minWidth: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: '#DC2626',
+    backgroundColor:
+      '#DC2626',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     paddingHorizontal: 3,
   },
-  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+
+  notifBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
   iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor:
+      '#FFFFFF',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent:
+      'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
@@ -491,32 +1199,40 @@ const styles = StyleSheet.create({
   /* ── Segmented tabs ── */
   tabBar: {
     flexDirection: 'row',
-    backgroundColor: '#F0F4F8',
+    backgroundColor:
+      '#F0F4F8',
     borderRadius: 12,
     marginHorizontal: 20,
     marginTop: 16,
     marginBottom: 24,
     padding: 3,
   },
+
   tab: {
     flex: 1,
     alignItems: 'center',
     paddingVertical: 8,
     borderRadius: 10,
   },
+
   activeTab: {
     backgroundColor: '#fff',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.08,
     shadowRadius: 3,
     elevation: 2,
   },
+
   tabText: {
     color: '#9CA3AF',
     fontWeight: '600',
     fontSize: 13,
   },
+
   activeTabText: {
     color: '#0D1829',
     fontWeight: '700',
@@ -531,28 +1247,34 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     gap: 10,
   },
+
   podiumSlot: {
     alignItems: 'center',
   },
+
   crownContainer: {
     height: 22,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 4,
   },
+
   podiumAvatarRing: {
     borderWidth: 3,
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   podiumAvatar: {
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   avatarLetter: {
     color: '#fff',
     fontWeight: '800',
   },
+
   rankBadge: {
     position: 'absolute',
     bottom: -4,
@@ -565,11 +1287,13 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff',
   },
+
   rankBadgeText: {
     fontSize: 9,
     fontWeight: '800',
     color: '#0D1829',
   },
+
   podiumName: {
     color: '#0D1829',
     fontWeight: '700',
@@ -577,12 +1301,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     maxWidth: 80,
   },
+
   podiumXp: {
     color: '#9CA3AF',
     fontSize: 10,
     marginTop: 2,
     marginBottom: 8,
   },
+
   podiumBar: {
     width: 84,
     borderTopLeftRadius: 10,
@@ -590,7 +1316,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 2,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
+    borderColor:
+      'rgba(0,0,0,0.06)',
   },
 
   /* ── State messages ── */
@@ -599,16 +1326,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+
   stateText: {
     color: '#9CA3AF',
     fontSize: 15,
   },
+
   sectionLabel: {
     fontSize: 11,
     fontWeight: '700',
     color: '#9CA3AF',
     letterSpacing: 1.2,
-    textTransform: 'uppercase',
+    textTransform:
+      'uppercase',
     marginHorizontal: 20,
     marginTop: 12,
     marginBottom: 10,
@@ -625,22 +1355,30 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 11,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
+
   currentUserRow: {
-    backgroundColor: '#EBF2FF',
+    backgroundColor:
+      '#EBF2FF',
     borderWidth: 1.5,
-    borderColor: '#93B4E0',
+    borderColor:
+      '#93B4E0',
   },
+
   rankNumber: {
     width: 28,
     fontSize: 14,
     fontWeight: '700',
     textAlign: 'center',
   },
+
   avatar: {
     width: 36,
     height: 36,
@@ -650,54 +1388,67 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     marginRight: 12,
   },
+
   avatarText: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 14,
   },
+
   userInfo: {
     flex: 1,
   },
+
   name: {
     fontSize: 14,
     fontWeight: '700',
     color: '#0D1829',
   },
+
   subtitle: {
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
   },
+
   xpBadge: {
-    backgroundColor: '#F0F4F8',
+    backgroundColor:
+      '#F0F4F8',
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 20,
   },
+
   xpBadgeCurrent: {
-    backgroundColor: '#DBEAFE',
+    backgroundColor:
+      '#DBEAFE',
   },
+
   xpText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#6B7280',
   },
+
   xpTextCurrent: {
     color: '#1D4ED8',
   },
 
   /* ── Pinned "Your Rank" ── */
   pinnedWrapper: {
-    backgroundColor: '#F0F4F8',
+    backgroundColor:
+      '#F0F4F8',
     paddingTop: 8,
     borderTopWidth: 1,
     borderColor: '#E2E8F0',
   },
+
   pinnedLabel: {
     fontSize: 10,
     fontWeight: '700',
     color: '#9CA3AF',
-    textTransform: 'uppercase',
+    textTransform:
+      'uppercase',
     letterSpacing: 1.2,
     marginHorizontal: 20,
     marginBottom: 6,

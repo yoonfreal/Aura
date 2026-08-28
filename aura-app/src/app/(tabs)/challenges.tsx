@@ -38,12 +38,20 @@ import {
 import { xpForLevel } from '@/lib/level';
 import { countIncomingRequests } from '@/lib/friends';
 
+import {
+  countUnreadNotifications,
+  fetchNotifications,
+  markAllNotificationsRead,
+  type AppNotification,
+} from '@/lib/notifications';
+
 import { ChallengeCard } from '@/components/ChallengeCard';
 import { HeadToHeadCard } from '@/components/HeadToHeadCard';
 import { ChallengeHistoryCard } from '@/components/ChallengeHistoryCard';
 import { TeamJoinModal } from '@/components/TeamJoinModal';
 import { TeamRosterModal } from '@/components/TeamRosterModal';
 import { OpponentPickerModal } from '@/components/OpponentPickerModal';
+import { NotificationsModal } from '@/components/NotificationsModal';
 
 
 /* =========================================================
@@ -153,13 +161,17 @@ function matchesFilter(
    * "All" means don't filter by type.
    */
 
-  if (typeFilter !== 'All' && c.type !== typeFilter.toLowerCase()) {
+  if (
+    typeFilter !== 'All' &&
+    c.type !== typeFilter.toLowerCase()
+  ) {
     return false;
   }
 
   /*
    * Both filters passed.
    */
+
   return true;
 }
 
@@ -188,6 +200,11 @@ export default function ChallengesScreen() {
   const setFriendRequestCount =
     useUserStore(
       (state) => state.setFriendRequestCount
+    );
+
+  const setNotificationCount =
+    useUserStore(
+      (state) => state.setNotificationCount
     );
 
   const userId =
@@ -276,6 +293,14 @@ export default function ChallengesScreen() {
                 setFriendRequestCount
               )
               .catch(() => {});
+
+
+            // Update notification count
+            countUnreadNotifications(
+              userId
+            )
+              .then(setNotificationCount)
+              .catch(() => {});
           }
         )
         .catch((err) => {
@@ -293,7 +318,12 @@ export default function ChallengesScreen() {
           setLoading(false);
         });
 
-    }, [userId]);
+    }, [
+      userId,
+      setClaimableCount,
+      setFriendRequestCount,
+      setNotificationCount,
+    ]);
 
 
   useFocusEffect(load);
@@ -322,6 +352,7 @@ export default function ChallengesScreen() {
      * Team deadlines are shared
      * on the team.
      */
+
     const myTeam =
       challenge.type === 'team'
         ? challenge.teams.find(
@@ -555,6 +586,7 @@ function AdminChallengesView({
 
         </TouchableOpacity>
 
+
       </View>
 
 
@@ -725,6 +757,32 @@ function UserChallengesView({
       (s) => s.friendRequestCount
     );
 
+  const notificationCount =
+    useUserStore(
+      (s) => s.notificationCount
+    );
+
+  const setNotificationCount =
+    useUserStore(
+      (s) => s.setNotificationCount
+    );
+
+
+  const [
+    showNotifications,
+    setShowNotifications,
+  ] = useState(false);
+
+  const [
+    notifications,
+    setNotifications,
+  ] = useState<AppNotification[]>([]);
+
+  const [
+    loadingNotifications,
+    setLoadingNotifications,
+  ] = useState(false);
+
 
   const [
     statusFilter,
@@ -771,6 +829,74 @@ function UserChallengesView({
     useState<ChallengeWithStatus | null>(
       null
     );
+
+
+  /* =====================================================
+     NOTIFICATIONS
+  ===================================================== */
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!userId) return;
+
+      countUnreadNotifications(userId)
+        .then(setNotificationCount)
+        .catch(() => {});
+    }, [
+      userId,
+      setNotificationCount,
+    ])
+  );
+
+
+  async function handleOpenNotifications() {
+    if (!userId) return;
+
+    setShowNotifications(true);
+    setLoadingNotifications(true);
+
+    try {
+      const data =
+        await fetchNotifications(userId);
+
+      setNotifications(data);
+
+      await markAllNotificationsRead(
+        userId
+      );
+
+      setNotificationCount(0);
+
+    } catch (err) {
+
+      console.error(
+        'Failed to load notifications',
+        err
+      );
+
+      setNotifications([]);
+
+    } finally {
+
+      setLoadingNotifications(false);
+    }
+  }
+
+
+  function handleNotificationPress(
+    notification: AppNotification
+  ) {
+
+    setShowNotifications(false);
+
+    if (!notification.postId) {
+      return;
+    }
+
+    router.push(
+      `/post/${notification.postId}`
+    );
+  }
 
 
   /* =====================================================
@@ -843,6 +969,7 @@ function UserChallengesView({
         null
       );
 
+
       onReload();
 
     } catch (err) {
@@ -895,6 +1022,7 @@ function UserChallengesView({
         null
       );
 
+
       onReload();
 
     } catch (err) {
@@ -945,6 +1073,7 @@ function UserChallengesView({
       setOpponentPickerChallenge(
         null
       );
+
 
       onReload();
 
@@ -1000,6 +1129,7 @@ function UserChallengesView({
       setTeamInvitePickerChallenge(
         null
       );
+
 
       onReload();
 
@@ -1176,6 +1306,7 @@ function UserChallengesView({
             onPress={() =>
               router.push('/friends')
             }
+            activeOpacity={0.7}
           >
 
             <Ionicons
@@ -1212,6 +1343,7 @@ function UserChallengesView({
 
           <TouchableOpacity
             style={styles.iconBtn}
+            activeOpacity={0.7}
           >
 
             <Ionicons
@@ -1219,6 +1351,46 @@ function UserChallengesView({
               size={20}
               color="#1B2B4B"
             />
+
+          </TouchableOpacity>
+
+
+          {/* Notifications */}
+
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={
+              handleOpenNotifications
+            }
+            activeOpacity={0.7}
+          >
+
+            <Ionicons
+              name="notifications-outline"
+              size={20}
+              color="#1B2B4B"
+            />
+
+
+            {notificationCount > 0 && (
+
+              <View
+                style={styles.notifBadge}
+              >
+
+                <Text
+                  style={
+                    styles.notifBadgeText
+                  }
+                >
+                  {notificationCount > 9
+                    ? '9+'
+                    : notificationCount}
+                </Text>
+
+              </View>
+
+            )}
 
           </TouchableOpacity>
 
@@ -1692,6 +1864,29 @@ function UserChallengesView({
 
       )}
 
+
+      {/* =================================================
+          NOTIFICATIONS
+      ================================================= */}
+
+      <NotificationsModal
+        visible={
+          showNotifications
+        }
+        notifications={
+          notifications
+        }
+        loading={
+          loadingNotifications
+        }
+        onClose={() =>
+          setShowNotifications(false)
+        }
+        onPressNotification={
+          handleNotificationPress
+        }
+      />
+
     </View>
   );
 }
@@ -1788,7 +1983,7 @@ const styles =
 
 
     /* -----------------------------------------------
-       FRIEND REQUEST BADGE
+       NOTIFICATION BADGE
     ----------------------------------------------- */
 
     notifBadge: {

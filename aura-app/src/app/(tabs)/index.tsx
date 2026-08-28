@@ -1,4 +1,13 @@
-import { Alert, Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  Animated,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -11,7 +20,10 @@ import { XPBar } from '@/components/XPBar';
 import { WatchSyncCard } from '@/components/WatchSyncCard';
 import { GymCheckInIcon } from '@/components/GymCheckInIcon';
 import { WeeklyView } from '@/components/WeeklyView';
+import { NotificationsModal } from '@/components/NotificationsModal';
+
 import { fetchWatchSyncStatus } from '@/lib/healthkit';
+
 import {
   fetchTodayMissions,
   fetchDailyStats,
@@ -19,21 +31,59 @@ import {
   fetchWeeklyStats,
   incrementDailyStat,
 } from '@/lib/api';
-import { syncChallengeProgressForUser, refreshClaimableCount } from '@/lib/challenges';
+
+import {
+  syncChallengeProgressForUser,
+  refreshClaimableCount,
+} from '@/lib/challenges';
+
 import { countIncomingRequests } from '@/lib/friends';
-import { countUnreadNotifications } from '@/lib/notifications';
+
+import {
+  countUnreadNotifications,
+  fetchNotifications,
+  markAllNotificationsRead,
+  type AppNotification,
+} from '@/lib/notifications';
+
 import { getLevelTitle, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+
   const {
-    user, dailyStats, missions, watchSync, activeTab, weeklyStats, friendRequestCount,
-    setActiveTab, setDailyStats, setWatchSync, setMissions, setUser, setWeeklyStats, setClaimableCount,
-    setFriendRequestCount, setNotificationCount,
+    user,
+    dailyStats,
+    missions,
+    watchSync,
+    activeTab,
+    weeklyStats,
+    friendRequestCount,
+
+    setActiveTab,
+    setDailyStats,
+    setWatchSync,
+    setMissions,
+    setUser,
+    setWeeklyStats,
+    setClaimableCount,
+    setFriendRequestCount,
+    setNotificationCount,
   } = useUserStore();
+
   const pillAnim = useRef(new Animated.Value(0)).current;
+
   const [trackWidth, setTrackWidth] = useState(0);
+
+  // Notification state
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  const unreadNotifications = useUserStore(
+    (state) => state.notificationCount
+  );
 
   useEffect(() => {
     Animated.timing(pillAnim, {
@@ -46,54 +96,116 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!user || activeTab !== 'Weekly') return;
+
       fetchWeeklyStats(user.id)
         .then(setWeeklyStats)
-        .catch((err) => console.error('fetchWeeklyStats failed', err));
+        .catch((err) =>
+          console.error('fetchWeeklyStats failed', err)
+        );
     }, [user?.id, activeTab]),
   );
 
   useFocusEffect(
     useCallback(() => {
       if (!user) return;
+
       async function loadData() {
         try {
-          const [activityStats, sync, todayMissions] = await Promise.all([
+          const [
+            activityStats,
+            sync,
+            todayMissions,
+          ] = await Promise.all([
             fetchDailyStats(user!.id),
             fetchWatchSyncStatus(),
             fetchTodayMissions(user!.id),
           ]);
+
           setDailyStats({
             steps: activityStats.steps,
             calories: activityStats.calories,
             streakDays: user!.streak,
             xpEarned: activityStats.xpEarned,
           });
+
           setMissions(todayMissions);
           setWatchSync(sync);
 
-          const claimable = await refreshClaimableCount(user!.id);
+          const claimable = await refreshClaimableCount(
+            user!.id
+          );
+
           setClaimableCount(claimable);
 
-          const friendRequests = await countIncomingRequests(user!.id);
+          const friendRequests =
+            await countIncomingRequests(user!.id);
+
           setFriendRequestCount(friendRequests);
 
-          const unreadNotifications = await countUnreadNotifications(user!.id);
+          const unreadNotifications =
+            await countUnreadNotifications(user!.id);
+
           setNotificationCount(unreadNotifications);
         } catch (err) {
           console.error('loadData failed', err);
         }
       }
+
       loadData();
     }, [user?.id]),
   );
 
+  async function handleOpenNotifications() {
+    if (!user) return;
+
+    setShowNotifications(true);
+    setLoadingNotifications(true);
+
+    try {
+      const data = await fetchNotifications(user.id);
+
+      setNotifications(data);
+
+      await markAllNotificationsRead(user.id);
+
+      setNotificationCount(0);
+    } catch (err) {
+      console.error(
+        'Failed to load notifications',
+        err
+      );
+
+      setNotifications([]);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  }
+
+  function handleNotificationPress(
+    notification: AppNotification
+  ) {
+    setShowNotifications(false);
+
+    if (!notification.postId) return;
+
+    router.push(`/post/${notification.postId}`);
+  }
+
   async function handleLog(userMissionId: string) {
     if (!user) return;
-    const mission = missions.find((m) => m.id === userMissionId);
+
+    const mission = missions.find(
+      (m) => m.id === userMissionId
+    );
+
     if (!mission) return;
 
     try {
-      const { newXp, newLevel, newStreak } = await logMissionComplete(
+      const {
+        newXp,
+        newLevel,
+        newStreak,
+      } = await logMissionComplete(
         userMissionId,
         user.id,
         mission.goalValue,
@@ -102,29 +214,79 @@ export default function HomeScreen() {
         user.level,
       );
 
-      await syncChallengeProgressForUser(user.id, mission.goalUnit, mission.goalValue);
+      await syncChallengeProgressForUser(
+        user.id,
+        mission.goalUnit,
+        mission.goalValue
+      );
 
       setMissions(
         missions.map((m) =>
           m.id === userMissionId
-            ? { ...m, currentValue: m.goalValue, completed: true }
+            ? {
+                ...m,
+                currentValue: m.goalValue,
+                completed: true,
+              }
             : m,
         ),
       );
-      setUser({ ...user, xp: newXp, level: newLevel, xpForNextLevel: xpForLevel(newLevel + 1), streak: newStreak });
 
-      if (mission.goalUnit === 'steps' || mission.goalUnit === 'calories') {
-        const { steps, calories } = await incrementDailyStat(user.id, mission.goalUnit, mission.goalValue);
-        setDailyStats({ ...dailyStats, steps, calories, streakDays: newStreak, xpEarned: dailyStats.xpEarned + mission.xpReward });
+      setUser({
+        ...user,
+        xp: newXp,
+        level: newLevel,
+        xpForNextLevel: xpForLevel(
+          newLevel + 1
+        ),
+        streak: newStreak,
+      });
+
+      if (
+        mission.goalUnit === 'steps' ||
+        mission.goalUnit === 'calories'
+      ) {
+        const {
+          steps,
+          calories,
+        } = await incrementDailyStat(
+          user.id,
+          mission.goalUnit,
+          mission.goalValue
+        );
+
+        setDailyStats({
+          ...dailyStats,
+          steps,
+          calories,
+          streakDays: newStreak,
+          xpEarned:
+            dailyStats.xpEarned +
+            mission.xpReward,
+        });
       } else {
-        setDailyStats({ ...dailyStats, streakDays: newStreak, xpEarned: dailyStats.xpEarned + mission.xpReward });
+        setDailyStats({
+          ...dailyStats,
+          streakDays: newStreak,
+          xpEarned:
+            dailyStats.xpEarned +
+            mission.xpReward,
+        });
       }
 
-      const claimable = await refreshClaimableCount(user.id);
+      const claimable =
+        await refreshClaimableCount(user.id);
+
       setClaimableCount(claimable);
     } catch (err) {
       console.error('handleLog failed', err);
-      Alert.alert('Could not log mission', (err as { message?: string })?.message ?? 'Please try again.');
+
+      Alert.alert(
+        'Could not log mission',
+        (err as { message?: string })
+          ?.message ??
+          'Please try again.'
+      );
     }
   }
 
@@ -132,23 +294,86 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.safe}>
-      {/* Sticky header — stays fixed */}
-      <View style={[styles.stickyHeader, { paddingTop: insets.top }]}>
+      {/* Sticky header */}
+      <View
+        style={[
+          styles.stickyHeader,
+          {
+            paddingTop: insets.top,
+          },
+        ]}
+      >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.username}>{user.username}</Text>
+          <Text style={styles.username}>
+            {user.username}
+          </Text>
+
           <View style={styles.headerIcons}>
+            {/* Gym Check-In */}
             <GymCheckInIcon userId={user.id} />
-            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/friends')}>
-              <Ionicons name="person-add-outline" size={20} color="#1B2B4B" />
+
+            {/* Friend Requests */}
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={() =>
+                router.push('/friends')
+              }
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="person-add-outline"
+                size={20}
+                color="#1B2B4B"
+              />
+
               {friendRequestCount > 0 && (
                 <View style={styles.notifBadge}>
-                  <Text style={styles.notifBadgeText}>{friendRequestCount > 9 ? '9+' : friendRequestCount}</Text>
+                  <Text style={styles.notifBadgeText}>
+                    {friendRequestCount > 9
+                      ? '9+'
+                      : friendRequestCount}
+                  </Text>
                 </View>
               )}
             </TouchableOpacity>
-            <TouchableOpacity style={styles.iconBtn}>
-              <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
+
+            {/* Messages */}
+            <TouchableOpacity
+              style={styles.iconBtn}
+              activeOpacity={0.7}
+              onPress={() => {
+                // Keep your existing chat behavior here
+              }}
+            >
+              <Ionicons
+                name="chatbubble-outline"
+                size={20}
+                color="#1B2B4B"
+              />
+            </TouchableOpacity>
+
+            {/* Notifications */}
+            <TouchableOpacity
+              style={styles.iconBtn}
+              onPress={handleOpenNotifications}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="notifications-outline"
+                size={20}
+                color="#1B2B4B"
+              />
+
+              {unreadNotifications > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadNotifications > 9
+                      ? '9+'
+                      : unreadNotifications}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -156,13 +381,22 @@ export default function HomeScreen() {
         {/* Level Badge */}
         <View style={styles.levelSection}>
           <View style={styles.levelBadge}>
-            <Text style={styles.levelText}>⭐ Level {user.level} ({getLevelTitle(user.level)})</Text>
+            <Text style={styles.levelText}>
+              ⭐ Level {user.level} (
+              {getLevelTitle(user.level)})
+            </Text>
+
             <Text style={styles.xpText}>
-              {user.xp.toLocaleString()} / {user.xpForNextLevel.toLocaleString()} XP
+              {user.xp.toLocaleString()} /{' '}
+              {user.xpForNextLevel.toLocaleString()} XP
             </Text>
           </View>
+
           <View style={styles.xpBarWrap}>
-            <XPBar current={user.xp} max={user.xpForNextLevel} />
+            <XPBar
+              current={user.xp}
+              max={user.xpForNextLevel}
+            />
           </View>
         </View>
 
@@ -170,33 +404,54 @@ export default function HomeScreen() {
         <View style={styles.segmentWrapper}>
           <View
             style={styles.segmentTrack}
-            onLayout={(e) => setTrackWidth(e.nativeEvent.layout.width)}
+            onLayout={(e) =>
+              setTrackWidth(
+                e.nativeEvent.layout.width
+              )
+            }
           >
             <Animated.View
               style={[
                 styles.segmentPill,
                 {
-                  transform: [{
-                    translateX: pillAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0, trackWidth / 2],
-                    }),
-                  }],
+                  transform: [
+                    {
+                      translateX:
+                        pillAnim.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [
+                            0,
+                            trackWidth / 2,
+                          ],
+                        }),
+                    },
+                  ],
                 },
               ]}
             />
-            {(['Daily', 'Weekly'] as const).map((tab) => (
-              <TouchableOpacity
-                key={tab}
-                style={styles.segmentBtn}
-                onPress={() => setActiveTab(tab)}
-                activeOpacity={0.8}
-              >
-                <Text style={[styles.segmentText, activeTab === tab && styles.segmentTextActive]}>
-                  {tab}
-                </Text>
-              </TouchableOpacity>
-            ))}
+
+            {(['Daily', 'Weekly'] as const).map(
+              (tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={styles.segmentBtn}
+                  onPress={() =>
+                    setActiveTab(tab)
+                  }
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      activeTab === tab &&
+                        styles.segmentTextActive,
+                    ]}
+                  >
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              ),
+            )}
           </View>
         </View>
       </View>
@@ -220,6 +475,7 @@ export default function HomeScreen() {
                   value={dailyStats.steps.toLocaleString()}
                   label="Avg daily steps"
                 />
+
                 <StatCard
                   icon="barbell"
                   iconColor="#EA580C"
@@ -228,6 +484,7 @@ export default function HomeScreen() {
                   label="Calories"
                 />
               </View>
+
               <View style={styles.statsRow}>
                 <StatCard
                   icon="flame"
@@ -236,6 +493,7 @@ export default function HomeScreen() {
                   value={dailyStats.streakDays.toString()}
                   label="Days streak"
                 />
+
                 <StatCard
                   icon="trophy"
                   iconColor="#D97706"
@@ -247,12 +505,21 @@ export default function HomeScreen() {
             </View>
 
             {/* Watch Sync */}
-            <WatchSyncCard status={watchSync} />
+            <WatchSyncCard
+              status={watchSync}
+            />
 
             {/* Missions */}
-            <Text style={styles.sectionTitle}>TODAY'S MISSIONS</Text>
+            <Text style={styles.sectionTitle}>
+              TODAY'S MISSIONS
+            </Text>
+
             {missions.map((mission) => (
-              <MissionCard key={mission.id} mission={mission} onLog={handleLog} />
+              <MissionCard
+                key={mission.id}
+                mission={mission}
+                onLog={handleLog}
+              />
             ))}
           </>
         ) : (
@@ -261,6 +528,19 @@ export default function HomeScreen() {
 
         <View style={styles.bottomPad} />
       </ScrollView>
+
+      {/* Notifications Popup */}
+      <NotificationsModal
+        visible={showNotifications}
+        notifications={notifications}
+        loading={loadingNotifications}
+        onClose={() =>
+          setShowNotifications(false)
+        }
+        onPressNotification={
+          handleNotificationPress
+        }
+      />
     </View>
   );
 }
@@ -270,14 +550,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F2F6F9',
   },
+
   stickyHeader: {
     backgroundColor: '#F2F6F9',
     paddingBottom: 8,
   },
+
   scroll: {
     flex: 1,
     backgroundColor: '#F2F6F9',
   },
+
   content: {
     paddingBottom: 120,
   },
@@ -291,16 +574,19 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 16,
   },
+
   username: {
     fontSize: 26,
     fontWeight: '800',
     color: '#1B2B4B',
     letterSpacing: -0.5,
   },
+
   headerIcons: {
     flexDirection: 'row',
     gap: 8,
   },
+
   notifBadge: {
     position: 'absolute',
     top: -2,
@@ -313,7 +599,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 3,
   },
-  notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
+
+  notifBadgeText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '800',
+  },
+
   iconBtn: {
     width: 40,
     height: 40,
@@ -321,8 +613,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
@@ -333,6 +629,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 8,
   },
+
   levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -343,16 +640,19 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginBottom: 10,
   },
+
   levelText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#FFFFFF',
   },
+
   xpText: {
     fontSize: 14,
     fontWeight: '700',
     color: '#F5B800',
   },
+
   xpBarWrap: {
     marginHorizontal: 4,
   },
@@ -363,6 +663,7 @@ const styles = StyleSheet.create({
     marginTop: 14,
     marginBottom: 4,
   },
+
   segmentTrack: {
     flexDirection: 'row',
     backgroundColor: '#E8EDF2',
@@ -370,6 +671,7 @@ const styles = StyleSheet.create({
     padding: 3,
     position: 'relative',
   },
+
   segmentPill: {
     position: 'absolute',
     top: 3,
@@ -378,23 +680,30 @@ const styles = StyleSheet.create({
     width: '50%',
     backgroundColor: '#FFFFFF',
     borderRadius: 10,
+
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
+
   segmentBtn: {
     flex: 1,
     paddingVertical: 8,
     alignItems: 'center',
     zIndex: 1,
   },
+
   segmentText: {
     fontSize: 13,
     fontWeight: '600',
     color: '#9CA3AF',
   },
+
   segmentTextActive: {
     color: '#1B2B4B',
     fontWeight: '700',
@@ -407,6 +716,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     gap: 6,
   },
+
   statsRow: {
     flexDirection: 'row',
     gap: 0,
@@ -426,17 +736,20 @@ const styles = StyleSheet.create({
   bottomPad: {
     height: 16,
   },
+
   comingSoon: {
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 60,
     gap: 10,
   },
+
   comingSoonTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#9CA3AF',
   },
+
   comingSoonSub: {
     fontSize: 13,
     color: '#C4C9D4',
