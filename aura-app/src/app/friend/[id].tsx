@@ -9,6 +9,8 @@ import {
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import {
   useLocalSearchParams,
   useRouter,
@@ -20,10 +22,7 @@ import {
   useState,
 } from 'react';
 
-import {
-  ArrowLeft,
-  Lock,
-} from 'lucide-react-native';
+import { ArrowLeft } from 'lucide-react-native';
 
 import { supabase } from '@/lib/supabase';
 
@@ -60,6 +59,7 @@ import {
 import { PostCard } from '@/components/PostCard';
 
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
+import { FriendListModal } from '@/components/FriendListModal';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -72,6 +72,9 @@ const AVATAR_GREEN = '#2F5D4E';
 const GOLD = '#F5B800';
 const GOLD_PILL = '#FEF3C7';
 const GOLD_PILL_TEXT = '#D97706';
+
+const MEDAL_RED = '#E0552B';
+const ICON_BG_PEACH = '#FBDCC8';
 
 const FRIEND_AVATAR_COLORS = [
   '#1E4D8C',
@@ -109,13 +112,89 @@ type Friend = {
   first_name: string | null;
   last_name: string | null;
   level: number | null;
-  last_active_date?: string | null;
 };
 
 type FriendshipRow = {
   requester_id: string;
   addressee_id: string;
 };
+
+function XpRing({
+  pct,
+  size = 96,
+  stroke = 6,
+}: {
+  pct: number;
+  size?: number;
+  stroke?: number;
+}) {
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - pct / 100);
+
+  return (
+    <Svg
+      width={size}
+      height={size}
+      style={{
+        position: 'absolute',
+        transform: [{ rotate: '-90deg' }],
+      }}
+    >
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke="#D6E8F5"
+        strokeWidth={stroke}
+        fill="none"
+      />
+
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke="#4A90D9"
+        strokeWidth={stroke}
+        fill="none"
+        strokeLinecap="round"
+        strokeDasharray={`${circumference} ${circumference}`}
+        strokeDashoffset={offset}
+      />
+    </Svg>
+  );
+}
+
+function StatPill({
+  icon,
+  iconColor,
+  iconBg,
+  value,
+  label,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  iconColor: string;
+  iconBg: string;
+  value: string;
+  label: string;
+}) {
+  return (
+    <View style={styles.statPill}>
+      <View
+        style={[
+          styles.statIconWrap,
+          { backgroundColor: iconBg },
+        ]}
+      >
+        <Ionicons name={icon} size={20} color={iconColor} />
+      </View>
+
+      <Text style={styles.statValue}>{value}</Text>
+
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
 
 export default function FriendProfileScreen() {
   const router = useRouter();
@@ -145,8 +224,8 @@ export default function FriendProfileScreen() {
   const [friendCount, setFriendCount] =
     useState(0);
 
-  const [activeFriends, setActiveFriends] =
-    useState(0);
+  const [friendListVisible, setFriendListVisible] =
+    useState(false);
 
   // =========================================================
   // POSTS
@@ -359,7 +438,6 @@ export default function FriendProfileScreen() {
         friendIds.length === 0
       ) {
         setFriends([]);
-        setActiveFriends(0);
         return;
       }
 
@@ -373,8 +451,7 @@ export default function FriendProfileScreen() {
           username,
           first_name,
           last_name,
-          level,
-          last_active_date
+          level
         `)
         .in('id', friendIds);
 
@@ -388,22 +465,6 @@ export default function FriendProfileScreen() {
 
         return;
       }
-
-      const today =
-        new Date()
-          .toISOString()
-          .split('T')[0];
-
-      const activeCount =
-        (profileRows ?? []).filter(
-          (friend: any) =>
-            friend.last_active_date ===
-            today
-        ).length;
-
-      setActiveFriends(
-        activeCount
-      );
 
       const profileMap =
         new Map(
@@ -1031,11 +1092,14 @@ setPosts(friendPosts);
   const streak =
     profile.streak_days ?? 0;
 
-  const earnedCount =
+  const earnedBadges =
     badges.filter(
       (badge) =>
         badge.earned
-    ).length;
+    );
+
+  const earnedCount =
+    earnedBadges.length;
 
   /*
    * Keep your current XP target
@@ -1111,174 +1175,106 @@ setPosts(friendPosts);
         </View>
 
         {/* =================================================
-            PROFILE
+            PROFILE + STATS
             ================================================= */}
 
-        <View
-          style={
-            styles.profileSection
-          }
-        >
-          <View
-            style={styles.avatar}
-          >
-            <Text
-              style={
-                styles.avatarText
-              }
-            >
-              {displayName
-                .charAt(0)
-                .toUpperCase()}
-            </Text>
-          </View>
-
-          <Text
-            style={styles.name}
-          >
-            {displayName}
-          </Text>
-
-          {profile.username && (
-            <Text
-              style={
-                styles.username
-              }
-            >
-              @{profile.username}
-            </Text>
-          )}
-
-          <Text
-            style={
-              styles.levelText
-            }
-          >
-            Level {level} -{' '}
-            {getLevelTitle(level)}
-          </Text>
-
+        <View style={styles.profileCard}>
           <View
             style={
-              styles.xpBarRow
+              styles.profileSection
             }
           >
-            <View
-              style={
-                styles.xpTrack
-              }
-            >
+            <View style={styles.avatarWrap}>
+              <XpRing pct={xpPercent} />
+
               <View
-                style={[
-                  styles.xpFill,
-                  {
-                    width: `${xpPercent}%`,
-                  },
-                ]}
-              />
+                style={styles.avatarCircle}
+              >
+                <Text
+                  style={
+                    styles.avatarText
+                  }
+                >
+                  {displayName
+                    .charAt(0)
+                    .toUpperCase()}
+                </Text>
+              </View>
             </View>
 
             <Text
-              style={
-                styles.xpLabel
-              }
+              style={styles.name}
             >
-              {xp}/
-              {xpForNextLevel}{' '}
-              XP
-            </Text>
-          </View>
-        </View>
-
-        {/* =================================================
-            STATS
-            ================================================= */}
-
-        <View
-          style={styles.statsRow}
-        >
-          <View
-            style={styles.stat}
-          >
-            <Text
-              style={
-                styles.statIcon
-              }
-            >
-              🏆
+              {displayName}
             </Text>
 
             <Text
               style={
-                styles.statValue
+                styles.levelText
               }
             >
-              {xp}
+              Level {level} -{' '}
+              {getLevelTitle(level)}
             </Text>
 
-            <Text
+            <View
               style={
-                styles.statLabel
+                styles.xpBarRow
               }
             >
-              XP
-            </Text>
-          </View>
+              <View
+                style={
+                  styles.xpTrack
+                }
+              >
+                <View
+                  style={[
+                    styles.xpFill,
+                    {
+                      width: `${xpPercent}%`,
+                    },
+                  ]}
+                />
+              </View>
 
-          <View
-            style={styles.stat}
-          >
-            <Text
-              style={
-                styles.statIcon
-              }
-            >
-              🔥
-            </Text>
-
-            <Text
-              style={
-                styles.statValue
-              }
-            >
-              {streak}
-            </Text>
-
-            <Text
-              style={
-                styles.statLabel
-              }
-            >
-              Streak
-            </Text>
+              <Text
+                style={
+                  styles.xpLabel
+                }
+              >
+                {xp}/
+                {xpForNextLevel}{' '}
+                XP
+              </Text>
+            </View>
           </View>
 
           <View
-            style={styles.stat}
+            style={styles.statsRow}
           >
-            <Text
-              style={
-                styles.statIcon
-              }
-            >
-              🥇
-            </Text>
+            <StatPill
+              icon="trophy"
+              iconColor="#D97706"
+              iconBg="#FEF3C7"
+              value={String(xp)}
+              label="XP"
+            />
 
-            <Text
-              style={
-                styles.statValue
-              }
-            >
-              {earnedCount}
-            </Text>
+            <StatPill
+              icon="flame"
+              iconColor="#DC2626"
+              iconBg="#FEE2E2"
+              value={String(streak)}
+              label="Streak"
+            />
 
-            <Text
-              style={
-                styles.statLabel
-              }
-            >
-              Badges
-            </Text>
+            <StatPill
+              icon="medal"
+              iconColor={MEDAL_RED}
+              iconBg={ICON_BG_PEACH}
+              value={String(earnedCount)}
+              label="Badges"
+            />
           </View>
         </View>
 
@@ -1286,8 +1282,12 @@ setPosts(friendPosts);
             FRIENDS
             ================================================= */}
 
-        <View
+        <TouchableOpacity
           style={styles.card}
+          activeOpacity={0.75}
+          onPress={() =>
+            setFriendListVisible(true)
+          }
         >
           <View
             style={
@@ -1319,7 +1319,6 @@ setPosts(friendPosts);
             />
           ) : displayedFriends.length >
             0 ? (
-            <>
               <View
                 style={
                   styles.friendsRow
@@ -1375,16 +1374,6 @@ setPosts(friendPosts);
                   }
                 )}
               </View>
-
-              <Text
-                style={
-                  styles.friendsActiveText
-                }
-              >
-                {activeFriends}{' '}
-                active today
-              </Text>
-            </>
           ) : (
             <Text
               style={
@@ -1394,7 +1383,7 @@ setPosts(friendPosts);
               No friends yet
             </Text>
           )}
-        </View>
+        </TouchableOpacity>
 
         {/* =================================================
             BADGES
@@ -1415,65 +1404,35 @@ setPosts(friendPosts);
             >
               BADGE COLLECTION
             </Text>
-
-            <Text
-              style={
-                styles.badgeCountText
-              }
-            >
-              {earnedCount} of{' '}
-              {badges.length}{' '}
-              earned
-            </Text>
           </View>
 
-          {badges.length > 0 ? (
+          {earnedBadges.length > 0 ? (
             <View
               style={
                 styles.badgeWrap
               }
             >
-              {badges.map(
-                (
-                  badge,
-                  index
-                ) => (
+              {earnedBadges.map(
+                (badge) => (
                   <View
-                    key={index}
+                    key={badge.label}
                     style={[
                       styles.badgePill,
-                      {
-                        backgroundColor:
-                          badge.earned
-                            ? GOLD_PILL
-                            : '#EEF0F5',
-                      },
+                      { backgroundColor: GOLD_PILL },
                     ]}
                   >
-                    {badge.earned ? (
-                      <Text
-                        style={
-                          styles.badgeEmoji
-                        }
-                      >
-                        {badge.icon}
-                      </Text>
-                    ) : (
-                      <Lock
-                        size={11}
-                        color="#A6ADBB"
-                      />
-                    )}
+                    <Text
+                      style={
+                        styles.badgeEmoji
+                      }
+                    >
+                      {badge.icon}
+                    </Text>
 
                     <Text
                       style={[
                         styles.badgeLabel,
-                        {
-                          color:
-                            badge.earned
-                              ? GOLD_PILL_TEXT
-                              : '#A6ADBB',
-                        },
+                        { color: GOLD_PILL_TEXT },
                       ]}
                     >
                       {badge.label}
@@ -1488,7 +1447,7 @@ setPosts(friendPosts);
                 styles.placeholder
               }
             >
-              No badges yet
+              No badges earned yet
             </Text>
           )}
         </View>
@@ -1517,7 +1476,8 @@ setPosts(friendPosts);
             />
           </View>
         ) : posts.length > 0 ? (
-          posts.map(
+          <View style={styles.postsListWrap}>
+          {posts.map(
             (post, index) => (
               <PostCard
                 key={post.id}
@@ -1653,7 +1613,8 @@ setPosts(friendPosts);
                 }
               />
             )
-          )
+          )}
+          </View>
         ) : (
           <View
             style={
@@ -1698,6 +1659,22 @@ setPosts(friendPosts);
         onConfirm={
           handleConfirmChallenge
         }
+      />
+
+      {/* =====================================================
+          FRIEND LIST
+          ===================================================== */}
+
+      <FriendListModal
+        visible={friendListVisible}
+        friends={friends}
+        onClose={() =>
+          setFriendListVisible(false)
+        }
+        onFriendPress={(friend) => {
+          setFriendListVisible(false);
+          router.push(`/friend/${friend.id}`);
+        }}
       />
 
     </SafeAreaView>
@@ -1747,47 +1724,55 @@ const styles = StyleSheet.create({
   // PROFILE
   // =======================================================
 
+  profileCard: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 20,
+    marginHorizontal: 16,
+    marginTop: 4,
+    paddingTop: 20,
+    paddingBottom: 16,
+  },
+
   profileSection: {
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 8,
-    paddingBottom: 8,
   },
 
-  avatar: {
+  avatarWrap: {
     width: 96,
     height: 96,
-    borderRadius: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  avatarCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: AVATAR_GREEN,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 4,
-    borderColor: GOLD,
   },
 
   avatarText: {
     color: '#FFFFFF',
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '700',
   },
 
   name: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: TEXT_DARK,
-    marginTop: 14,
-  },
-
-  username: {
-    fontSize: 14,
-    color: TEXT_MUTED,
-    marginTop: 2,
+    marginTop: 12,
   },
 
   levelText: {
     fontSize: 14,
     color: TEXT_MUTED,
-    marginTop: 5,
+    marginTop: 4,
   },
 
   xpBarRow: {
@@ -1795,21 +1780,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     width: '100%',
-    marginTop: 18,
+    marginTop: 12,
   },
 
   xpTrack: {
     flex: 1,
     height: 8,
     borderRadius: 999,
-    backgroundColor: '#D3DAE6',
+    backgroundColor: '#D6E8F5',
     overflow: 'hidden',
   },
 
   xpFill: {
     height: 8,
     borderRadius: 999,
-    backgroundColor: GOLD,
+    backgroundColor: '#4A90D9',
   },
 
   xpLabel: {
@@ -1823,31 +1808,35 @@ const styles = StyleSheet.create({
 
   statsRow: {
     flexDirection: 'row',
-    paddingHorizontal: 24,
-    marginTop: 18,
-    marginBottom: 4,
+    gap: 8,
+    marginTop: 20,
+    marginHorizontal: 16,
   },
 
-  stat: {
+  statPill: {
     flex: 1,
     alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
   },
 
-  statIcon: {
-    fontSize: 24,
+  statIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   statValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: TEXT_DARK,
-    marginTop: 3,
   },
 
   statLabel: {
-    fontSize: 11,
+    fontSize: 10,
     color: TEXT_MUTED,
-    marginTop: 2,
   },
 
   // =======================================================
@@ -1909,12 +1898,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  friendsActiveText: {
-    fontSize: 12,
-    color: TEXT_MUTED,
-    marginTop: 10,
-  },
-
   noFriendsText: {
     fontSize: 13,
     color: TEXT_MUTED,
@@ -1923,12 +1906,6 @@ const styles = StyleSheet.create({
   // =======================================================
   // BADGES
   // =======================================================
-
-  badgeCountText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: GOLD_PILL_TEXT,
-  },
 
   badgeWrap: {
     flexDirection: 'row',
@@ -1975,6 +1952,10 @@ const styles = StyleSheet.create({
 
   postsLoading: {
     paddingVertical: 20,
+  },
+
+  postsListWrap: {
+    marginHorizontal: 16,
   },
 
   /*

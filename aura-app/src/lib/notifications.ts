@@ -101,6 +101,32 @@ export async function notifyReaction(
 
 
 /* =========================================================
+   CHALLENGE COMPLETE NOTIFICATION
+========================================================= */
+
+// Self-notification: actor and recipient are the same person. RLS's insert policy only
+// requires actor_id = auth.uid(), so a user creating a notification for themselves is
+// allowed the same way notifyReaction/notifyComment let a user create one for someone else.
+export async function notifyChallengeComplete(
+  userId: string,
+  challengeId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: userId,
+      actor_id: userId,
+      type: 'challenge_complete',
+      challenge_id: challengeId,
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
    POST NOTIFICATION
 ========================================================= */
 
@@ -168,13 +194,15 @@ export type NotificationType =
   | 'friend_request'
   | 'challenge_invite'
   | 'challenge_response'
+  | 'challenge_complete'
   | 'team_invite';
-  
+
 export type AppNotification = {
   id: string;
   type: NotificationType;
   actorName: string;
   postId: string | null;
+  challengeId: string | null;
   previewText: string | null;
   createdAt: string;
   read: boolean;
@@ -190,6 +218,7 @@ type NotificationRow = {
   type: NotificationType;
   actor_id: string;
   post_id: string | null;
+  challenge_id: string | null;
   read: boolean;
   created_at: string;
 
@@ -209,6 +238,11 @@ type NotificationRow = {
         caption: string | null;
         achievement_title: string | null;
       }[]
+    | null;
+
+  challenges:
+    | { title: string }
+    | { title: string }[]
     | null;
 };
 
@@ -259,7 +293,7 @@ export async function fetchNotifications(
     await supabase
       .from('notifications')
       .select(
-        'id, type, actor_id, post_id, read, created_at, post_comments(body), posts(type, caption, achievement_title)'
+        'id, type, actor_id, post_id, challenge_id, read, created_at, post_comments(body), posts(type, caption, achievement_title), challenges(title)'
       )
       .eq('user_id', userId)
       .order('created_at', {
@@ -319,6 +353,11 @@ export async function fetchNotifications(
         ? r.posts[0]
         : r.posts;
 
+    const challenge =
+      Array.isArray(r.challenges)
+        ? r.challenges[0]
+        : r.challenges;
+
     return {
       id: r.id,
 
@@ -334,10 +373,15 @@ export async function fetchNotifications(
       postId:
         r.post_id,
 
+      challengeId:
+        r.challenge_id,
+
       previewText:
         r.type === 'comment'
           ? comment?.body ??
             null
+          : r.type === 'challenge_complete'
+          ? challenge?.title ?? null
           : postPreview(post),
 
       createdAt:

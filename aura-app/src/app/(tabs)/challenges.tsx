@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from 'react';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 
 import {
   View,
@@ -7,9 +7,9 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ScrollView,
   ActivityIndicator,
   Alert,
+  Animated,
 } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,19 +67,28 @@ type FilterPill =
   | 'Individual'
   | '1v1';
 
-const STATUS_FILTERS: FilterPill[] = [
-  'All',
-  'Ongoing',
-  'Pending',
-  'Completed',
-];
-
-const TYPE_FILTERS: FilterPill[] = [
+// The main panel — Team/Individual/1v1 each expose a different set of sub-panels below
+// them: only 1v1 has a "Pending" sub-panel (waiting on the opponent to accept). The
+// top-level "All" main panel has no sub-panels at all: it just shows everything.
+const MAIN_FILTERS: FilterPill[] = [
   'All',
   'Team',
   'Individual',
   '1v1',
 ];
+
+const SUB_FILTERS: Partial<Record<FilterPill, FilterPill[]>> = {
+  Team: ['All', 'Ongoing', 'Completed'],
+  Individual: ['All', 'Ongoing', 'Completed'],
+  '1v1': ['All', 'Ongoing', 'Pending', 'Completed'],
+};
+
+// The sub-panel to land on right after switching main panels.
+const DEFAULT_SUB_FILTER: Partial<Record<FilterPill, FilterPill>> = {
+  Team: 'All',
+  Individual: 'All',
+  '1v1': 'All',
+};
 
 
 /* =========================================================
@@ -102,12 +111,9 @@ const TYPE_LABEL: Record<
 
 function matchesFilter(
   c: ChallengeWithStatus,
-  statusFilter: FilterPill,
-  typeFilter: FilterPill
+  mainFilter: FilterPill,
+  subFilter: FilterPill
 ): boolean {
-  const category =
-    c.category?.toLowerCase() ?? '';
-
   const isPendingInvite =
     c.participation?.status === 'pending';
 
@@ -119,60 +125,92 @@ function matchesFilter(
 
   /*
    * -------------------------------
-   * STATUS FILTER
-   * -------------------------------
-   */
-
-  if (statusFilter === 'Completed') {
-    if (!isDone) {
-      return false;
-    }
-  }
-
-  if (statusFilter === 'Pending') {
-    if (!isPendingInvite) {
-      return false;
-    }
-  }
-
-  if (statusFilter === 'Ongoing') {
-    /*
-     * A challenge is ongoing when:
-     * - user has joined
-     * - invitation is not pending
-     * - reward has not been claimed
-     * - challenge has not expired
-     */
-    if (
-      !c.participation ||
-      isPendingInvite ||
-      isDone ||
-      isExpired
-    ) {
-      return false;
-    }
-  }
-
-  /*
-   * -------------------------------
-   * TYPE FILTER
+   * MAIN (TYPE) FILTER
    * -------------------------------
    *
    * "All" means don't filter by type.
    */
 
   if (
-    typeFilter !== 'All' &&
-    c.type !== typeFilter.toLowerCase()
+    mainFilter !== 'All' &&
+    c.type !== mainFilter.toLowerCase()
   ) {
     return false;
   }
 
   /*
-   * Both filters passed.
+   * -------------------------------
+   * EXPIRED
+   * -------------------------------
+   *
+   * A challenge only reports as "expired" once it's missed its deadline with nothing to
+   * claim (isChallengeExpired already ignores claimed/completed rows) — that's dead
+   * weight in every view, not just "Ongoing", so it's hidden everywhere.
    */
 
+  if (isExpired) {
+    return false;
+  }
+
+  /*
+   * -------------------------------
+   * SUB (STATUS) FILTER
+   * -------------------------------
+   *
+   * Only Team/Individual/1v1 have sub-panels — the "All" main panel shows every
+   * status for that type (sorting puts completed ones last instead of hiding them).
+   */
+
+  if (mainFilter === 'All') {
+    return true;
+  }
+
+  if (subFilter === 'Completed') {
+    if (!isDone) {
+      return false;
+    }
+  }
+
+  if (subFilter === 'Pending') {
+    if (!isPendingInvite) {
+      return false;
+    }
+  }
+
+  if (subFilter === 'Ongoing') {
+    /*
+     * A challenge is ongoing when:
+     * - user has joined
+     * - invitation is not pending
+     * - reward has not been claimed
+     * (expired is already excluded above)
+     */
+    if (
+      !c.participation ||
+      isPendingInvite ||
+      isDone
+    ) {
+      return false;
+    }
+  }
+
   return true;
+}
+
+// Goal reached but reward not yet collected — the "Claim" button is showing on this card.
+function isClaimable(c: ChallengeWithStatus): boolean {
+  return !!c.participation?.completed && !c.participation?.claimed;
+}
+
+// Claimable rewards float to the top everywhere, and fully claimed/completed challenges
+// sink to the bottom everywhere — including the "All" panels, where nothing else already
+// filters completed challenges out of view. Views that are already status-filtered to a
+// single bucket (e.g. sub-panel "Completed") end up with every item at the same rank,
+// which is a no-op for a stable sort.
+function challengeSortRank(c: ChallengeWithStatus): number {
+  if (isClaimable(c)) return 0;
+  if (c.participation?.claimed) return 2;
+  return 1;
 }
 
 
@@ -752,6 +790,9 @@ function UserChallengesView({
 
   const router = useRouter();
 
+  const { openChallengeId } =
+    useLocalSearchParams<{ openChallengeId?: string }>();
+
   const friendRequestCount =
     useUserStore(
       (s) => s.friendRequestCount
@@ -793,6 +834,48 @@ function UserChallengesView({
     typeFilter,
     setTypeFilter,
   ] = useState<FilterPill>('All');
+
+  const [
+    highlightChallengeId,
+    setHighlightChallengeId,
+  ] = useState<string | null>(null);
+
+  const listRef = useRef<FlatList<ChallengeWithStatus>>(null);
+
+  // Each main panel has its own sub-panel set (or none, for "All"), so the previously
+  // selected sub-panel isn't guaranteed to be valid after switching — e.g. leaving
+  // "Pending" selected on 1v1 and switching to Team, which has no Pending sub-panel.
+  function handleSelectMainFilter(main: FilterPill) {
+    setTypeFilter(main);
+    setStatusFilter(DEFAULT_SUB_FILTER[main] ?? 'All');
+  }
+
+  // Slides the active segment's highlight pill, same as the Daily/Weekly toggle on Home.
+  const mainPillAnim = useRef(new Animated.Value(0)).current;
+  const [mainTrackWidth, setMainTrackWidth] = useState(0);
+
+  useEffect(() => {
+    Animated.timing(mainPillAnim, {
+      toValue: MAIN_FILTERS.indexOf(typeFilter),
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [typeFilter]);
+
+  // Jumps the list to a specific challenge — used both when arriving here from a
+  // "challenge complete" notification (via the openChallengeId route param) and when that
+  // same notification is tapped while already on this screen (no navigation happens then,
+  // so the param never changes). Resets both filter pills since a just-completed challenge
+  // isn't guaranteed to match whatever filter the user had selected.
+  function focusOnChallenge(challengeId: string) {
+    setStatusFilter('All');
+    setTypeFilter('All');
+    setHighlightChallengeId(challengeId);
+  }
+
+  useEffect(() => {
+    if (openChallengeId) focusOnChallenge(openChallengeId);
+  }, [openChallengeId]);
 
 
   const [
@@ -889,6 +972,13 @@ function UserChallengesView({
 
     setShowNotifications(false);
 
+    if (notification.type === 'challenge_complete' && notification.challengeId) {
+      // Already on this screen, so there's no route param to trigger the effect —
+      // jump to the challenge directly instead of navigating.
+      focusOnChallenge(notification.challengeId);
+      return;
+    }
+
     if (!notification.postId) {
       return;
     }
@@ -903,16 +993,19 @@ function UserChallengesView({
      PENDING COUNT
   ===================================================== */
 
+  // Team and 1v1 each have their own "Pending" sub-panel — count only within whichever
+  // main panel is currently selected, so the badge matches what that pill will show.
   const pendingCount =
     useMemo(
       () =>
         challenges.filter(
           (c) =>
+            c.type === typeFilter.toLowerCase() &&
             c.participation
               ?.status === 'pending'
         ).length,
 
-      [challenges]
+      [challenges, typeFilter]
     );
 
 
@@ -923,14 +1016,20 @@ function UserChallengesView({
   const listData =
     useMemo(
       () =>
-        challenges.filter(
-          (c) =>
-            matchesFilter(
-              c,
-              statusFilter,
-              typeFilter
-            )
-        ),
+        challenges
+          .filter(
+            (c) =>
+              matchesFilter(
+                c,
+                typeFilter,
+                statusFilter
+              )
+          )
+          // Claimable rewards float to the top, fully claimed ones sink to the bottom —
+          // sort is stable, so everything else keeps its existing relative order.
+          .sort((a, b) =>
+            challengeSortRank(a) - challengeSortRank(b)
+          ),
 
       [
         challenges,
@@ -938,6 +1037,24 @@ function UserChallengesView({
         typeFilter,
       ]
     );
+
+  useEffect(() => {
+    if (!highlightChallengeId) return;
+
+    const index = listData.findIndex((c) => c.id === highlightChallengeId);
+    if (index === -1) return;
+
+    const scrollTimer = setTimeout(() => {
+      listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 });
+    }, 150);
+
+    const clearTimer = setTimeout(() => setHighlightChallengeId(null), 2500);
+
+    return () => {
+      clearTimeout(scrollTimer);
+      clearTimeout(clearTimer);
+    };
+  }, [highlightChallengeId, listData]);
 
 
   /* =====================================================
@@ -1400,7 +1517,7 @@ function UserChallengesView({
 
 
       {/* =================================================
-          TWO-ROW FILTER MENU
+          FILTER MENU
       ================================================= */}
 
       <View
@@ -1408,117 +1525,62 @@ function UserChallengesView({
       >
 
         {/* ---------------------------------------------
-            TOP ROW
-            All / Ongoing / Pending / Complete
+            MAIN PANEL
+            All / Team / Individual / 1v1 — an evenly
+            split segmented control, the primary switch.
         --------------------------------------------- */}
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            styles.filterRow
-          }
-        >
-
-          {STATUS_FILTERS.map(
-            (f) => (
-
-              <TouchableOpacity
-                key={f}
-                style={[
-                  styles.pill,
-                  statusFilter === f &&
-                    styles.pillActive,
-                ]}
-                onPress={() =>
-                  setStatusFilter(f)
-                }
-                activeOpacity={0.8}
-              >
-
-                <Text
-                  style={[
-                    styles.pillText,
-                    statusFilter === f &&
-                      styles.pillTextActive,
-                  ]}
-                >
-                  {f === 'Completed'
-                    ? 'Complete'
-                    : f}
-                </Text>
-
-
-                {/* Pending notification */}
-
-                {f === 'Pending' &&
-                  pendingCount > 0 && (
-
-                    <View
-                      style={
-                        styles.pillBadge
-                      }
-                    >
-
-                      <Text
-                        style={
-                          styles.pillBadgeText
-                        }
-                      >
-                        {pendingCount}
-                      </Text>
-
-                    </View>
-
-                  )}
-
-              </TouchableOpacity>
-
+        <View
+          style={styles.mainSegmentRow}
+          onLayout={(e) =>
+            setMainTrackWidth(
+              e.nativeEvent.layout.width
             )
-          )}
-
-        </ScrollView>
-
-
-        {/* ---------------------------------------------
-            BOTTOM ROW
-            All / Team / Individual / 1v1
-        --------------------------------------------- */}
-
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={
-            false
-          }
-          contentContainerStyle={
-            styles.filterRow
           }
         >
 
-          {TYPE_FILTERS.map(
+          <Animated.View
+            style={[
+              styles.mainSegmentPill,
+              {
+                transform: [
+                  {
+                    translateX:
+                      mainPillAnim.interpolate({
+                        inputRange: MAIN_FILTERS.map(
+                          (_, i) => i
+                        ),
+                        outputRange: MAIN_FILTERS.map(
+                          (_, i) =>
+                            (i * mainTrackWidth) /
+                            MAIN_FILTERS.length
+                        ),
+                      }),
+                  },
+                ],
+              },
+            ]}
+          />
+
+          {MAIN_FILTERS.map(
             (f) => (
 
               <TouchableOpacity
                 key={f}
-                style={[
-                  styles.pill,
-                  typeFilter === f &&
-                    styles.pillActive,
-                ]}
+                style={styles.mainSegment}
                 onPress={() =>
-                  setTypeFilter(f)
+                  handleSelectMainFilter(f)
                 }
                 activeOpacity={0.8}
               >
 
                 <Text
                   style={[
-                    styles.pillText,
+                    styles.mainSegmentText,
                     typeFilter === f &&
-                      styles.pillTextActive,
+                      styles.mainSegmentTextActive,
                   ]}
+                  numberOfLines={1}
                 >
                   {f}
                 </Text>
@@ -1528,7 +1590,81 @@ function UserChallengesView({
             )
           )}
 
-        </ScrollView>
+        </View>
+
+
+        {/* ---------------------------------------------
+            SUB PANEL
+            Lightweight underline tabs — visually secondary
+            to the segmented control above. Depends on the
+            selected main panel; hidden entirely under
+            "All", which has no sub-panels.
+        --------------------------------------------- */}
+
+        {SUB_FILTERS[typeFilter] && (
+
+          <View style={styles.subTabRow}>
+
+            {SUB_FILTERS[typeFilter]!.map(
+              (f) => (
+
+                <TouchableOpacity
+                  key={f}
+                  style={[
+                    styles.subTab,
+                    statusFilter === f &&
+                      styles.subTabActive,
+                  ]}
+                  onPress={() =>
+                    setStatusFilter(f)
+                  }
+                  activeOpacity={0.7}
+                >
+
+                  <Text
+                    style={[
+                      styles.subTabText,
+                      statusFilter === f &&
+                        styles.subTabTextActive,
+                    ]}
+                  >
+                    {f === 'Completed'
+                      ? 'Complete'
+                      : f}
+                  </Text>
+
+
+                  {/* Pending notification */}
+
+                  {f === 'Pending' &&
+                    pendingCount > 0 && (
+
+                      <View
+                        style={
+                          styles.subTabBadge
+                        }
+                      >
+
+                        <Text
+                          style={
+                            styles.subTabBadgeText
+                          }
+                        >
+                          {pendingCount}
+                        </Text>
+
+                      </View>
+
+                    )}
+
+                </TouchableOpacity>
+
+              )
+            )}
+
+          </View>
+
+        )}
 
       </View>
 
@@ -1563,6 +1699,8 @@ function UserChallengesView({
       ) : (
 
         <FlatList
+          ref={listRef}
+
           data={listData}
 
           keyExtractor={(item) =>
@@ -1572,6 +1710,13 @@ function UserChallengesView({
           contentContainerStyle={
             styles.list
           }
+
+          onScrollToIndexFailed={(info: { index: number; averageItemLength: number }) => {
+            listRef.current?.scrollToOffset({
+              offset: info.index * info.averageItemLength,
+              animated: true,
+            });
+          }}
 
 
           /* -------------------------------------------
@@ -1692,6 +1837,8 @@ function UserChallengesView({
                     false
                   )
                 }
+
+                highlighted={item.id === highlightChallengeId}
               />
 
             )
@@ -2029,24 +2176,109 @@ const styles =
     },
 
 
-    filterRow: {
+    // Primary switch — an evenly split segmented control, styled to read as one control
+    // rather than a row of separate buttons like the sub-panel below it. The active
+    // segment is a single sliding pill (mainSegmentPill) rather than a per-button
+    // background, so switching panels animates like the Home tab's Daily/Weekly toggle.
+    mainSegmentRow: {
       flexDirection:
         'row',
 
+      backgroundColor:
+        '#E9EEF5',
+
+      borderRadius: 12,
+
+      padding: 3,
+
+      marginHorizontal:
+        16,
+
+      position:
+        'relative',
+    },
+
+
+    mainSegmentPill: {
+      position:
+        'absolute',
+
+      top: 3,
+      left: 3,
+      bottom: 3,
+
+      width: '25%',
+
+      backgroundColor:
+        '#FFFFFF',
+
+      borderRadius: 9,
+
+      shadowColor:
+        '#000',
+
+      shadowOffset: {
+        width: 0,
+        height: 1,
+      },
+
+      shadowOpacity:
+        0.08,
+
+      shadowRadius: 3,
+
+      elevation: 1,
+    },
+
+
+    mainSegment: {
+      flex: 1,
+
       alignItems:
         'center',
+
+      justifyContent:
+        'center',
+
+      paddingVertical:
+        8,
+
+      zIndex: 1,
+    },
+
+
+    mainSegmentText: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: '#6B7280',
+    },
+
+
+    mainSegmentTextActive: {
+      color: '#1B2B4B',
+    },
+
+
+    // Sub panel — smaller, lighter pills than the segmented control above, so the two
+    // rows don't compete for attention but still share the same shape language.
+    subTabRow: {
+      flexDirection:
+        'row',
 
       gap: 8,
 
       paddingHorizontal:
         16,
 
-      paddingVertical:
-        4,
+      paddingTop: 10,
+
+      paddingBottom: 4,
     },
 
 
-    pill: {
+    // Inactive shape matches the Social tab's activity-feed filter pills — white fill,
+    // thin border, fully rounded — rather than a flat gray chip.
+    subTab: {
       flexDirection:
         'row',
 
@@ -2056,42 +2288,51 @@ const styles =
       gap: 6,
 
       paddingHorizontal:
-        16,
+        12,
 
       paddingVertical:
-        8,
+        6,
 
       borderRadius:
         20,
 
       backgroundColor:
         '#FFFFFF',
+
+      borderWidth: 1,
+
+      borderColor:
+        '#E2E8F0',
     },
 
 
-    pillActive: {
+    subTabActive: {
       backgroundColor:
+        '#1B2B4B',
+
+      borderColor:
         '#1B2B4B',
     },
 
 
-    pillText: {
-      fontSize: 13,
-      fontWeight: '700',
+    subTabText: {
+      fontSize: 12,
+      fontWeight: '600',
       color: '#6B7280',
     },
 
 
-    pillTextActive: {
+    subTabTextActive: {
       color: '#FFFFFF',
+      fontWeight: '700',
     },
 
 
-    pillBadge: {
-      minWidth: 18,
-      height: 18,
+    subTabBadge: {
+      minWidth: 16,
+      height: 16,
 
-      borderRadius: 9,
+      borderRadius: 8,
 
       paddingHorizontal:
         4,
@@ -2107,10 +2348,10 @@ const styles =
     },
 
 
-    pillBadgeText: {
+    subTabBadgeText: {
       color: '#FFFFFF',
       fontWeight: '800',
-      fontSize: 10,
+      fontSize: 9,
     },
 
 

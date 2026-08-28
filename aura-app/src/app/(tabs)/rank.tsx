@@ -224,6 +224,14 @@ export default function LeaderboardScreen() {
   ) {
     setShowNotifications(false);
 
+    if (notification.type === 'challenge_complete' && notification.challengeId) {
+      router.push({
+        pathname: '/(tabs)/challenges',
+        params: { openChallengeId: notification.challengeId },
+      });
+      return;
+    }
+
     if (!notification.postId) return;
 
     router.push(

@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
 import { incrementDailyStat } from '@/lib/api';
+import { notifyChallengeComplete } from '@/lib/notifications';
 import type { Challenge, ChallengeTeam, ChallengeParticipant, ChallengeType, InviteStatus } from '@/types';
 
 type ChallengeRow = {
@@ -653,11 +654,14 @@ export async function inviteToTeam(
 
 // Just records progress — reaching the goal only marks it eligible to claim. XP is
 // awarded exclusively via claimReward(), never automatically, so the user must actively
-// collect it before it moves to the Completed tab.
+// collect it before it moves to the Completed tab. Callers only ever pass rows that were
+// still completed:false, so completed=true here always means this is a fresh completion.
 export async function updateProgress(
   participantId: string,
   newValue: number,
   goalValue: number,
+  userId: string,
+  challengeId: string,
 ): Promise<{ completed: boolean }> {
   const completed = newValue >= goalValue;
 
@@ -667,6 +671,14 @@ export async function updateProgress(
     .eq('id', participantId);
   if (error) throw error;
 
+  if (completed) {
+    try {
+      await notifyChallengeComplete(userId, challengeId);
+    } catch (err) {
+      console.error('notifyChallengeComplete failed', err);
+    }
+  }
+
   return { completed };
 }
 
@@ -674,7 +686,7 @@ export async function updateProgress(
 // re-adds every accepted member's current progress and, once the team clears the goal,
 // marks all of them completed together. Without this, "the team finished" only ever
 // existed as a number recomputed live on screen and was never actually saved anywhere.
-async function checkTeamCompletion(teamId: string, goalValue: number): Promise<void> {
+async function checkTeamCompletion(teamId: string, goalValue: number, challengeId: string): Promise<void> {
   const { data } = await supabase
     .from('challenge_participants')
     .select('current_value')
@@ -684,12 +696,21 @@ async function checkTeamCompletion(teamId: string, goalValue: number): Promise<v
   const total = ((data ?? []) as { current_value: number }[]).reduce((sum, r) => sum + r.current_value, 0);
   if (total < goalValue) return;
 
-  const { error } = await supabase
+  const { data: newlyCompleted, error } = await supabase
     .from('challenge_participants')
     .update({ completed: true })
     .eq('team_id', teamId)
-    .eq('completed', false);
+    .eq('completed', false)
+    .select('user_id');
   if (error) throw error;
+
+  for (const { user_id } of (newlyCompleted ?? []) as { user_id: string }[]) {
+    try {
+      await notifyChallengeComplete(user_id, challengeId);
+    } catch (err) {
+      console.error('notifyChallengeComplete failed', err);
+    }
+  }
 }
 
 // Powers the Challenges tab badge — a "completed" row is always claimable regardless of
@@ -778,6 +799,7 @@ async function applyOneVOneProgress(
   row: ParticipantWithChallengeRow,
   newValue: number,
   challenge: ChallengeJoinFields,
+  userId: string,
 ): Promise<void> {
   if (row.opponent_id) {
     const { data: opponentRow } = await supabase
@@ -806,7 +828,15 @@ async function applyOneVOneProgress(
     .eq('id', row.id);
   if (progressError) throw progressError;
 
-  if (!reachedGoal || !row.opponent_id) return;
+  if (!reachedGoal) return;
+
+  try {
+    await notifyChallengeComplete(userId, row.challenge_id);
+  } catch (err) {
+    console.error('notifyChallengeComplete failed', err);
+  }
+
+  if (!row.opponent_id) return;
 
   const { error: closeOutError } = await supabase
     .from('challenge_participants')
@@ -863,11 +893,11 @@ export async function syncChallengeProgressForUser(
         .update({ current_value: newValue })
         .eq('id', row.id);
       if (error) throw error;
-      await checkTeamCompletion(row.team_id, challenge.goal_value);
+      await checkTeamCompletion(row.team_id, challenge.goal_value, row.challenge_id);
     } else if (challenge.type === '1v1') {
-      await applyOneVOneProgress(row, newValue, challenge);
+      await applyOneVOneProgress(row, newValue, challenge, userId);
     } else {
-      await updateProgress(row.id, newValue, challenge.goal_value);
+      await updateProgress(row.id, newValue, challenge.goal_value, userId, row.challenge_id);
     }
   }
 }
@@ -937,11 +967,11 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
         .update({ current_value: sum })
         .eq('id', row.id);
       if (error) throw error;
-      await checkTeamCompletion(row.team_id, challenge.goal_value);
+      await checkTeamCompletion(row.team_id, challenge.goal_value, row.challenge_id);
     } else if (challenge.type === '1v1') {
-      await applyOneVOneProgress(row, sum, challenge);
+      await applyOneVOneProgress(row, sum, challenge, userId);
     } else {
-      await updateProgress(row.id, sum, challenge.goal_value);
+      await updateProgress(row.id, sum, challenge.goal_value, userId, row.challenge_id);
     }
   }
 }
