@@ -1,5 +1,9 @@
 import { supabase } from '@/lib/supabase';
-import { notifyComment, notifyFriendsOfPost } from '@/lib/notifications';
+import {
+  notifyComment,
+  notifyFriendsOfPost,
+  notifyReaction,
+} from '@/lib/notifications';
 
 type ProfileNameRow = {
   id: string;
@@ -445,7 +449,7 @@ export async function toggleReaction(
   userId: string,
   postId: string,
   reaction: ReactionKind,
-  currentlyOn: boolean,
+  currentlyOn: boolean
 ): Promise<void> {
   if (currentlyOn) {
     const { error } = await supabase
@@ -454,10 +458,65 @@ export async function toggleReaction(
       .eq('post_id', postId)
       .eq('user_id', userId)
       .eq('reaction', reaction);
+
     if (error) throw error;
-  } else {
-    const { error } = await supabase.from('post_reactions').insert({ post_id: postId, user_id: userId, reaction });
-    if (error) throw error;
+
+    return;
+  }
+
+  const { error } =
+    await supabase
+      .from('post_reactions')
+      .insert({
+        post_id: postId,
+        user_id: userId,
+        reaction,
+      });
+
+  if (error) throw error;
+
+  /*
+   * Find the post owner.
+   */
+  const { data: postData, error: postError } =
+    await supabase
+      .from('posts')
+      .select('user_id')
+      .eq('id', postId)
+      .single();
+
+  if (postError) {
+    console.error(
+      'Could not find post owner for reaction notification',
+      postError
+    );
+
+    return;
+  }
+
+  const postOwnerId =
+    (postData as {
+      user_id: string;
+    }).user_id;
+
+  /*
+   * Don't notify yourself.
+   *
+   * Notification failure should not make
+   * the successful reaction look like it failed.
+   */
+  try {
+    await notifyReaction(
+      postOwnerId,
+      userId,
+      postId,
+      reaction
+    );
+  } catch (err) {
+    console.error(
+      'notifyReaction failed',
+      err
+    );
   }
 }
 
