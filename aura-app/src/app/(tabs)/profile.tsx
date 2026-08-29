@@ -12,7 +12,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import {
   Share2,
@@ -32,7 +31,7 @@ import { useCallback, useEffect, useState } from 'react';
 
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/store/userStore';
-import { getLevelTitle } from '@/lib/level';
+import { getLevelTitle, xpAtLevelStart } from '@/lib/level';
 import { fetchBadges, type EarnedBadge } from '@/lib/challenges';
 import { CheckInCalendar } from '@/components/CheckInCalendar';
 import { FriendListModal } from '@/components/FriendListModal';
@@ -48,6 +47,10 @@ const SHARE_NAVY = '#1B2B4B';
 
 const GOLD_PILL = '#FEF3C7';
 const GOLD_PILL_TEXT = '#D97706';
+// Darker than GOLD_PILL_TEXT specifically for the badge pill's icon/label — small text at
+// 12px in the base gold reads faint against the light pill background, so the badge
+// collection uses this instead for better contrast/visibility.
+const GOLD_PILL_TEXT_DARK = '#92400E';
 
 const FLAME_ORANGE = '#F5822A';
 const MEDAL_RED = '#E0552B';
@@ -253,9 +256,7 @@ function BadgeVisibilityModal({
                     { backgroundColor: GOLD_PILL },
                   ]}
                 >
-                  <Text style={styles.badgeEmoji}>
-                    {item.icon}
-                  </Text>
+                  <Ionicons name="medal" size={16} color={GOLD_PILL_TEXT_DARK} />
                 </View>
 
                 <View style={styles.badgeEditInfo}>
@@ -318,15 +319,21 @@ export default function ProfileScreen() {
       return;
     }
 
-    AsyncStorage.getItem(
-      `hidden_badges_${user.id}`
-    )
-      .then((stored) => {
+    supabase
+      .from('profiles')
+      .select('hidden_badges')
+      .eq('id', user.id)
+      .single()
+      .then(({ data, error }) => {
+        if (error) {
+          setHiddenBadges([]);
+          return;
+        }
+
         setHiddenBadges(
-          stored ? JSON.parse(stored) : []
+          data?.hidden_badges ?? []
         );
-      })
-      .catch(() => setHiddenBadges([]));
+      });
   }, [user?.id]);
 
   const toggleBadgeVisibility = useCallback(
@@ -340,10 +347,18 @@ export default function ProfileScreen() {
             )
           : [...prev, label];
 
-        AsyncStorage.setItem(
-          `hidden_badges_${user.id}`,
-          JSON.stringify(next)
-        ).catch(() => {});
+        supabase
+          .from('profiles')
+          .update({ hidden_badges: next })
+          .eq('id', user.id)
+          .then(({ error }) => {
+            if (error) {
+              console.error(
+                'Error updating hidden badges:',
+                error
+              );
+            }
+          });
 
         return next;
       });
@@ -519,10 +534,16 @@ export default function ProfileScreen() {
     return null;
   }
 
+  const levelStartXp = xpAtLevelStart(
+    user.level
+  );
+
   const pct = Math.min(
     100,
     Math.round(
-      (user.xp / user.xpForNextLevel) *
+      ((user.xp - levelStartXp) /
+        (user.xpForNextLevel -
+          levelStartXp)) *
         100
     )
   );
@@ -649,8 +670,8 @@ export default function ProfileScreen() {
             <Text
               style={styles.xpLabel}
             >
-              {user.xp}/
-              {user.xpForNextLevel} XP
+              {user.xp - levelStartXp}/
+              {user.xpForNextLevel - levelStartXp} XP
             </Text>
           </View>
         </View>
@@ -662,7 +683,7 @@ export default function ProfileScreen() {
             iconColor="#D97706"
             iconBg="#FEF3C7"
             value={String(user.xp)}
-            label="XP"
+            label="XP Total"
           />
 
           <StatPill
@@ -847,20 +868,16 @@ export default function ProfileScreen() {
                       { backgroundColor: GOLD_PILL },
                     ]}
                   >
-                    <Text
-                      style={
-                        styles.badgeEmoji
-                      }
-                    >
-                      {
-                        badge.icon
-                      }
-                    </Text>
+                    <Ionicons
+                      name="medal"
+                      size={15}
+                      color={GOLD_PILL_TEXT_DARK}
+                    />
 
                     <Text
                       style={[
                         styles.badgeLabel,
-                        { color: GOLD_PILL_TEXT },
+                        { color: GOLD_PILL_TEXT_DARK },
                       ]}
                     >
                       {
@@ -1320,13 +1337,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
 
-  badgeEmoji: {
-    fontSize: 12,
-  },
-
   badgeLabel: {
     fontSize: 12,
-    fontWeight: '500',
+    fontWeight: '700',
   },
 
   menuList: {

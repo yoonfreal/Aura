@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AuraLogo } from '@/components/AuraLogo';
-import { BarChartIcon, GridIcon, TargetIcon } from '@/components/icons';
+import { BarChartIcon, GridIcon, TargetIcon, UsersIcon } from '@/components/icons';
 import { AuthProvider, useAuth } from '@/lib/AuthProvider';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Dashboard', icon: <GridIcon /> },
+  { href: '/user-management', label: 'User Management', icon: <UsersIcon /> },
   { href: '/leaderboard', label: 'Leaderboard', icon: <BarChartIcon /> },
   { href: '/challenges', label: 'Challenges', icon: <TargetIcon /> },
 ];

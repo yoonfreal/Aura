@@ -55,8 +55,17 @@ export function NotificationsModal({
       case 'challenge_complete':
         return 'ribbon';
 
+      case 'challenge_ending_soon':
+        return 'hourglass';
+
+      case 'streak_reminder':
+        return 'flame';
+
       case 'team_invite':
         return 'people';
+
+      case 'admin_warning':
+        return 'warning';
 
       default:
         return 'notifications';
@@ -88,8 +97,17 @@ export function NotificationsModal({
       case 'challenge_complete':
         return 'completed a challenge';
 
+      case 'challenge_ending_soon':
+        return 'have a challenge ending soon';
+
+      case 'streak_reminder':
+        return 'are about to lose your streak';
+
       case 'team_invite':
         return 'invited you to a team';
+
+      case 'admin_warning':
+        return 'sent you a warning';
 
       default:
         return 'sent you a notification';
@@ -175,16 +193,17 @@ export function NotificationsModal({
 
                   {/* Icon */}
                   <View
-                    style={
-                      styles.dot
-                    }
+                    style={[
+                      styles.dot,
+                      item.type === 'admin_warning' && styles.warningDot,
+                    ]}
                   >
                     <Ionicons
                       name={getIcon(
                         item.type
                       )}
                       size={15}
-                      color="#1B2B4B"
+                      color={item.type === 'admin_warning' ? '#B45309' : '#1B2B4B'}
                     />
                   </View>
 
@@ -207,7 +226,9 @@ export function NotificationsModal({
                           styles.rowName
                         }
                       >
-                        {item.type === 'challenge_complete'
+                        {item.type === 'challenge_complete' ||
+                        item.type === 'challenge_ending_soon' ||
+                        item.type === 'streak_reminder'
                           ? 'You'
                           : item.actorName}
                       </Text>
@@ -383,6 +404,12 @@ const styles =
 
       justifyContent:
         'center',
+    },
+
+
+    warningDot: {
+      backgroundColor:
+        '#FEF3C7',
     },
 
 

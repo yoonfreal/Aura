@@ -8,7 +8,8 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
-import { ensureActiveToday, updateLastSeen } from '@/lib/api';
+import { ensureActiveToday, updateLastSeen, checkStreakReminder } from '@/lib/api';
+import { checkChallengesEndingSoon } from '@/lib/challenges';
 import { useUserStore } from '@/store/userStore';
 
 type ProfileRow = {
@@ -71,6 +72,8 @@ async function fetchAndSetUser(
 
   ensureActiveToday(userId);
   updateLastSeen(userId);
+  checkChallengesEndingSoon(userId);
+  checkStreakReminder(userId);
 
   setUser({
     id: profile.id,

@@ -9,6 +9,8 @@ export type AdminUser = {
   lastSeenAt: string | null;
   createdAt: string;
   suspended: boolean;
+  flagged: boolean;
+  flagReason: string | null;
 };
 
 // A user counts as "Active" if they've pinged within the last 5 minutes — aura-app
@@ -31,6 +33,12 @@ export function getLevelTitle(level: number): string {
   return 'Legend';
 }
 
+// Mirrors aura-app's src/lib/level.ts xpForLevel() — cumulative XP to reach
+// level N = 80 × (N-1)^1.3. Anchored at (N-1) so level 1 starts at 0 XP.
+export function xpForLevel(level: number): number {
+  return Math.round(80 * Math.pow(level - 1, 1.3));
+}
+
 type ProfileRow = {
   id: string;
   username: string;
@@ -40,6 +48,8 @@ type ProfileRow = {
   last_seen_at: string | null;
   created_at: string;
   suspended: boolean;
+  flagged: boolean;
+  flag_reason: string | null;
 };
 
 function toAdminUser(row: ProfileRow): AdminUser {
@@ -52,17 +62,46 @@ function toAdminUser(row: ProfileRow): AdminUser {
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     suspended: row.suspended ?? false,
+    flagged: row.flagged ?? false,
+    flagReason: row.flag_reason,
   };
 }
 
 export async function fetchAllUsers(): Promise<AdminUser[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended')
+    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended, flagged, flag_reason')
     .order('username', { ascending: true });
   if (error) throw error;
 
   return ((data ?? []) as ProfileRow[]).map(toAdminUser);
+}
+
+// Powers the User Management page's "Suspicious activities" panel — only the currently
+// flagged accounts, not the full user list.
+export async function fetchFlaggedUsers(): Promise<AdminUser[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended, flagged, flag_reason')
+    .eq('flagged', true)
+    .order('username', { ascending: true });
+  if (error) throw error;
+
+  return ((data ?? []) as ProfileRow[]).map(toAdminUser);
+}
+
+// Looks up one profile regardless of current flagged/suspended state — needed by the Flag
+// History page, since a past (already-cleared) entry's account won't show up in
+// fetchFlaggedUsers anymore but should still be viewable.
+export async function fetchUserById(userId: string): Promise<AdminUser | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended, flagged, flag_reason')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) throw error;
+
+  return data ? toAdminUser(data as ProfileRow) : null;
 }
 
 export async function setUserSuspended(userId: string, suspended: boolean): Promise<void> {
@@ -74,4 +113,103 @@ export async function setUserSuspended(userId: string, suspended: boolean): Prom
   if (!data || data.length === 0) {
     throw new Error('Suspend update did not apply — check the admin update policy on profiles.');
   }
+}
+
+// Clears a flag once an admin has reviewed it and decided it was a false alarm (or has
+// already dealt with the account another way). There's no manual "flag" counterpart —
+// flags are only ever raised automatically by aura-app's unusual-activity checks.
+export async function clearUserFlag(userId: string, clearedByUsername: string | null, note?: string | null): Promise<void> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .update({ flagged: false, flag_reason: null })
+    .eq('id', userId)
+    .select('id');
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new Error('Flag clear did not apply — check the admin update policy on profiles.');
+  }
+
+  // Closes out the open flag_history row so the record shows who cleared it, when, and any
+  // note the admin left about it. Best-effort: never let a history-write hiccup undo the
+  // clear that already succeeded.
+  try {
+    await supabase
+      .from('flag_history')
+      .update({ cleared_at: new Date().toISOString(), cleared_by_username: clearedByUsername, admin_note: note ?? null })
+      .eq('user_id', userId)
+      .is('cleared_at', null);
+  } catch {
+    // Best-effort.
+  }
+}
+
+export type FlagHistoryEntry = {
+  id: string;
+  reason: string;
+  flaggedAt: string;
+  clearedAt: string | null;
+  clearedByUsername: string | null;
+  adminNote: string | null;
+};
+
+type FlagHistoryRow = {
+  id: string;
+  reason: string;
+  flagged_at: string;
+  cleared_at: string | null;
+  cleared_by_username: string | null;
+  admin_note: string | null;
+};
+
+// Powers the profile modal's "Flag History" section, so an admin reviewing one account can
+// see whether it's been flagged (and cleared) before — the single flagged/flag_reason pair
+// on profiles only ever holds the current state, not past cycles.
+export async function fetchFlagHistory(userId: string): Promise<FlagHistoryEntry[]> {
+  const { data, error } = await supabase
+    .from('flag_history')
+    .select('id, reason, flagged_at, cleared_at, cleared_by_username, admin_note')
+    .eq('user_id', userId)
+    .order('flagged_at', { ascending: false });
+  if (error) throw error;
+
+  return ((data ?? []) as FlagHistoryRow[]).map((row) => ({
+    id: row.id,
+    reason: row.reason,
+    flaggedAt: row.flagged_at,
+    clearedAt: row.cleared_at,
+    clearedByUsername: row.cleared_by_username,
+    adminNote: row.admin_note,
+  }));
+}
+
+export type AllFlagHistoryEntry = FlagHistoryEntry & { userId: string; username: string; suspended: boolean };
+
+type AllFlagHistoryRow = FlagHistoryRow & {
+  user_id: string;
+  profiles: { username: string; suspended: boolean } | { username: string; suspended: boolean }[] | null;
+};
+
+// Powers the standalone Flag History page — every flag/clear cycle across every user,
+// newest first, unlike fetchFlagHistory which is scoped to one account's profile modal.
+export async function fetchAllFlagHistory(): Promise<AllFlagHistoryEntry[]> {
+  const { data, error } = await supabase
+    .from('flag_history')
+    .select('id, user_id, reason, flagged_at, cleared_at, cleared_by_username, admin_note, profiles!inner(username, suspended)')
+    .order('flagged_at', { ascending: false });
+  if (error) throw error;
+
+  return ((data ?? []) as AllFlagHistoryRow[]).map((row) => {
+    const profile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      username: profile?.username ?? 'Unknown',
+      suspended: profile?.suspended ?? false,
+      reason: row.reason,
+      flaggedAt: row.flagged_at,
+      clearedAt: row.cleared_at,
+      clearedByUsername: row.cleared_by_username,
+      adminNote: row.admin_note,
+    };
+  });
 }

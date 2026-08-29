@@ -3,7 +3,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useUserStore } from '@/store/userStore';
-import { xpForLevel } from '@/lib/level';
+import { xpAtLevelStart } from '@/lib/level';
+import { thailandWeekRange } from '@/lib/thailandTime';
 import type { WeeklyStats, User } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,21 +30,18 @@ interface ReportData {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+// Labels the same Thailand-local Mon–Sun window that fetchWeeklyStats(-1) actually queries
+// — computed from that same window rather than the device's own local calendar, so the
+// label always matches the data shown regardless of what timezone the device is set to.
 function getWeekLabel(): string {
-  const today = new Date();
-  const dow = today.getDay();
-  const currentMonday = new Date(today);
-  currentMonday.setDate(today.getDate() - ((dow + 6) % 7));
-  const prevMonday = new Date(currentMonday);
-  prevMonday.setDate(currentMonday.getDate() - 7);
-  const prevSunday = new Date(prevMonday);
-  prevSunday.setDate(prevMonday.getDate() + 6);
+  const { start, end } = thailandWeekRange(-1);
+  const [startYear, startMonth, startDay] = start.split('-').map(Number);
+  const [endYear, endMonth, endDay] = end.split('-').map(Number);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const year = prevMonday.getFullYear();
-  const sameMonth = prevMonday.getMonth() === prevSunday.getMonth();
+  const sameMonth = startMonth === endMonth;
   return sameMonth
-    ? `Week of ${months[prevMonday.getMonth()]} ${prevMonday.getDate()} – ${prevSunday.getDate()}, ${year}`
-    : `Week of ${months[prevMonday.getMonth()]} ${prevMonday.getDate()} – ${months[prevSunday.getMonth()]} ${prevSunday.getDate()}, ${year}`;
+    ? `Week of ${months[startMonth - 1]} ${startDay} – ${endDay}, ${endYear}`
+    : `Week of ${months[startMonth - 1]} ${startDay} – ${months[endMonth - 1]} ${endDay}, ${endYear}`;
 }
 
 function buildReport(stats: WeeklyStats | null, user: User | null): ReportData {
@@ -61,7 +59,7 @@ function buildReport(stats: WeeklyStats | null, user: User | null): ReportData {
   const strongestDay = barData.reduce((best, d) => d.xp > best.xp ? d : best, barData[0]).day;
   const weakDays = barData.filter(d => d.xp === 0).map(d => d.day);
   const activeDays = barData.filter(d => d.xp > 0).length;
-  const levelStart = user ? xpForLevel(user.level) : 0;
+  const levelStart = user ? xpAtLevelStart(user.level) : 0;
   const levelEnd = user ? user.xpForNextLevel : 100;
   const xpProgress = user
     ? Math.min(1, Math.max(0, (user.xp - levelStart) / (levelEnd - levelStart)))

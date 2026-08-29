@@ -1,9 +1,10 @@
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
 import { GYM_LOCATION, CHECK_IN_RADIUS_METERS } from '@/constants/gym';
+import { thailandDateISO } from '@/lib/thailandTime';
 
 function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return thailandDateISO();
 }
 
 // Haversine formula — distance in meters between two lat/lng points.

@@ -4,7 +4,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '@/store/userStore';
-import { countIncomingRequests, fetchFriendsLeaderboard, type FriendLeaderboardEntry } from '@/lib/friends';
+import { countIncomingRequests } from '@/lib/friends';
 import { fetchFriendStreaks, type StreakEntry } from '@/lib/social';
 import {
   fetchFriendPosts,
@@ -38,7 +38,7 @@ import { PostCard } from '@/components/PostCard';
 const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F'];
 const EMPTY_REACTION: ReactionCounts = { fire: 0, like: 0, userFire: false, userLike: false };
 const EMPTY_JOIN: JoinState = { count: 0, joined: false };
-type FilterType = 'All' | 'Feed' | 'Leaderboard' | 'Streaks';
+type FilterType = 'All' | 'Feed' | 'Streaks';
 type PostFilter = 'All' | 'Mine' | 'Partner' | 'Achievement' | 'General';
 const POST_FILTERS: PostFilter[] = ['All', 'Mine', 'Partner', 'Achievement', 'General'];
 
@@ -58,7 +58,6 @@ export default function SocialScreen() {
   const [postFilter, setPostFilter] = useState<PostFilter>('All');
   const [loading, setLoading] = useState(true);
   const [streaks, setStreaks] = useState<StreakEntry[]>([]);
-  const [leaderboard, setLeaderboard] = useState<FriendLeaderboardEntry[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [reactions, setReactions] = useState<Map<string, ReactionCounts>>(new Map());
   const [joins, setJoins] = useState<Map<string, JoinState>>(new Map());
@@ -78,13 +77,11 @@ export default function SocialScreen() {
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
-    const [streaksData, leaderboardData, postsData] = await Promise.all([
+    const [streaksData, postsData] = await Promise.all([
       fetchFriendStreaks(userId),
-      fetchFriendsLeaderboard(userId),
       fetchFriendPosts(userId),
     ]);
     setStreaks(streaksData);
-    setLeaderboard(leaderboardData);
     setPosts(postsData);
     setLoading(false);
 
@@ -288,7 +285,6 @@ export default function SocialScreen() {
   });
 
   const showStreaks = filter === 'All' || filter === 'Streaks';
-  const showLeaderboard = filter === 'All' || filter === 'Leaderboard';
   const showFeed = filter === 'All' || filter === 'Feed';
 
   return (
@@ -322,7 +318,7 @@ export default function SocialScreen() {
       </View>
 
       <View style={styles.filterRow}>
-        {(['All', 'Feed', 'Leaderboard', 'Streaks'] as FilterType[]).map((f) => (
+        {(['All', 'Feed', 'Streaks'] as FilterType[]).map((f) => (
           <TouchableOpacity
             key={f}
             style={[styles.filterPill, filter === f && styles.filterPillActive]}
@@ -353,34 +349,6 @@ export default function SocialScreen() {
                   </View>
                 ))}
               </ScrollView>
-            </View>
-          )}
-
-          {showLeaderboard && leaderboard.length > 0 && (
-            <View style={styles.card}>
-              <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardTitle}>Top Friends</Text>
-                <TouchableOpacity onPress={() => router.push('/(tabs)/rank?tab=Friends')}>
-                  <Text style={styles.seeFullLink}>See full →</Text>
-                </TouchableOpacity>
-              </View>
-              {leaderboard.slice(0, 5).map((entry, i) => {
-                const isSelf = entry.userId === userId;
-                return (
-                  <View key={entry.userId} style={[styles.miniRow, isSelf && styles.miniRowSelf]}>
-                    <Text style={styles.miniRank}>{entry.rank}</Text>
-                    <View style={[styles.avatarSm, { backgroundColor: avatarColor(i) }]}>
-                      <Text style={styles.avatarTextSm}>{entry.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.miniName} numberOfLines={1}>
-                      {isSelf ? 'You' : entry.name}
-                    </Text>
-                    <View style={[styles.xpPill, isSelf && styles.xpPillSelf]}>
-                      <Text style={[styles.xpPillText, isSelf && styles.xpPillTextSelf]}>{entry.xp} XP</Text>
-                    </View>
-                  </View>
-                );
-              })}
             </View>
           )}
 
@@ -438,7 +406,7 @@ export default function SocialScreen() {
             </View>
           )}
 
-          {streaks.length === 0 && leaderboard.length <= 1 && posts.length === 0 && (
+          {streaks.length === 0 && posts.length === 0 && (
             <View style={styles.emptyState}>
               <Ionicons name="people-outline" size={40} color="#C0C8D4" />
               <Text style={[styles.emptyText, { marginTop: 12 }]}>
@@ -562,35 +530,8 @@ const styles = StyleSheet.create({
   streakName: { fontSize: 13, fontWeight: '700', color: '#0D1829', marginTop: 8, maxWidth: 80 },
   streakDays: { fontSize: 11, color: '#F5B800', fontWeight: '700', marginTop: 2 },
 
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: '#0D1829' },
-  seeFullLink: { fontSize: 12, fontWeight: '700', color: '#1B2B4B' },
-
-  miniRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
-  miniRowSelf: { backgroundColor: '#F0F4F8', marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 10 },
-  miniRank: { width: 18, fontSize: 13, fontWeight: '700', color: '#9CA3AF', textAlign: 'center' },
-
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  avatarSm: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  avatarTextSm: { color: '#fff', fontWeight: '800', fontSize: 12 },
-
-  miniName: { flex: 1, fontSize: 13, fontWeight: '700', color: '#0D1829' },
-  xpPill: { backgroundColor: '#F0F4F8', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  xpPillSelf: { backgroundColor: '#1B2B4B' },
-  xpPillText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
-  xpPillTextSelf: { color: '#fff' },
 
   emptyText: { color: '#9CA3AF', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },

@@ -135,83 +135,84 @@ export function LeaderboardTable() {
           ))}
         </div>
 
-        <div className="relative" ref={filtersRef}>
-          <button
-            onClick={() => setFiltersOpen((v) => !v)}
-            aria-label="Filters"
-            className={`relative flex h-9 w-9 items-center justify-center rounded-lg border ${
-              filtersOpen ? 'border-[#1B2B4B] text-[#1B2B4B]' : 'border-gray-200 text-gray-500'
-            } hover:border-[#1B2B4B] hover:text-[#1B2B4B]`}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-            </svg>
-            {filtersActive && (
-              <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#F5B800]" />
-            )}
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name…"
+            className="w-52 rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-black outline-none focus:border-[#1B2B4B]"
+          />
+          <div className="relative" ref={filtersRef}>
+            <button
+              onClick={() => setFiltersOpen((v) => !v)}
+              aria-label="Filters"
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg border ${
+                filtersOpen ? 'border-[#1B2B4B] text-[#1B2B4B]' : 'border-gray-200 text-gray-500'
+              } hover:border-[#1B2B4B] hover:text-[#1B2B4B]`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+              </svg>
+              {filtersActive && (
+                <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-white bg-[#F5B800]" />
+              )}
+            </button>
 
-          {filtersOpen && (
-            <div className="absolute right-0 top-full z-10 mt-2 w-64 rounded-2xl border border-gray-100 bg-white p-4 shadow-md">
-              <div className="mb-3 flex items-center justify-between">
-                <p className="text-xs font-bold tracking-wide text-gray-500">FILTERS</p>
-                <button
-                  onClick={() => {
-                    setSortKey('rank');
-                    setSortDir('asc');
-                    setTitleFilter('all');
-                  }}
-                  className="text-xs font-bold text-[#1B2B4B] hover:underline"
-                >
-                  Reset
-                </button>
-              </div>
-
-              <div className="grid gap-4">
-                <label className="grid gap-1">
-                  <span className="text-[11px] font-bold text-gray-500">Sort by</span>
-                  <select
-                    className={panelSelectClass}
-                    value={SORT_OPTIONS.find((o) => o.key === sortKey && o.dir === sortDir)?.value ?? ''}
-                    onChange={(e) => {
-                      const opt = SORT_OPTIONS.find((o) => o.value === e.target.value);
-                      if (opt) {
-                        setSortKey(opt.key);
-                        setSortDir(opt.dir);
-                      }
+            {filtersOpen && (
+              <div className="absolute right-0 top-full z-10 mt-2 w-64 rounded-2xl border border-gray-100 bg-white p-4 shadow-md">
+                <div className="mb-3 flex items-center justify-between">
+                  <p className="text-xs font-bold tracking-wide text-gray-500">FILTERS</p>
+                  <button
+                    onClick={() => {
+                      setSortKey('rank');
+                      setSortDir('asc');
+                      setTitleFilter('all');
                     }}
+                    className="text-xs font-bold text-[#1B2B4B] hover:underline"
                   >
-                    {SORT_OPTIONS.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    Reset
+                  </button>
+                </div>
 
-                <label className="grid gap-1">
-                  <span className="text-[11px] font-bold text-gray-500">Title</span>
-                  <select className={panelSelectClass} value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)}>
-                    <option value="all">All titles</option>
-                    {LEVEL_TIERS.map((tier) => (
-                      <option key={tier} value={tier}>
-                        {tier}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="grid gap-4">
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-bold text-gray-500">Sort by</span>
+                    <select
+                      className={panelSelectClass}
+                      value={SORT_OPTIONS.find((o) => o.key === sortKey && o.dir === sortDir)?.value ?? ''}
+                      onChange={(e) => {
+                        const opt = SORT_OPTIONS.find((o) => o.value === e.target.value);
+                        if (opt) {
+                          setSortKey(opt.key);
+                          setSortDir(opt.dir);
+                        }
+                      }}
+                    >
+                      {SORT_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="grid gap-1">
+                    <span className="text-[11px] font-bold text-gray-500">Title</span>
+                    <select className={panelSelectClass} value={titleFilter} onChange={(e) => setTitleFilter(e.target.value)}>
+                      <option value="all">All titles</option>
+                      {LEVEL_TIERS.map((tier) => (
+                        <option key={tier} value={tier}>
+                          {tier}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
-
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search by name…"
-        className="mb-4 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-black outline-none focus:border-[#1B2B4B]"
-      />
 
       {!entries ? (
         <p className="text-sm text-gray-500">Loading…</p>

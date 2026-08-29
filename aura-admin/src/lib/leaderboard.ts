@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { getLevelTitle } from './users';
+import { thailandMonthStart, thailandWeekRange } from './thailandTime';
 
 export type LeaderboardPeriod = 'overall' | 'weekly' | 'monthly';
 
@@ -12,20 +13,18 @@ export type LeaderboardEntry = {
   xp: number;
 };
 
-// The Monday of the current calendar week — same boundary aura-app's own Leaderboard
-// "Weekly" tab uses (see getMondayDate in aura-app/src/app/(tabs)/rank.tsx) — so "Weekly"
-// always means "this week so far," not a rolling last-7-days window.
+// The Monday of the current calendar week in Thailand — same boundary aura-app's own
+// Leaderboard "Weekly" tab uses (see getMondayDate in aura-app/src/app/(tabs)/rank.tsx) —
+// so "Weekly" always means "this week so far," not a rolling last-7-days window.
 function startOfWeekISO(): string {
-  const d = new Date();
-  const daysSinceMonday = (d.getDay() + 6) % 7; // getDay(): 0=Sun..6=Sat
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysSinceMonday).toISOString().split('T')[0];
+  return thailandWeekRange().start;
 }
 
-// The 1st of the current calendar month — e.g. viewed anytime in August, this returns
-// Aug 1, so "Monthly" always means "this calendar month so far," not a rolling 30 days.
+// The 1st of the current calendar month in Thailand — e.g. viewed anytime in August, this
+// returns Aug 1, so "Monthly" always means "this calendar month so far," not a rolling 30
+// days.
 function startOfMonthISO(): string {
-  const d = new Date();
-  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+  return thailandMonthStart();
 }
 
 type ProfileRow = { id: string; username: string; level: number | null; xp: number | null };
