@@ -1,7 +1,8 @@
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
 import { incrementDailyStat } from '@/lib/api';
-import { notifyChallengeComplete } from '@/lib/notifications';
+import { notifyChallengeComplete, notifyChallengeEndingSoon } from '@/lib/notifications';
+import { thailandDateISO } from '@/lib/thailandTime';
 import type { Challenge, ChallengeTeam, ChallengeParticipant, ChallengeType, InviteStatus } from '@/types';
 
 type ChallengeRow = {
@@ -126,7 +127,7 @@ function toParticipant(row: ParticipantRow): ChallengeParticipant {
 }
 
 function todayISODate(): string {
-  return new Date().toISOString().split('T')[0];
+  return thailandDateISO();
 }
 
 // Individual challenges no longer need an explicit "Join" — most users never check the
@@ -268,6 +269,72 @@ export function isChallengeExpired(challenge: ChallengeWithStatus): boolean {
 
   const expiresAt = isTeam ? (myTeam?.expiresAt ?? null) : `${challenge.endDate}T23:59:59`;
   return !!expiresAt && Date.now() > new Date(expiresAt).getTime();
+}
+
+const ENDING_SOON_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// 24-hour heads-up before an individual/team challenge's deadline passes — 1v1 has no
+// deadline of its own (see isChallengeExpired) so it's skipped. Deliberately a lighter,
+// dedicated query rather than fetchChallenges(), since that also auto-enrolls and
+// refreshes progress as side effects and this runs on every app open. Best-effort:
+// silently no-ops on failure so a hiccup here never blocks login.
+export async function checkChallengesEndingSoon(userId: string): Promise<void> {
+  try {
+    const { data: participantRows } = await supabase
+      .from('challenge_participants')
+      .select('challenge_id, team_id, claimed')
+      .eq('user_id', userId)
+      .eq('status', 'accepted')
+      .eq('completed', false);
+
+    const activeRows = ((participantRows ?? []) as {
+      challenge_id: string;
+      team_id: string | null;
+      claimed: boolean;
+    }[]).filter((p) => !p.claimed);
+
+    if (activeRows.length === 0) return;
+
+    const challengeIds = activeRows.map((p) => p.challenge_id);
+
+    const { data: challengesData } = await supabase
+      .from('challenges')
+      .select('id, type, end_date')
+      .in('id', challengeIds);
+
+    const challenges = (challengesData ?? []) as { id: string; type: ChallengeType; end_date: string }[];
+
+    const teamIds = [...new Set(activeRows.map((p) => p.team_id).filter((id): id is string => !!id))];
+
+    const { data: teamsData } = teamIds.length
+      ? await supabase.from('challenge_teams').select('id, expires_at').in('id', teamIds)
+      : { data: [] as { id: string; expires_at: string | null }[] };
+
+    const teamExpiryById = new Map(
+      ((teamsData ?? []) as { id: string; expires_at: string | null }[]).map((t) => [t.id, t.expires_at]),
+    );
+
+    const now = Date.now();
+
+    for (const p of activeRows) {
+      const challenge = challenges.find((c) => c.id === p.challenge_id);
+      if (!challenge || challenge.type === '1v1') continue;
+
+      const expiresAt =
+        challenge.type === 'team'
+          ? (p.team_id ? teamExpiryById.get(p.team_id) ?? null : null)
+          : `${challenge.end_date}T23:59:59`;
+
+      if (!expiresAt) continue;
+
+      const msLeft = new Date(expiresAt).getTime() - now;
+      if (msLeft > 0 && msLeft <= ENDING_SOON_WINDOW_MS) {
+        await notifyChallengeEndingSoon(userId, p.challenge_id);
+      }
+    }
+  } catch {
+    // Best-effort nudge — never let this break app startup.
+  }
 }
 
 export type NewChallenge = {

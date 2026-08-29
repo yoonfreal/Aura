@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '@/store/userStore';
 import { createChallenge } from '@/lib/challenges';
 import { Dropdown } from '@/components/Dropdown';
+import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
 import type { ChallengeType } from '@/types';
 
 const TYPE_OPTIONS: { value: ChallengeType; label: string }[] = [
@@ -36,9 +37,7 @@ const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'MINUTES', 'KM', 'REPS', 'CUSTOM
 const NO_LIMIT_DAYS = 36500;
 
 function addDaysISO(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return addDaysToISO(thailandDateISO(), days);
 }
 
 export default function NewChallengeScreen() {

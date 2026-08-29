@@ -11,6 +11,7 @@ import {
   type BreakdownBar,
   type DailyActiveCount,
 } from '@/lib/stats';
+import { thailandDateISO } from '@/lib/thailandTime';
 
 const BAR_COLORS = ['#1B2B4B', '#F5B800', '#94A3B8', '#5B9BD5'];
 
@@ -69,7 +70,7 @@ export function ActiveUsersChart() {
   if (error) return <p className="text-sm text-red-600">{error}</p>;
   if (!days) return <p className="text-sm text-gray-500">Loading…</p>;
 
-  const todayISO = new Date().toISOString().split('T')[0];
+  const todayISO = thailandDateISO();
   const today = days.find((d) => d.date === todayISO) ?? days[days.length - 1];
   const max = Math.max(1, ...days.map((d) => d.count));
 

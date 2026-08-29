@@ -4,6 +4,7 @@ import {
   notifyFriendsOfPost,
   notifyReaction,
 } from '@/lib/notifications';
+import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
 
 type ProfileNameRow = {
   id: string;
@@ -51,7 +52,7 @@ type ProfileStatRow = { streak_days: number | null; level: number | null };
 // mission/challenge event, so someone can share "how they're doing" even with nothing
 // freshly completed.
 async function fetchStatCandidates(userId: string): Promise<AchievementCandidate[]> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = thailandDateISO();
   // Anchored to the start of today, not the exact current instant — using "now" would always
   // outrank a mission or challenge win from earlier today (those anchor at noon / their real
   // completion time), which broke "most recent first" ordering. This still ranks below any
@@ -119,7 +120,7 @@ type RecentHistoryRow = {
 // from the last `days` days, plus the user's own current stats (steps/calories/streak/level)
 // so there's always something to share even with nothing freshly completed. Newest first.
 export async function fetchRecentAchievements(userId: string, days = 3): Promise<AchievementCandidate[]> {
-  const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+  const since = addDaysToISO(thailandDateISO(), -days);
 
   const [missionsRes, historyRes, statCandidates] = await Promise.all([
     supabase

@@ -2,26 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { fetchAllUsers, getLevelTitle, isUserActive, setUserSuspended, type AdminUser } from '@/lib/users';
-
-// Same palette style as the mobile app's initial-letter avatars (see aura-app's
-// friends.tsx CARD_COLORS) — this app has no profile photos, just colored initials.
-const AVATAR_COLORS = ['#1E4D8C', '#744210', '#065F46', '#5B21B6', '#831843', '#3D2B1F'];
-
-function avatarColorFor(username: string): string {
-  const sum = Array.from(username).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return AVATAR_COLORS[sum % AVATAR_COLORS.length];
-}
-
-// Escalating in visual weight to match tier progression, ending in the app's own navy
-// for Legend so the top tier stands out rather than just being "another color."
-const TITLE_STYLES: Record<string, string> = {
-  Beginner: 'bg-indigo-100 text-indigo-700',
-  Rookie: 'bg-rose-100 text-rose-700',
-  Warrior: 'bg-orange-100 text-orange-700',
-  Athlete: 'bg-purple-100 text-purple-700',
-  Elite: 'bg-amber-100 text-amber-700',
-  Legend: 'bg-[#1B2B4B] text-white',
-};
+import { avatarColorFor, TITLE_STYLES } from '@/lib/userDisplay';
+import { useAuth } from '@/lib/AuthProvider';
+import { ViewUserModal } from './ViewUserModal';
+import { ClearFlagModal } from './ClearFlagModal';
 
 type SortKey = 'username' | 'level' | 'title' | 'xp' | 'status' | 'createdAt';
 type SortDir = 'asc' | 'desc';
@@ -46,61 +30,6 @@ const LEVEL_TIERS = ['Beginner', 'Rookie', 'Warrior', 'Athlete', 'Elite', 'Legen
 const panelSelectClass =
   'w-full rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-sm text-black outline-none focus:border-[#1B2B4B]';
 
-function ViewUserModal({ user, onClose }: { user: AdminUser & { levelTitle: string; active: boolean }; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="w-80 rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <div className="mb-4 flex items-center gap-3">
-          <div
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-lg font-bold text-white"
-            style={{ backgroundColor: avatarColorFor(user.username) }}
-          >
-            {user.username.charAt(0).toUpperCase()}
-          </div>
-          <div>
-            <p className="font-extrabold text-[#0D1829]">{user.username}</p>
-            <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${TITLE_STYLES[user.levelTitle]}`}>
-              {user.levelTitle}
-            </span>
-          </div>
-        </div>
-
-        <div className="grid gap-2 text-sm">
-          <div className="flex justify-between border-b border-gray-50 py-1.5">
-            <span className="text-gray-500">Level</span>
-            <span className="font-bold text-[#0D1829]">{user.level}</span>
-          </div>
-          <div className="flex justify-between border-b border-gray-50 py-1.5">
-            <span className="text-gray-500">XP</span>
-            <span className="font-bold text-[#0D1829]">{user.xp.toLocaleString()}</span>
-          </div>
-          <div className="flex justify-between border-b border-gray-50 py-1.5">
-            <span className="text-gray-500">Streak</span>
-            <span className="font-bold text-[#0D1829]">{user.streak} days</span>
-          </div>
-          <div className="flex justify-between border-b border-gray-50 py-1.5">
-            <span className="text-gray-500">Status</span>
-            <span className="font-bold text-[#0D1829]">
-              {user.suspended ? 'Suspended' : user.active ? 'Active' : 'Offline'}
-            </span>
-          </div>
-          <div className="flex justify-between py-1.5">
-            <span className="text-gray-500">Joined</span>
-            <span className="font-bold text-[#0D1829]">{new Date(user.createdAt).toLocaleDateString()}</span>
-          </div>
-        </div>
-
-        <button
-          onClick={onClose}
-          className="mt-4 w-full rounded-xl bg-[#1B2B4B] py-2 text-sm font-extrabold text-white"
-        >
-          Close
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function FilterField({
   label,
   children,
@@ -117,6 +46,7 @@ function FilterField({
 }
 
 export function UsersTable() {
+  const { user: admin } = useAuth();
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +57,7 @@ export function UsersTable() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
+  const [clearingId, setClearingId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchAllUsers()
@@ -175,12 +106,14 @@ export function UsersTable() {
     .filter((u) => levelFilter === 'all' || u.levelTitle === levelFilter)
     .filter((u) => {
       if (statusFilter === 'all') return true;
+      if (statusFilter === 'flagged') return u.flagged;
       if (statusFilter === 'suspended') return u.suspended;
       if (statusFilter === 'active') return !u.suspended && u.active;
       return !u.suspended && !u.active;
     });
 
   const viewingUser = viewingId ? rows.find((u) => u.id === viewingId) : undefined;
+  const clearingUser = clearingId ? users.find((u) => u.id === clearingId) : undefined;
 
   const sorted = [...rows].sort((a, b) => {
     let cmp = 0;
@@ -274,6 +207,7 @@ export function UsersTable() {
                       <option value="active">Active</option>
                       <option value="offline">Offline</option>
                       <option value="suspended">Suspended</option>
+                      <option value="flagged">Flagged</option>
                     </select>
                   </FilterField>
                 </div>
@@ -325,7 +259,12 @@ export function UsersTable() {
                   >
                     {u.username.charAt(0).toUpperCase()}
                   </div>
-                  <span className="truncate font-bold text-[#0D1829]">{u.username}</span>
+                  <span className="group relative min-w-0">
+                    <span className="block truncate font-bold text-[#0D1829]">{u.username}</span>
+                    <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-md bg-[#1B2B4B] px-2 py-1 text-xs font-bold text-white shadow-lg group-hover:block">
+                      {u.username}
+                    </span>
+                  </span>
                 </div>
               </td>
               <td className="px-3 py-3 text-gray-600">{u.level}</td>
@@ -336,23 +275,33 @@ export function UsersTable() {
               </td>
               <td className="px-3 py-3 text-gray-600">{u.xp.toLocaleString()}</td>
               <td className="px-3 py-3">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                    u.suspended
-                      ? 'bg-red-100 text-red-700'
-                      : u.active
-                        ? 'bg-green-100 text-green-700'
-                        : 'bg-gray-100 text-gray-500'
-                  }`}
-                >
-                  {u.suspended ? 'Suspended' : u.active ? 'Active' : 'Offline'}
-                </span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                      u.suspended
+                        ? 'bg-red-100 text-red-700'
+                        : u.active
+                          ? 'bg-green-100 text-green-700'
+                          : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    {u.suspended ? 'Suspended' : u.active ? 'Active' : 'Offline'}
+                  </span>
+                  {u.flagged && (
+                    <span
+                      title={u.flagReason ?? 'Flagged for unusual activity'}
+                      className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700"
+                    >
+                      Flagged
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="px-3 py-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     onClick={() => setViewingId(u.id)}
-                    className="flex h-8 items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 text-xs font-bold text-gray-500 hover:border-[#1B2B4B] hover:text-[#1B2B4B]"
+                    className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-200 px-2.5 text-xs font-bold text-gray-500 hover:border-[#1B2B4B] hover:text-[#1B2B4B]"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -362,7 +311,7 @@ export function UsersTable() {
                   </button>
                   <button
                     onClick={() => handleToggleSuspend(u)}
-                    className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-bold ${
+                    className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs font-bold ${
                       u.suspended
                         ? 'border-gray-200 text-green-700 hover:border-green-600'
                         : 'border-gray-200 text-red-600 hover:border-red-600'
@@ -380,6 +329,15 @@ export function UsersTable() {
                     )}
                     {u.suspended ? 'Unsuspend' : 'Suspend'}
                   </button>
+                  {u.flagged && (
+                    <button
+                      onClick={() => setClearingId(u.id)}
+                      title={u.flagReason ?? undefined}
+                      className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-200 px-2.5 text-xs font-bold text-amber-700 hover:border-amber-600"
+                    >
+                      🚩 Clear Flag
+                    </button>
+                  )}
                 </div>
               </td>
             </tr>
@@ -394,7 +352,29 @@ export function UsersTable() {
         </tbody>
       </table>
 
-      {viewingUser && <ViewUserModal user={viewingUser} onClose={() => setViewingId(null)} />}
+      {viewingUser && (
+        <ViewUserModal
+          key={`view-${viewingUser.id}`}
+          user={viewingUser}
+          onClose={() => setViewingId(null)}
+          onClearFlag={(u) => setClearingId(u.id)}
+        />
+      )}
+
+      {clearingUser && (
+        <ClearFlagModal
+          key={`clear-${clearingUser.id}`}
+          user={clearingUser}
+          adminId={admin?.id ?? null}
+          adminUsername={admin?.username ?? null}
+          onClose={() => setClearingId(null)}
+          onCleared={() => {
+            setUsers((prev) => prev && prev.map((u) => (u.id === clearingUser.id ? { ...u, flagged: false, flagReason: null } : u)));
+            setClearingId(null);
+            setViewingId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

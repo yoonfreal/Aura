@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { addDaysToISO, thailandDateISO, thailandWeekdayIndex } from './thailandTime';
 
 export type DailyActiveCount = {
   date: string;
@@ -9,9 +10,7 @@ export type DailyActiveCount = {
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function isoDateOffset(days: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
+  return addDaysToISO(thailandDateISO(), days);
 }
 
 export async function fetchTotalUsers(): Promise<number> {
@@ -20,8 +19,17 @@ export async function fetchTotalUsers(): Promise<number> {
   return count ?? 0;
 }
 
+export async function fetchFlaggedCount(): Promise<number> {
+  const { count, error } = await supabase
+    .from('profiles')
+    .select('id', { count: 'exact', head: true })
+    .eq('flagged', true);
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function fetchGymCheckInsToday(): Promise<number> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = thailandDateISO();
   const { count, error } = await supabase
     .from('gym_checkins')
     .select('id', { count: 'exact', head: true })
@@ -81,7 +89,8 @@ export async function fetchUserDemographics(): Promise<{ gender: BreakdownBar[];
 // a mission/challenge is completed, so this reflects who actually used the app that day,
 // not just who "did something."
 export async function fetchDailyActiveCounts(): Promise<DailyActiveCount[]> {
-  const daysSinceSunday = new Date().getDay();
+  const today = thailandDateISO();
+  const daysSinceSunday = (thailandWeekdayIndex(today) + 1) % 7; // Mon-anchored index -> Sun-anchored offset
   const weekStart = isoDateOffset(-daysSinceSunday);
   const weekEnd = isoDateOffset(6 - daysSinceSunday);
 
@@ -100,7 +109,7 @@ export async function fetchDailyActiveCounts(): Promise<DailyActiveCount[]> {
 
   return Array.from({ length: 7 }, (_, i) => {
     const date = isoDateOffset(i - daysSinceSunday);
-    const label = WEEKDAY_LABELS[new Date(`${date}T00:00:00`).getDay()];
+    const label = WEEKDAY_LABELS[(thailandWeekdayIndex(date) + 1) % 7];
     return { date, label, count: usersByDate.get(date)?.size ?? 0 };
   });
 }

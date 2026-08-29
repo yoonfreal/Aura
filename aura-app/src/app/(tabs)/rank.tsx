@@ -38,6 +38,7 @@ import {
 } from '@/lib/notifications';
 
 import { NotificationsModal } from '@/components/NotificationsModal';
+import { thailandWeekRange } from '@/lib/thailandTime';
 
 type LeaderboardEntry = {
   rank: number;
@@ -70,14 +71,7 @@ function formatXP(xp: number): string {
 }
 
 function getMondayDate(): string {
-  const d = new Date();
-  const day = d.getDay();
-  const diff =
-    d.getDate() - day + (day === 0 ? -6 : 1);
-
-  d.setDate(diff);
-
-  return d.toISOString().split('T')[0];
+  return thailandWeekRange().start;
 }
 
 const PODIUM_CONFIG = {

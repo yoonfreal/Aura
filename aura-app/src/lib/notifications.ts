@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabase';
+import { isNotificationTypeEnabled } from '@/lib/notificationPreferences';
+import { startOfThailandDay } from '@/lib/thailandTime';
 
 type ProfileNameRow = {
   id: string;
@@ -58,6 +60,7 @@ export async function notifyComment(
   commentId: string
 ): Promise<void> {
   if (recipientId === actorId) return;
+  if (!(await isNotificationTypeEnabled(recipientId, 'comments'))) return;
 
   const { error } = await supabase
     .from('notifications')
@@ -85,6 +88,7 @@ export async function notifyReaction(
 ): Promise<void> {
   // Never notify yourself.
   if (recipientId === actorId) return;
+  if (!(await isNotificationTypeEnabled(recipientId, 'reactions'))) return;
 
   const { error } = await supabase
     .from('notifications')
@@ -118,6 +122,80 @@ export async function notifyChallengeComplete(
       actor_id: userId,
       type: 'challenge_complete',
       challenge_id: challengeId,
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
+   CHALLENGE ENDING SOON NOTIFICATION
+========================================================= */
+
+// Self-notification, same shape as notifyChallengeComplete. Deduped by checking for an
+// existing row for this user+challenge first, since there's no dedup column and this can
+// be called on every app open while the challenge is inside the "ending soon" window.
+export async function notifyChallengeEndingSoon(
+  userId: string,
+  challengeId: string
+): Promise<void> {
+  if (!(await isNotificationTypeEnabled(userId, 'challengeEndingSoon'))) return;
+
+  const { data: existing } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', 'challenge_ending_soon')
+    .eq('challenge_id', challengeId)
+    .limit(1);
+
+  if (existing && existing.length > 0) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: userId,
+      actor_id: userId,
+      type: 'challenge_ending_soon',
+      challenge_id: challengeId,
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
+   STREAK REMINDER NOTIFICATION
+========================================================= */
+
+// Self-notification, once per Thailand-calendar day: dedup by checking for an existing row
+// created since midnight Thailand time, since there's no dedup column to key off directly.
+export async function notifyStreakReminder(
+  userId: string
+): Promise<void> {
+  if (!(await isNotificationTypeEnabled(userId, 'streakReminder'))) return;
+
+  const { data: existing } = await supabase
+    .from('notifications')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('type', 'streak_reminder')
+    .gte('created_at', startOfThailandDay().toISOString())
+    .limit(1);
+
+  if (existing && existing.length > 0) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: userId,
+      actor_id: userId,
+      type: 'streak_reminder',
+      challenge_id: null,
       post_id: null,
       comment_id: null,
     });
@@ -195,7 +273,10 @@ export type NotificationType =
   | 'challenge_invite'
   | 'challenge_response'
   | 'challenge_complete'
-  | 'team_invite';
+  | 'challenge_ending_soon'
+  | 'streak_reminder'
+  | 'team_invite'
+  | 'admin_warning';
 
 export type AppNotification = {
   id: string;
@@ -219,6 +300,7 @@ type NotificationRow = {
   actor_id: string;
   post_id: string | null;
   challenge_id: string | null;
+  message: string | null;
   read: boolean;
   created_at: string;
 
@@ -293,7 +375,7 @@ export async function fetchNotifications(
     await supabase
       .from('notifications')
       .select(
-        'id, type, actor_id, post_id, challenge_id, read, created_at, post_comments(body), posts(type, caption, achievement_title), challenges(title)'
+        'id, type, actor_id, post_id, challenge_id, message, read, created_at, post_comments(body), posts(type, caption, achievement_title), challenges(title)'
       )
       .eq('user_id', userId)
       .order('created_at', {
@@ -363,12 +445,16 @@ export async function fetchNotifications(
 
       type: r.type,
 
+      // Warnings come from an admin acting on behalf of the platform, not a specific
+      // person — never surface which admin's account sent it.
       actorName:
-        displayName(
-          profileById.get(
-            r.actor_id
-          )
-        ),
+        r.type === 'admin_warning'
+          ? 'Admin'
+          : displayName(
+              profileById.get(
+                r.actor_id
+              )
+            ),
 
       postId:
         r.post_id,
@@ -380,8 +466,11 @@ export async function fetchNotifications(
         r.type === 'comment'
           ? comment?.body ??
             null
-          : r.type === 'challenge_complete'
+          : r.type === 'challenge_complete' ||
+            r.type === 'challenge_ending_soon'
           ? challenge?.title ?? null
+          : r.type === 'admin_warning'
+          ? r.message ?? null
           : postPreview(post),
 
       createdAt:

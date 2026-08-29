@@ -46,7 +46,7 @@ import {
   type AppNotification,
 } from '@/lib/notifications';
 
-import { getLevelTitle, xpForLevel } from '@/lib/level';
+import { getLevelTitle, xpAtLevelStart, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -400,15 +400,27 @@ export default function HomeScreen() {
             </Text>
 
             <Text style={styles.xpText}>
-              {user.xp.toLocaleString()} /{' '}
-              {user.xpForNextLevel.toLocaleString()} XP
+              {(
+                user.xp - xpAtLevelStart(user.level)
+              ).toLocaleString()}{' '}
+              /{' '}
+              {(
+                user.xpForNextLevel -
+                xpAtLevelStart(user.level)
+              ).toLocaleString()}{' '}
+              XP
             </Text>
           </View>
 
           <View style={styles.xpBarWrap}>
             <XPBar
-              current={user.xp}
-              max={user.xpForNextLevel}
+              current={
+                user.xp - xpAtLevelStart(user.level)
+              }
+              max={
+                user.xpForNextLevel -
+                xpAtLevelStart(user.level)
+              }
             />
           </View>
         </View>

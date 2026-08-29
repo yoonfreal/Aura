@@ -36,7 +36,7 @@ import {
   type Open1v1Challenge,
 } from '@/lib/challenges';
 
-import { getLevelTitle } from '@/lib/level';
+import { getLevelTitle, xpAtLevelStart, xpForLevel } from '@/lib/level';
 
 import {
   fetchFriendPosts,
@@ -358,10 +358,24 @@ export default function FriendProfileScreen() {
     if (!id) return;
 
     try {
-      const data =
-        await fetchBadges(id);
+      const [data, { data: profileData }] =
+        await Promise.all([
+          fetchBadges(id),
+          supabase
+            .from('profiles')
+            .select('hidden_badges')
+            .eq('id', id)
+            .single(),
+        ]);
 
-      setBadges(data);
+      const hidden =
+        profileData?.hidden_badges ?? [];
+
+      setBadges(
+        data.filter(
+          (badge) => !hidden.includes(badge.label)
+        )
+      );
     } catch (error) {
       console.error(
         'Error loading friend badges:',
@@ -1101,22 +1115,19 @@ setPosts(friendPosts);
   const earnedCount =
     earnedBadges.length;
 
-  /*
-   * Keep your current XP target
-   * for now.
-   */
+  const levelStartXp =
+    xpAtLevelStart(level);
+
   const xpForNextLevel =
-    Math.max(
-      xp + 1,
-      2023
-    );
+    xpForLevel(level + 1);
 
   const xpPercent =
     Math.min(
       100,
       Math.round(
-        (xp /
-          xpForNextLevel) *
+        ((xp - levelStartXp) /
+          (xpForNextLevel -
+            levelStartXp)) *
           100
       )
     );
@@ -1242,8 +1253,9 @@ setPosts(friendPosts);
                   styles.xpLabel
                 }
               >
-                {xp}/
-                {xpForNextLevel}{' '}
+                {xp - levelStartXp}/
+                {xpForNextLevel -
+                  levelStartXp}{' '}
                 XP
               </Text>
             </View>

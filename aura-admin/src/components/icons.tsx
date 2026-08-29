@@ -89,6 +89,25 @@ export function BarChartIcon() {
   );
 }
 
+export function FlagIcon() {
+  return base(
+    <>
+      <path d="M5 21V4" />
+      <path d="M5 4h13l-3.5 4.5L18 13H5" />
+    </>,
+  );
+}
+
+export function MedalIcon() {
+  return base(
+    <>
+      <path d="M7 3l3 8" />
+      <path d="M17 3l-3 8" />
+      <circle cx="12" cy="16" r="5" />
+    </>,
+  );
+}
+
 export function DumbbellIcon() {
   return base(
     <>

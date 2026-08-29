@@ -1,10 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchChallengeById, updateChallenge } from '@/lib/challenges';
-import { ChallengeForm, fromChallenge, toNewChallenge, type ChallengeFormValues } from '@/components/ChallengeForm';
-import { NO_LIMIT_DAYS, addDaysISO } from '@/lib/dates';
+import {
+  ChallengeForm,
+  fromChallenge,
+  resolveEndDate,
+  toNewChallenge,
+  type ChallengeFormValues,
+} from '@/components/ChallengeForm';
 import type { Challenge } from '@/lib/types';
 
 export default function EditChallengePage() {
@@ -31,6 +37,9 @@ export default function EditChallengePage() {
 
   return (
     <div>
+      <Link href="/challenges" className="mb-2 inline-block text-xs font-bold text-gray-500 hover:text-[#1B2B4B]">
+        &larr; Back to Challenges
+      </Link>
       <h1 className="mb-6 text-xl font-extrabold text-[#0D1829]">Edit Challenge</h1>
       <ChallengeForm
         initial={initial}
@@ -39,10 +48,7 @@ export default function EditChallengePage() {
           const draft = toNewChallenge(values);
           if (!draft) throw new Error('Invalid form');
 
-          const endDate = addDaysISO(
-            challenge.startDate,
-            values.durationDays === null ? NO_LIMIT_DAYS : values.durationDays - 1,
-          );
+          const endDate = resolveEndDate(values, challenge.startDate);
 
           await updateChallenge(challenge.id, {
             ...draft,
