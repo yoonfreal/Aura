@@ -1513,8 +1513,9 @@ setPosts(friendPosts);
 
                 /*
                  * Friend's post cannot
-                 * be deleted from here.
+                 * be edited or deleted from here.
                  */
+                onEdit={() => {}}
                 onDelete={() => {}}
 
                 /*

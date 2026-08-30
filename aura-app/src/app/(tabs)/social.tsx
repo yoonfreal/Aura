@@ -1,6 +1,6 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '@/store/userStore';
@@ -39,6 +39,7 @@ const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#
 const EMPTY_REACTION: ReactionCounts = { fire: 0, like: 0, userFire: false, userLike: false };
 const EMPTY_JOIN: JoinState = { count: 0, joined: false };
 type FilterType = 'All' | 'Feed' | 'Streaks';
+const FILTER_TYPES: FilterType[] = ['All', 'Feed', 'Streaks'];
 type PostFilter = 'All' | 'Mine' | 'Partner' | 'Achievement' | 'General';
 const POST_FILTERS: PostFilter[] = ['All', 'Mine', 'Partner', 'Achievement', 'General'];
 
@@ -55,6 +56,8 @@ export default function SocialScreen() {
   const setUnreadNotifications = useUserStore((state) => state.setNotificationCount);
 
   const [filter, setFilter] = useState<FilterType>('All');
+  const [filterTrackWidth, setFilterTrackWidth] = useState(0);
+  const filterPillAnim = useRef(new Animated.Value(0)).current;
   const [postFilter, setPostFilter] = useState<PostFilter>('All');
   const [loading, setLoading] = useState(true);
   const [streaks, setStreaks] = useState<StreakEntry[]>([]);
@@ -73,6 +76,14 @@ export default function SocialScreen() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+
+  useEffect(() => {
+    Animated.timing(filterPillAnim, {
+      toValue: FILTER_TYPES.indexOf(filter),
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [filter]);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -164,6 +175,10 @@ export default function SocialScreen() {
     } catch (err) {
       Alert.alert('Could not send challenge', (err as { message?: string })?.message ?? 'Please try again.');
     }
+  }
+
+  function handleEditPost(post: FeedPost) {
+    router.push({ pathname: '/create-post', params: { editPostId: post.id } });
   }
 
   function handleDeletePost(post: FeedPost) {
@@ -317,14 +332,29 @@ export default function SocialScreen() {
         </View>
       </View>
 
-      <View style={styles.filterRow}>
-        {(['All', 'Feed', 'Streaks'] as FilterType[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterPill, filter === f && styles.filterPillActive]}
-            onPress={() => setFilter(f)}
-          >
-            <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>{f}</Text>
+      <View style={styles.filterTrack} onLayout={(e) => setFilterTrackWidth(e.nativeEvent.layout.width)}>
+        {filterTrackWidth > 0 && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.filterPill,
+              {
+                width: `${100 / FILTER_TYPES.length}%`,
+                transform: [
+                  {
+                    translateX: filterPillAnim.interpolate({
+                      inputRange: [0, FILTER_TYPES.length - 1],
+                      outputRange: [0, (filterTrackWidth / FILTER_TYPES.length) * (FILTER_TYPES.length - 1)],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+        )}
+        {FILTER_TYPES.map((f) => (
+          <TouchableOpacity key={f} style={styles.filterBtn} onPress={() => setFilter(f)} activeOpacity={0.8}>
+            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -383,6 +413,7 @@ export default function SocialScreen() {
                     post={post}
                     avatarColor={avatarColor(i)}
                     currentUserId={userId}
+                    onEdit={() => handleEditPost(post)}
                     onDelete={() => handleDeletePost(post)}
                     onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
                     reaction={reactions.get(post.id) ?? EMPTY_REACTION}
@@ -476,18 +507,31 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
 
-  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 16 },
-  filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  filterTrack: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: '#E8EDF2',
+    borderRadius: 12,
+    padding: 3,
+    position: 'relative',
   },
-  filterPillActive: { backgroundColor: '#1B2B4B', borderColor: '#1B2B4B' },
-  filterPillText: { fontSize: 13, fontWeight: '700', color: '#0D1829' },
-  filterPillTextActive: { color: '#fff' },
+  filterPill: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    bottom: 3,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  filterBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', zIndex: 1 },
+  filterText: { fontSize: 13, fontWeight: '600', color: '#9CA3AF' },
+  filterTextActive: { color: '#1B2B4B', fontWeight: '700' },
 
   content: { paddingHorizontal: 20, paddingBottom: 40 },
 

@@ -137,6 +137,11 @@ export default function PostDetailScreen() {
     }
   }
 
+  function handleEditPost() {
+    if (!post) return;
+    router.push({ pathname: '/create-post', params: { editPostId: post.id } });
+  }
+
   function handleDeletePost() {
     if (!userId || !post) return;
     Alert.alert('Delete post?', 'This removes it for everyone who could see it.', [
@@ -214,6 +219,7 @@ export default function PostDetailScreen() {
             post={post}
             avatarColor={AVATAR_COLORS[0]}
             currentUserId={userId}
+            onEdit={handleEditPost}
             onDelete={handleDeletePost}
             onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
             reaction={reaction}

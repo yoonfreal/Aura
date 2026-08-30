@@ -297,6 +297,46 @@ export async function deletePost(userId: string, postId: string): Promise<void> 
   if (error) throw error;
 }
 
+export type UpdatePostInput = {
+  caption: string;
+  partner?: {
+    activityType: string;
+    activityAt: string;
+    location: string;
+    peopleNeeded: number | null;
+  };
+  expiryOption?: ExpiryOption | null;
+  challengeId?: string | null;
+};
+
+// Deliberately leaves the post's type and achievement_* columns untouched — which
+// achievement was shared is tied to the moment it was posted and isn't re-pickable later,
+// unlike a partner post's activity/date/location/expiry, which are safe to change after
+// the fact.
+export async function updatePost(userId: string, postId: string, input: UpdatePostInput): Promise<void> {
+  const { data, error } = await supabase
+    .from('posts')
+    .update({
+      caption: input.caption || null,
+      activity_type: input.partner?.activityType ?? null,
+      activity_at: input.partner?.activityAt ?? null,
+      location: input.partner?.location ?? null,
+      people_needed: input.partner?.peopleNeeded ?? null,
+      expires_at: computeExpiresAt(input.expiryOption, input.partner?.activityAt ?? null),
+      challenge_id: input.challengeId ?? null,
+    })
+    .eq('id', postId)
+    .eq('user_id', userId)
+    .select('id');
+  if (error) throw error;
+  // RLS can block the update while still reporting no error — Postgres just matches zero
+  // rows. Without this check, an update denied by a missing/misconfigured policy looks
+  // identical to a successful save.
+  if (!data || data.length === 0) {
+    throw new Error('Post could not be updated — it may no longer exist or you may not have permission to edit it.');
+  }
+}
+
 export type FeedPost = {
   id: string;
   userId: string;
@@ -310,6 +350,7 @@ export type FeedPost = {
   activityAt: string | null;
   location: string | null;
   peopleNeeded: number | null;
+  expiresAt: string | null;
   linkedChallengeId: string | null;
   linkedChallengeTitle: string | null;
   linkedChallengeIcon: string | null;
@@ -328,13 +369,14 @@ type PostRow = {
   activity_at: string | null;
   location: string | null;
   people_needed: number | null;
+  expires_at: string | null;
   challenge_id: string | null;
   challenges: { title: string; icon: string } | { title: string; icon: string }[] | null;
   created_at: string;
 };
 
 const POST_SELECT =
-  'id, user_id, type, caption, achievement_title, achievement_icon, achievement_xp, activity_type, activity_at, location, people_needed, challenge_id, challenges(title, icon), created_at';
+  'id, user_id, type, caption, achievement_title, achievement_icon, achievement_xp, activity_type, activity_at, location, people_needed, expires_at, challenge_id, challenges(title, icon), created_at';
 
 function mapPostRows(rows: PostRow[], profileById: Map<string, ProfileNameRow>): FeedPost[] {
   return rows.map((r) => {
@@ -352,6 +394,7 @@ function mapPostRows(rows: PostRow[], profileById: Map<string, ProfileNameRow>):
       activityAt: r.activity_at,
       location: r.location,
       peopleNeeded: r.people_needed,
+      expiresAt: r.expires_at,
       linkedChallengeId: r.challenge_id,
       linkedChallengeTitle: challenge?.title ?? null,
       linkedChallengeIcon: challenge?.icon ?? null,
