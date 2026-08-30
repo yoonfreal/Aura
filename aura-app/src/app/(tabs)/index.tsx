@@ -43,6 +43,8 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 
@@ -70,6 +72,7 @@ export default function HomeScreen() {
     setClaimableCount,
     setFriendRequestCount,
     setNotificationCount,
+    setSocialNotificationCount,
   } = useUserStore();
 
   const pillAnim = useRef(new Animated.Value(0)).current;
@@ -146,6 +149,11 @@ export default function HomeScreen() {
             await countUnreadNotifications(user!.id);
 
           setNotificationCount(unreadNotifications);
+
+          const unreadSocialNotifications =
+            await countUnreadNotifications(user!.id, SOCIAL_NOTIFICATION_TYPES);
+
+          setSocialNotificationCount(unreadSocialNotifications);
         } catch (err) {
           console.error('loadData failed', err);
         }
@@ -169,6 +177,7 @@ export default function HomeScreen() {
       await markAllNotificationsRead(user.id);
 
       setNotificationCount(0);
+      setSocialNotificationCount(0);
     } catch (err) {
       console.error(
         'Failed to load notifications',
@@ -186,7 +195,7 @@ export default function HomeScreen() {
   ) {
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       router.push({
         pathname: '/(tabs)/challenges',
         params: { openChallengeId: notification.challengeId },

@@ -216,6 +216,31 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
   });
 }
 
+export type FriendEntry = { id: string; name: string };
+
+// The current user's accepted friends only — used wherever a picker should offer
+// friends to choose from (e.g. inviting to a team) rather than searching all AU users.
+export async function fetchAcceptedFriends(userId: string): Promise<FriendEntry[]> {
+  const { data: friendshipsData } = await supabase
+    .from('friendships')
+    .select('requester_id, addressee_id, status')
+    .eq('status', 'accepted')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+
+  const friendIds = ((friendshipsData ?? []) as FriendshipRow[]).map((f) =>
+    f.requester_id === userId ? f.addressee_id : f.requester_id,
+  );
+  if (friendIds.length === 0) return [];
+
+  const { data: profilesData, error } = await supabase
+    .from('profiles')
+    .select('id, username, first_name, last_name')
+    .in('id', friendIds);
+  if (error) throw error;
+
+  return ((profilesData ?? []) as ProfileNameRow[]).map((p) => ({ id: p.id, name: displayName(p) }));
+}
+
 export type FriendLeaderboardEntry = { rank: number; userId: string; name: string; level: number; xp: number };
 
 // Includes the current user alongside their accepted friends, ranked together by XP —

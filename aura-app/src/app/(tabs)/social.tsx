@@ -29,6 +29,8 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
@@ -54,6 +56,7 @@ export default function SocialScreen() {
   const setFriendRequestCount = useUserStore((state) => state.setFriendRequestCount);
   const unreadNotifications = useUserStore((state) => state.notificationCount);
   const setUnreadNotifications = useUserStore((state) => state.setNotificationCount);
+  const setSocialNotificationCount = useUserStore((state) => state.setSocialNotificationCount);
 
   const [filter, setFilter] = useState<FilterType>('All');
   const [filterTrackWidth, setFilterTrackWidth] = useState(0);
@@ -97,6 +100,7 @@ export default function SocialScreen() {
     setLoading(false);
 
     countUnreadNotifications(userId).then(setUnreadNotifications).catch(() => {});
+    countUnreadNotifications(userId, SOCIAL_NOTIFICATION_TYPES).then(setSocialNotificationCount).catch(() => {});
     fetchReactions(postsData.map((p) => p.id), userId).then(setReactions).catch(() => {});
     fetchJoins(postsData.map((p) => p.id), userId).then(setJoins).catch(() => {});
     fetchCommentCounts(postsData.map((p) => p.id)).then(setCommentCounts).catch(() => {});
@@ -241,14 +245,17 @@ export default function SocialScreen() {
       .catch(() => setNotifications([]))
       .finally(() => setLoadingNotifications(false));
     markAllNotificationsRead(userId)
-      .then(() => setUnreadNotifications(0))
+      .then(() => {
+        setUnreadNotifications(0);
+        setSocialNotificationCount(0);
+      })
       .catch(() => {});
   }
 
   function handleNotificationPress(notification: AppNotification) {
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       router.push({
         pathname: '/(tabs)/challenges',
         params: { openChallengeId: notification.challengeId },
