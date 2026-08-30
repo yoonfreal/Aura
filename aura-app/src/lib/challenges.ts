@@ -467,7 +467,13 @@ export async function fetchOpen1v1Challenges(): Promise<Open1v1Challenge[]> {
   }));
 }
 
-export type LinkableChallenge = { id: string; title: string; icon: string; type: ChallengeType };
+export type LinkableChallenge = {
+  id: string;
+  title: string;
+  icon: string;
+  type: ChallengeType;
+  description: string | null;
+};
 
 // Any currently-open challenge (any type), for the Create Post composer's "Link to a
 // challenge" picker — readers can jump into the Challenges tab from the post to join it.
@@ -476,7 +482,7 @@ export async function fetchLinkableChallenges(): Promise<LinkableChallenge[]> {
 
   const { data, error } = await supabase
     .from('challenges')
-    .select('id, title, icon, type')
+    .select('id, title, icon, type, description')
     .lte('start_date', today)
     .gte('end_date', today)
     .order('created_at', { ascending: false });

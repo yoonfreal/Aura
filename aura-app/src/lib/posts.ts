@@ -5,6 +5,9 @@ import {
   notifyReaction,
 } from '@/lib/notifications';
 import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
+import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
+import type { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import type { MissionType } from '@/types';
 
 type ProfileNameRow = {
   id: string;
@@ -36,6 +39,11 @@ export type AchievementCandidate = {
   kind: AchievementKind;
   title: string;
   icon: string;
+  // Set only for the fixed stat candidates below (icon is then an Ionicons name, not an
+  // emoji) — mission/badge/challenge icons stay plain emoji since those come from the DB
+  // (admin-chosen) and can't be mapped to a fixed icon set.
+  iconKind?: 'ionicon';
+  iconColor?: string;
   // null for stat candidates — sharing "today's steps" or "current streak" isn't itself an
   // XP-earning event, unlike a mission/badge/challenge win.
   xp: number | null;
@@ -72,7 +80,9 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
     candidates.push({
       kind: 'stat',
       title: `Walked ${stats.steps.toLocaleString()} steps today`,
-      icon: '🦶',
+      icon: 'footsteps-outline',
+      iconKind: 'ionicon',
+      iconColor: '#1B2B4B',
       xp: null,
       sortKey: todayStart,
     });
@@ -81,7 +91,9 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
     candidates.push({
       kind: 'stat',
       title: `Burned ${stats.calories.toLocaleString()} calories today`,
-      icon: '🏋️',
+      icon: 'flame-outline',
+      iconKind: 'ionicon',
+      iconColor: '#F59E0B',
       xp: null,
       sortKey: todayStart,
     });
@@ -90,13 +102,23 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
     candidates.push({
       kind: 'stat',
       title: `On a ${profile.streak_days}-day streak`,
-      icon: '🔥',
+      icon: 'flame',
+      iconKind: 'ionicon',
+      iconColor: '#EF4444',
       xp: null,
       sortKey: todayStart,
     });
   }
   if (profile?.level && profile.level > 1) {
-    candidates.push({ kind: 'stat', title: `Reached Level ${profile.level}`, icon: '⭐', xp: null, sortKey: todayStart });
+    candidates.push({
+      kind: 'stat',
+      title: `Reached Level ${profile.level}`,
+      icon: 'star',
+      iconKind: 'ionicon',
+      iconColor: '#F5B800',
+      xp: null,
+      sortKey: todayStart,
+    });
   }
 
   return candidates;
@@ -104,7 +126,10 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
 
 type RecentMissionRow = {
   date: string;
-  missions: { title: string; xp_reward: number; icon: string } | { title: string; xp_reward: number; icon: string }[] | null;
+  missions:
+    | { title: string; xp_reward: number; goal_unit: MissionType }
+    | { title: string; xp_reward: number; goal_unit: MissionType }[]
+    | null;
 };
 
 type RecentHistoryRow = {
@@ -125,7 +150,7 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
   const [missionsRes, historyRes, statCandidates] = await Promise.all([
     supabase
       .from('user_missions')
-      .select('date, missions(title, xp_reward, icon)')
+      .select('date, missions(title, xp_reward, goal_unit)')
       .eq('user_id', userId)
       .eq('completed', true)
       .gte('date', since)
@@ -142,11 +167,16 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
 
   const missionItems: AchievementCandidate[] = ((missionsRes.data ?? []) as RecentMissionRow[])
     .map((r) => ({ ...r, missions: Array.isArray(r.missions) ? r.missions[0] : r.missions }))
-    .filter((r): r is RecentMissionRow & { missions: { title: string; xp_reward: number; icon: string } } => !!r.missions)
+    .filter(
+      (r): r is RecentMissionRow & { missions: { title: string; xp_reward: number; goal_unit: MissionType } } =>
+        !!r.missions
+    )
     .map((r) => ({
       kind: 'mission' as const,
       title: `Completed ${r.missions.title}`,
-      icon: r.missions.icon || '🏅',
+      icon: MISSION_TYPE_ICON[r.missions.goal_unit].icon,
+      iconKind: 'ionicon' as const,
+      iconColor: MISSION_TYPE_ICON[r.missions.goal_unit].color,
       xp: r.missions.xp_reward,
       sortKey: `${r.date}T12:00:00.000Z`,
     }));
@@ -168,26 +198,34 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
 
 export type PostType = 'achievement' | 'thoughts' | 'partner';
 
-export const ACTIVITY_TYPES: { value: string; label: string; icon: string }[] = [
-  { value: 'running', label: 'Running', icon: '🏃' },
-  { value: 'gym', label: 'Gym', icon: '🏋️' },
-  { value: 'basketball', label: 'Basketball', icon: '🏀' },
-  { value: 'badminton', label: 'Badminton', icon: '🏸' },
-  { value: 'swimming', label: 'Swimming', icon: '🏊' },
-  { value: 'yoga', label: 'Yoga', icon: '🧘' },
-  { value: 'cycling', label: 'Cycling', icon: '🚴' },
-  { value: 'other', label: 'Other', icon: '⚡' },
+export type ActivityTypeOption =
+  | { value: string; label: string; iconSet: 'material'; icon: keyof typeof MaterialCommunityIcons.glyphMap }
+  | { value: string; label: string; iconSet?: undefined; icon: keyof typeof Ionicons.glyphMap };
+
+export const ACTIVITY_TYPES: ActivityTypeOption[] = [
+  { value: 'badminton', label: 'Badminton', iconSet: 'material', icon: 'badminton' },
+  { value: 'basketball', label: 'Basketball', icon: 'basketball-outline' },
+  { value: 'cycling', label: 'Cycling', icon: 'bicycle-outline' },
+  { value: 'football', label: 'Football', icon: 'football-outline' },
+  { value: 'gym', label: 'Gym', icon: 'barbell-outline' },
+  { value: 'running', label: 'Running', icon: 'walk-outline' },
+  { value: 'snooker', label: 'Snooker', icon: 'bowling-ball-outline' },
+  { value: 'swimming', label: 'Swimming', icon: 'water-outline' },
+  { value: 'tennis', label: 'Tennis', icon: 'tennisball-outline' },
+  { value: 'yoga', label: 'Yoga', icon: 'body-outline' },
+  { value: 'other', label: 'Other', icon: 'ellipsis-horizontal-outline' },
 ];
 
 export const CAMPUS_LOCATIONS: string[] = [
-  'Gym',
-  'Sports Field',
-  'Swimming Pool',
   'Basketball Court',
+  'Gym',
+  'Library',
+  'Sports Field',
+  'Student Center',
+  'Swimming Pool',
   'Tennis Court',
   'Track',
-  'Student Center',
-  'Library',
+  'Other',
 ];
 
 export type ExpiryOption = 'after_event' | '24h' | '48h' | '1w';

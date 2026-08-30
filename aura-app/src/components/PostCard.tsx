@@ -9,6 +9,7 @@ import {
   type JoinState,
   type Comment,
 } from '@/lib/posts';
+import { ActivityTypeIcon } from '@/components/ActivityTypeIcon';
 
 function formatPartnerDate(iso: string): string {
   const d = new Date(iso);
@@ -100,7 +101,17 @@ export function PostCard({
       {post.type === 'partner' && (
         <View style={styles.partnerCard}>
           <View style={styles.partnerRow}>
-            <Text style={styles.partnerIcon}>{ACTIVITY_TYPES.find((a) => a.value === post.activityType)?.icon ?? '⚡'}</Text>
+            <ActivityTypeIcon
+              activityType={
+                ACTIVITY_TYPES.find((a) => a.value === post.activityType) ?? {
+                  value: post.activityType ?? 'other',
+                  label: post.activityType ?? 'Other',
+                  icon: 'ellipsis-horizontal-outline',
+                }
+              }
+              size={14}
+              color="#374151"
+            />
             <Text style={styles.partnerText}>
               {ACTIVITY_TYPES.find((a) => a.value === post.activityType)?.label ?? post.activityType}
             </Text>
@@ -265,7 +276,6 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   partnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  partnerIcon: { fontSize: 14 },
   partnerText: { fontSize: 12, fontWeight: '600', color: '#374151' },
 
   linkedChallengePill: {
