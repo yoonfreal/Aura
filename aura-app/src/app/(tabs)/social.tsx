@@ -356,34 +356,6 @@ export default function SocialScreen() {
             </View>
           )}
 
-          {showLeaderboard && leaderboard.length > 0 && (
-            <View style={styles.card}>
-              <View style={styles.cardHeaderRow}>
-                <Text style={styles.cardTitle}>Top Friends</Text>
-                <TouchableOpacity onPress={() => router.push('/(tabs)/rank?tab=Friends')}>
-                  <Text style={styles.seeFullLink}>See full →</Text>
-                </TouchableOpacity>
-              </View>
-              {leaderboard.slice(0, 5).map((entry, i) => {
-                const isSelf = entry.userId === userId;
-                return (
-                  <View key={entry.userId} style={[styles.miniRow, isSelf && styles.miniRowSelf]}>
-                    <Text style={styles.miniRank}>{entry.rank}</Text>
-                    <View style={[styles.avatarSm, { backgroundColor: avatarColor(i) }]}>
-                      <Text style={styles.avatarTextSm}>{entry.name.charAt(0).toUpperCase()}</Text>
-                    </View>
-                    <Text style={styles.miniName} numberOfLines={1}>
-                      {isSelf ? 'You' : entry.name}
-                    </Text>
-                    <View style={[styles.xpPill, isSelf && styles.xpPillSelf]}>
-                      <Text style={[styles.xpPillText, isSelf && styles.xpPillTextSelf]}>{entry.xp} XP</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-
           {showFeed && (
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>ACTIVITY FEED</Text>

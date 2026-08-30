@@ -45,7 +45,8 @@
         {
           "locationWhenInUsePermission": "AUra uses your location to confirm you're at the gym when you check in."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
