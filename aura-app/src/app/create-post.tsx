@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'expo-router';
 import {
   View,
@@ -9,11 +9,22 @@ import {
   ScrollView,
   ActivityIndicator,
   Switch,
+  Animated,
+  LayoutAnimation,
+  Platform,
+  UIManager,
 } from 'react-native';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const TYPE_PILL_GAP = 8;
+const TYPE_PILL_PADDING = 4;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Calendar } from 'react-native-calendars';
 import { useUserStore } from '@/store/userStore';
-import { getLevelTitle } from '@/lib/level';
 import {
   createPost,
   fetchRecentAchievements,
@@ -25,11 +36,13 @@ import {
   type ExpiryOption,
 } from '@/lib/posts';
 import { fetchLinkableChallenges, type LinkableChallenge } from '@/lib/challenges';
+import { thailandDateISO } from '@/lib/thailandTime';
+import { ActivityTypeIcon } from '@/components/ActivityTypeIcon';
 
-const POST_TYPES: { type: PostType; icon: string; label: string }[] = [
-  { type: 'partner', icon: '🤝', label: 'Partner' },
-  { type: 'achievement', icon: '🏆', label: 'Achievement' },
-  { type: 'thoughts', icon: '💭', label: 'Thoughts' },
+const POST_TYPES: { type: PostType; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
+  { type: 'partner', icon: 'people', label: 'Partner' },
+  { type: 'achievement', icon: 'trophy', label: 'Achievement' },
+  { type: 'thoughts', icon: 'chatbubble-ellipses', label: 'Thoughts' },
 ];
 
 function formatDateTime(d: Date): string {
@@ -38,26 +51,19 @@ function formatDateTime(d: Date): string {
   return `${datePart} · ${timePart}`;
 }
 
-// No native date/time picker here on purpose — this screen needs to keep working in plain
-// Expo Go, which can't load native modules. Plain typed fields instead of an exact picker.
-// Accepts DD/MM/YYYY and HH:MM (24h); returns null while either field is incomplete/invalid
-// (including calendar-invalid dates like 31/02, which the Date object would otherwise silently
-// roll over into March).
-function parseActivityAt(dateText: string, timeText: string): Date | null {
-  const dateMatch = dateText.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  const timeMatch = timeText.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!dateMatch || !timeMatch) return null;
+function formatSelectedDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00`);
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+}
 
-  const day = Number(dateMatch[1]);
-  const month = Number(dateMatch[2]);
-  const year = Number(dateMatch[3]);
-  const hour = Number(timeMatch[1]);
-  const minute = Number(timeMatch[2]);
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
-
-  const d = new Date(year, month - 1, day, hour, minute, 0, 0);
-  if (d.getMonth() !== month - 1 || d.getDate() !== day) return null;
-  return d;
+// Accepts HH:MM (24h); returns null while incomplete/invalid.
+function parseTimeText(timeText: string): { hour: number; minute: number } | null {
+  const match = timeText.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
 }
 
 export default function CreatePostScreen() {
@@ -68,6 +74,24 @@ export default function CreatePostScreen() {
   const [caption, setCaption] = useState('');
   const [posting, setPosting] = useState(false);
 
+  const [typeTrackWidth, setTypeTrackWidth] = useState(0);
+  const typePillAnim = useRef(new Animated.Value(0)).current;
+  const typePillOpacity = useRef(new Animated.Value(0)).current;
+  const typeIndex = type ? POST_TYPES.findIndex((pt) => pt.type === type) : -1;
+
+  useEffect(() => {
+    if (typeIndex < 0) return;
+    Animated.parallel([
+      Animated.timing(typePillAnim, { toValue: typeIndex, duration: 240, useNativeDriver: true }),
+      Animated.timing(typePillOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+    ]).start();
+  }, [typeIndex]);
+
+  function handleSelectType(next: PostType) {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setType(next);
+  }
+
   // Achievement
   const [achievements, setAchievements] = useState<AchievementCandidate[]>([]);
   const [loadingAchievements, setLoadingAchievements] = useState(false);
@@ -75,9 +99,16 @@ export default function CreatePostScreen() {
 
   // Partner
   const [activityType, setActivityType] = useState<string | null>(null);
-  const [dateText, setDateText] = useState('');
+  const [showActivityTypePicker, setShowActivityTypePicker] = useState(false);
+  const [customActivityType, setCustomActivityType] = useState('');
+  const [activityTypeQuery, setActivityTypeQuery] = useState('');
+  const [activityDate, setActivityDate] = useState<string | null>(null);
+  const [showCalendar, setShowCalendar] = useState(false);
   const [timeText, setTimeText] = useState('');
   const [location, setLocation] = useState<string | null>(null);
+  const [showLocationPicker, setShowLocationPicker] = useState(false);
+  const [locationQuery, setLocationQuery] = useState('');
+  const [customLocation, setCustomLocation] = useState('');
   const [peopleNeeded, setPeopleNeeded] = useState<number | null>(2);
   const [autoExpire, setAutoExpire] = useState(false);
   const [expiryOption, setExpiryOption] = useState<ExpiryOption | null>(null);
@@ -87,6 +118,7 @@ export default function CreatePostScreen() {
   const [showChallengePicker, setShowChallengePicker] = useState(false);
   const [linkableChallenges, setLinkableChallenges] = useState<LinkableChallenge[]>([]);
   const [loadingLinkable, setLoadingLinkable] = useState(false);
+  const [challengeQuery, setChallengeQuery] = useState('');
 
   useEffect(() => {
     if (type !== 'achievement' || !user?.id || achievements.length > 0) return;
@@ -104,6 +136,7 @@ export default function CreatePostScreen() {
   function handleOpenChallengePicker() {
     const next = !showChallengePicker;
     setShowChallengePicker(next);
+    if (!next) setChallengeQuery('');
     if (next && linkableChallenges.length === 0) {
       setLoadingLinkable(true);
       fetchLinkableChallenges()
@@ -113,10 +146,26 @@ export default function CreatePostScreen() {
     }
   }
 
-  const activityAt = parseActivityAt(dateText, timeText);
-  const dateTimeInvalid = (dateText.length > 0 || timeText.length > 0) && !activityAt;
+  const parsedTime = parseTimeText(timeText);
+  const timeInvalid = timeText.length > 0 && !parsedTime;
+  const activityAt =
+    activityDate && parsedTime
+      ? new Date(`${activityDate}T${String(parsedTime.hour).padStart(2, '0')}:${String(parsedTime.minute).padStart(2, '0')}:00`)
+      : null;
+  const selectedActivityType = ACTIVITY_TYPES.find((a) => a.value === activityType);
+  const filteredActivityTypes = ACTIVITY_TYPES.filter((a) =>
+    a.label.toLowerCase().includes(activityTypeQuery.trim().toLowerCase())
+  );
+  const filteredLocations = CAMPUS_LOCATIONS.filter((loc) =>
+    loc.toLowerCase().includes(locationQuery.trim().toLowerCase())
+  );
+  const effectiveActivityType = activityType === 'other' ? customActivityType.trim() : activityType;
+  const effectiveLocation = location === 'Other' ? customLocation.trim() : location;
+  const filteredChallenges = linkableChallenges.filter((c) =>
+    c.title.toLowerCase().includes(challengeQuery.trim().toLowerCase())
+  );
 
-  const partnerValid = type === 'partner' && !!activityType && !!activityAt && !!location;
+  const partnerValid = type === 'partner' && !!effectiveActivityType && !!activityAt && !!effectiveLocation;
   const canPost =
     !posting &&
     ((type === 'thoughts' && caption.trim().length > 0) || (type === 'achievement' && !!selectedAchievement) || partnerValid);
@@ -130,8 +179,8 @@ export default function CreatePostScreen() {
         caption: caption.trim(),
         achievement: type === 'achievement' ? (selectedAchievement ?? undefined) : undefined,
         partner:
-          type === 'partner' && activityType && activityAt && location
-            ? { activityType, activityAt: activityAt.toISOString(), location, peopleNeeded }
+          type === 'partner' && effectiveActivityType && activityAt && effectiveLocation
+            ? { activityType: effectiveActivityType, activityAt: activityAt.toISOString(), location: effectiveLocation, peopleNeeded }
             : undefined,
         expiryOption: type === 'partner' && autoExpire ? expiryOption : null,
         challengeId: linkedChallenge?.id ?? null,
@@ -164,32 +213,50 @@ export default function CreatePostScreen() {
 
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.sectionLabel}>POST TYPE</Text>
-        <View style={styles.typeRow}>
-          {POST_TYPES.map((pt) => (
-            <TouchableOpacity
-              key={pt.type}
-              style={[styles.typeCard, type === pt.type && styles.typeCardActive]}
-              onPress={() => setType(pt.type)}
-            >
-              <Text style={styles.typeEmoji}>{pt.icon}</Text>
-              <Text style={styles.typeLabel}>{pt.label}</Text>
-            </TouchableOpacity>
-          ))}
+        <View style={styles.typeRow} onLayout={(e) => setTypeTrackWidth(e.nativeEvent.layout.width)}>
+          {typeTrackWidth > 0 && (() => {
+            const itemWidth =
+              (typeTrackWidth - TYPE_PILL_PADDING * 2 - TYPE_PILL_GAP * (POST_TYPES.length - 1)) / POST_TYPES.length;
+            return (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.typePill,
+                  {
+                    width: itemWidth,
+                    opacity: typePillOpacity,
+                    transform: [
+                      {
+                        translateX: typePillAnim.interpolate({
+                          inputRange: [0, POST_TYPES.length - 1],
+                          outputRange: [0, (itemWidth + TYPE_PILL_GAP) * (POST_TYPES.length - 1)],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              />
+            );
+          })()}
+          {POST_TYPES.map((pt) => {
+            const active = type === pt.type;
+            return (
+              <TouchableOpacity
+                key={pt.type}
+                style={styles.typeCard}
+                onPress={() => handleSelectType(pt.type)}
+                activeOpacity={0.85}
+              >
+                <Ionicons
+                  name={active ? pt.icon : (`${pt.icon}-outline` as keyof typeof Ionicons.glyphMap)}
+                  size={18}
+                  color={active ? '#F5B800' : '#8A9BB0'}
+                />
+                <Text style={[styles.typeLabel, active && styles.typeLabelActive]}>{pt.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
-
-        {user && (
-          <View style={styles.userRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{user.username.charAt(0).toUpperCase()}</Text>
-            </View>
-            <View>
-              <Text style={styles.userName}>{user.username}</Text>
-              <Text style={styles.userLevel}>
-                Level {user.level} · {getLevelTitle(user.level)}
-              </Text>
-            </View>
-          </View>
-        )}
 
         <TextInput
           style={styles.captionInput}
@@ -201,7 +268,7 @@ export default function CreatePostScreen() {
         />
 
         {type === 'achievement' && (
-          <View style={styles.section}>
+          <View style={[styles.section, styles.sectionWhite]}>
             <Text style={styles.sectionLabel}>YOUR RECENT ACHIEVEMENTS</Text>
             {loadingAchievements ? (
               <ActivityIndicator color="#1B2B4B" style={{ marginTop: 12 }} />
@@ -218,7 +285,17 @@ export default function CreatePostScreen() {
                     style={[styles.achievementRow, selected && styles.achievementRowActive]}
                     onPress={() => setSelectedAchievement(a)}
                   >
-                    <Text style={styles.achievementIcon}>{a.icon}</Text>
+                    {a.iconKind === 'ionicon' ? (
+                      <View style={styles.achievementIconWrap}>
+                        <Ionicons
+                          name={a.icon as keyof typeof Ionicons.glyphMap}
+                          size={20}
+                          color={a.iconColor ?? '#1B2B4B'}
+                        />
+                      </View>
+                    ) : (
+                      <Text style={styles.achievementIcon}>{a.icon}</Text>
+                    )}
                     <View style={{ flex: 1 }}>
                       <Text style={styles.achievementTitle}>{a.title}</Text>
                       {a.xp != null && <Text style={styles.achievementXp}>+{a.xp} XP</Text>}
@@ -237,37 +314,114 @@ export default function CreatePostScreen() {
 
         {type === 'partner' && (
           <>
-            <View style={styles.section}>
+            <View style={[styles.section, styles.sectionWhite]}>
               <Text style={styles.sectionLabel}>ACTIVITY DETAILS</Text>
 
               <Text style={styles.fieldLabel}>Activity type</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                {ACTIVITY_TYPES.map((a) => (
+              {activityType === 'other' ? (
+                <View style={styles.dropdownField}>
+                  <TextInput
+                    style={styles.customFieldInput}
+                    placeholder="Enter the specific activity"
+                    placeholderTextColor="#9CA3AF"
+                    value={customActivityType}
+                    onChangeText={setCustomActivityType}
+                  />
                   <TouchableOpacity
-                    key={a.value}
-                    style={[styles.chip, activityType === a.value && styles.chipActive]}
-                    onPress={() => setActivityType(a.value)}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setShowActivityTypePicker((v) => !v);
+                    }}
                   >
-                    <Text style={styles.chipEmoji}>{a.icon}</Text>
-                    <Text style={[styles.chipText, activityType === a.value && styles.chipTextActive]}>{a.label}</Text>
+                    <Ionicons name={showActivityTypePicker ? 'chevron-up' : 'chevron-down'} size={18} color="#8A9BB0" />
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.dropdownField}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowActivityTypePicker((v) => {
+                      if (v) setActivityTypeQuery('');
+                      return !v;
+                    });
+                  }}
+                >
+                  {selectedActivityType ? (
+                    <View style={styles.dropdownFieldValue}>
+                      <ActivityTypeIcon activityType={selectedActivityType} size={16} color="#1B2B4B" />
+                      <Text style={styles.dropdownFieldText}>{selectedActivityType.label}</Text>
+                    </View>
+                  ) : (
+                    <Text style={styles.dropdownFieldPlaceholder}>Select an activity</Text>
+                  )}
+                  <Ionicons name={showActivityTypePicker ? 'chevron-up' : 'chevron-down'} size={18} color="#8A9BB0" />
+                </TouchableOpacity>
+              )}
+              {showActivityTypePicker && (
+                <View style={styles.dropdownOptions}>
+                  <View style={styles.dropdownSearchRow}>
+                    <Ionicons name="search" size={16} color="#8A9BB0" />
+                    <TextInput
+                      style={styles.dropdownSearchInput}
+                      placeholder="Search activity..."
+                      placeholderTextColor="#9CA3AF"
+                      value={activityTypeQuery}
+                      onChangeText={setActivityTypeQuery}
+                      autoFocus
+                    />
+                    {activityTypeQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setActivityTypeQuery('')}>
+                        <Ionicons name="close-circle" size={16} color="#C0C8D4" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {filteredActivityTypes.length === 0 ? (
+                    <Text style={styles.dropdownEmptyText}>No matching activities</Text>
+                  ) : (
+                    filteredActivityTypes.map((a, i) => (
+                      <TouchableOpacity
+                        key={a.value}
+                        style={[
+                          styles.dropdownOptionRow,
+                          i === filteredActivityTypes.length - 1 && styles.dropdownOptionRowLast,
+                        ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setActivityType(a.value);
+                          setShowActivityTypePicker(false);
+                          setActivityTypeQuery('');
+                        }}
+                      >
+                        <ActivityTypeIcon activityType={a} size={16} color="#8A9BB0" />
+                        <Text style={styles.dropdownOptionText}>{a.label}</Text>
+                        {activityType === a.value && (
+                          <Ionicons name="checkmark" size={18} color="#1B2B4B" />
+                        )}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              )}
 
               <Text style={styles.fieldLabel}>Date & time</Text>
               <View style={styles.dateTimeRow}>
-                <View style={styles.dateTimeField}>
-                  <Ionicons name="calendar-outline" size={16} color="#8A9BB0" />
-                  <TextInput
-                    style={styles.dateTimeInput}
-                    placeholder="DD/MM/YYYY"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="number-pad"
-                    maxLength={10}
-                    value={dateText}
-                    onChangeText={setDateText}
-                  />
-                </View>
+                <TouchableOpacity
+                  style={[styles.dropdownField, { flex: 1 }]}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowCalendar((v) => !v);
+                  }}
+                >
+                  <View style={styles.dropdownFieldValue}>
+                    <Ionicons name="calendar-outline" size={16} color={activityDate ? '#1B2B4B' : '#8A9BB0'} />
+                    <Text style={activityDate ? styles.dropdownFieldText : styles.dropdownFieldPlaceholder}>
+                      {activityDate ? formatSelectedDate(activityDate) : 'Select date'}
+                    </Text>
+                  </View>
+                  <Ionicons name={showCalendar ? 'chevron-up' : 'chevron-down'} size={16} color="#8A9BB0" />
+                </TouchableOpacity>
+
                 <View style={styles.dateTimeField}>
                   <Ionicons name="time-outline" size={16} color="#8A9BB0" />
                   <TextInput
@@ -282,24 +436,114 @@ export default function CreatePostScreen() {
                 </View>
               </View>
 
+              {showCalendar && (
+                <View style={styles.calendarWrap}>
+                  <Calendar
+                    minDate={thailandDateISO()}
+                    current={activityDate ?? undefined}
+                    markedDates={activityDate ? { [activityDate]: { selected: true, selectedColor: '#1B2B4B' } } : {}}
+                    onDayPress={(day) => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setActivityDate(day.dateString);
+                      setShowCalendar(false);
+                    }}
+                    theme={{
+                      todayTextColor: '#1B2B4B',
+                      arrowColor: '#1B2B4B',
+                      selectedDayBackgroundColor: '#1B2B4B',
+                      textDayFontWeight: '600',
+                      textMonthFontWeight: '800',
+                    }}
+                  />
+                </View>
+              )}
+
               {activityAt ? (
                 <Text style={styles.dateSummary}>{formatDateTime(activityAt)}</Text>
-              ) : dateTimeInvalid ? (
-                <Text style={styles.dateError}>Use DD/MM/YYYY and 24h HH:MM (e.g. 25/12/2026 and 18:30)</Text>
+              ) : timeInvalid ? (
+                <Text style={styles.dateError}>Use 24h HH:MM (e.g. 18:30)</Text>
               ) : null}
 
               <Text style={styles.fieldLabel}>Location on campus</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-                {CAMPUS_LOCATIONS.map((loc) => (
+              {location === 'Other' ? (
+                <View style={styles.dropdownField}>
+                  <TextInput
+                    style={styles.customFieldInput}
+                    placeholder="Enter the specific location"
+                    placeholderTextColor="#9CA3AF"
+                    value={customLocation}
+                    onChangeText={setCustomLocation}
+                  />
                   <TouchableOpacity
-                    key={loc}
-                    style={[styles.chip, location === loc && styles.chipActive]}
-                    onPress={() => setLocation(loc)}
+                    onPress={() => {
+                      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                      setShowLocationPicker((v) => !v);
+                    }}
                   >
-                    <Text style={[styles.chipText, location === loc && styles.chipTextActive]}>{loc}</Text>
+                    <Ionicons name={showLocationPicker ? 'chevron-up' : 'chevron-down'} size={18} color="#8A9BB0" />
                   </TouchableOpacity>
-                ))}
-              </ScrollView>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.dropdownField}
+                  onPress={() => {
+                    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                    setShowLocationPicker((v) => {
+                      if (v) setLocationQuery('');
+                      return !v;
+                    });
+                  }}
+                >
+                  {location ? (
+                    <Text style={styles.dropdownFieldText}>{location}</Text>
+                  ) : (
+                    <Text style={styles.dropdownFieldPlaceholder}>Select a location</Text>
+                  )}
+                  <Ionicons name={showLocationPicker ? 'chevron-up' : 'chevron-down'} size={18} color="#8A9BB0" />
+                </TouchableOpacity>
+              )}
+              {showLocationPicker && (
+                <View style={styles.dropdownOptions}>
+                  <View style={styles.dropdownSearchRow}>
+                    <Ionicons name="search" size={16} color="#8A9BB0" />
+                    <TextInput
+                      style={styles.dropdownSearchInput}
+                      placeholder="Search location..."
+                      placeholderTextColor="#9CA3AF"
+                      value={locationQuery}
+                      onChangeText={setLocationQuery}
+                      autoFocus
+                    />
+                    {locationQuery.length > 0 && (
+                      <TouchableOpacity onPress={() => setLocationQuery('')}>
+                        <Ionicons name="close-circle" size={16} color="#C0C8D4" />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  {filteredLocations.length === 0 ? (
+                    <Text style={styles.dropdownEmptyText}>No matching locations</Text>
+                  ) : (
+                    filteredLocations.map((loc, i) => (
+                      <TouchableOpacity
+                        key={loc}
+                        style={[
+                          styles.dropdownOptionRow,
+                          i === filteredLocations.length - 1 && styles.dropdownOptionRowLast,
+                        ]}
+                        onPress={() => {
+                          LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                          setLocation(loc);
+                          setShowLocationPicker(false);
+                          setLocationQuery('');
+                        }}
+                      >
+                        <Text style={styles.dropdownOptionText}>{loc}</Text>
+                        {location === loc && <Ionicons name="checkmark" size={18} color="#1B2B4B" />}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </View>
+              )}
 
               <View style={styles.peopleRow}>
                 <Text style={styles.fieldLabel}>People needed</Text>
@@ -331,7 +575,7 @@ export default function CreatePostScreen() {
               </View>
             </View>
 
-            <View style={styles.section}>
+            <View style={[styles.section, styles.sectionWhite]}>
               <Text style={styles.sectionLabel}>POST EXPIRY</Text>
               <View style={styles.expiryCard}>
                 <View style={styles.expiryToggleRow}>
@@ -368,7 +612,7 @@ export default function CreatePostScreen() {
           </>
         )}
 
-        <View style={styles.section}>
+        <View style={[styles.section, styles.sectionWhite]}>
           <Text style={styles.sectionLabel}>LINK A CHALLENGE (OPTIONAL)</Text>
           {linkedChallenge ? (
             <View style={styles.linkedChallengeRow}>
@@ -392,25 +636,58 @@ export default function CreatePostScreen() {
           )}
 
           {showChallengePicker && !linkedChallenge && (
-            loadingLinkable ? (
-              <ActivityIndicator color="#1B2B4B" style={{ marginTop: 12 }} />
-            ) : linkableChallenges.length === 0 ? (
-              <Text style={styles.emptyText}>No open challenges right now.</Text>
-            ) : (
-              linkableChallenges.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={styles.linkOptionRow}
-                  onPress={() => {
-                    setLinkedChallenge(c);
-                    setShowChallengePicker(false);
-                  }}
-                >
-                  <Text style={styles.linkOptionIcon}>{c.icon}</Text>
-                  <Text style={styles.linkOptionTitle}>{c.title}</Text>
-                </TouchableOpacity>
-              ))
-            )
+            <View style={styles.dropdownOptions}>
+              {!loadingLinkable && linkableChallenges.length > 0 && (
+                <View style={styles.dropdownSearchRow}>
+                  <Ionicons name="search" size={16} color="#8A9BB0" />
+                  <TextInput
+                    style={styles.dropdownSearchInput}
+                    placeholder="Search challenges..."
+                    placeholderTextColor="#9CA3AF"
+                    value={challengeQuery}
+                    onChangeText={setChallengeQuery}
+                    autoFocus
+                  />
+                  {challengeQuery.length > 0 && (
+                    <TouchableOpacity onPress={() => setChallengeQuery('')}>
+                      <Ionicons name="close-circle" size={16} color="#C0C8D4" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+              {loadingLinkable ? (
+                <ActivityIndicator color="#1B2B4B" style={{ paddingVertical: 14 }} />
+              ) : linkableChallenges.length === 0 ? (
+                <Text style={styles.dropdownEmptyText}>No open challenges right now.</Text>
+              ) : filteredChallenges.length === 0 ? (
+                <Text style={styles.dropdownEmptyText}>No matching challenges</Text>
+              ) : (
+                filteredChallenges.map((c, i) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={[
+                      styles.linkOptionRow,
+                      i === filteredChallenges.length - 1 && styles.linkOptionRowLast,
+                    ]}
+                    onPress={() => {
+                      setLinkedChallenge(c);
+                      setShowChallengePicker(false);
+                      setChallengeQuery('');
+                    }}
+                  >
+                    <Text style={styles.linkOptionIcon}>{c.icon}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.linkOptionTitle}>{c.title}</Text>
+                      {c.description && (
+                        <Text style={styles.linkOptionDescription} numberOfLines={2}>
+                          {c.description}
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
           )}
         </View>
       </ScrollView>
@@ -444,34 +721,55 @@ const styles = StyleSheet.create({
 
   content: { paddingHorizontal: 20, paddingBottom: 60 },
   sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#9CA3AF',
-    letterSpacing: 1.2,
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#1B2B4B',
+    letterSpacing: 0.6,
     textTransform: 'uppercase',
     marginBottom: 10,
   },
-  section: { marginTop: 20 },
+  section: {
+    marginTop: 28,
+    borderWidth: 1,
+    borderColor: '#E9EDF3',
+    borderRadius: 16,
+    padding: 14,
+  },
+  sectionWhite: { backgroundColor: '#fff' },
 
-  typeRow: { flexDirection: 'row', gap: 8, marginBottom: 20 },
+  typeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 28,
+    backgroundColor: '#fff',
+    padding: 4,
+    borderRadius: 16,
+  },
   typeCard: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    zIndex: 1,
   },
-  typeCardActive: { backgroundColor: '#EBF2FF', borderColor: '#93B4E0' },
-  typeEmoji: { fontSize: 18 },
-  typeLabel: { fontSize: 12, fontWeight: '700', color: '#0D1829', marginTop: 3 },
-
-  userRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#4A5568', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  userName: { fontSize: 15, fontWeight: '800', color: '#0D1829' },
-  userLevel: { fontSize: 12, color: '#8A9BB0', marginTop: 1 },
+  typePill: {
+    position: 'absolute',
+    top: TYPE_PILL_PADDING,
+    bottom: TYPE_PILL_PADDING,
+    left: TYPE_PILL_PADDING,
+    borderRadius: 12,
+    backgroundColor: '#1B2B4B',
+    shadowColor: '#1B2B4B',
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  typeLabel: { fontSize: 13, fontWeight: '700', color: '#8A9BB0' },
+  typeLabelActive: { color: '#fff' },
 
   captionInput: {
     backgroundColor: '#fff',
@@ -500,26 +798,11 @@ const styles = StyleSheet.create({
   },
   achievementRowActive: { backgroundColor: '#EBF2FF', borderColor: '#93B4E0' },
   achievementIcon: { fontSize: 22 },
+  achievementIconWrap: { width: 28, alignItems: 'center', justifyContent: 'center' },
   achievementTitle: { fontSize: 13, fontWeight: '700', color: '#0D1829' },
   achievementXp: { fontSize: 12, color: '#8A6D00', fontWeight: '700', marginTop: 2 },
 
-  fieldLabel: { fontSize: 13, fontWeight: '700', color: '#0D1829', marginTop: 14, marginBottom: 8 },
-  chipRow: { gap: 8, paddingRight: 8 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  chipActive: { backgroundColor: '#EBF2FF', borderColor: '#93B4E0' },
-  chipEmoji: { fontSize: 14 },
-  chipText: { fontSize: 13, fontWeight: '700', color: '#0D1829' },
-  chipTextActive: { color: '#1B2B4B' },
+  fieldLabel: { fontSize: 12, fontWeight: '600', color: '#8A9BB0', marginTop: 14, marginBottom: 8 },
 
   dateTimeRow: { flexDirection: 'row', gap: 8 },
   dateTimeField: {
@@ -537,6 +820,65 @@ const styles = StyleSheet.create({
   dateTimeInput: { flex: 1, fontSize: 14, color: '#0D1829', fontWeight: '600', padding: 0 },
   dateSummary: { fontSize: 12, color: '#1B2B4B', fontWeight: '700', marginTop: 8 },
   dateError: { fontSize: 12, color: '#DC2626', marginTop: 8, lineHeight: 17 },
+  calendarWrap: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 6,
+    padding: 8,
+    overflow: 'hidden',
+  },
+
+  dropdownField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  dropdownFieldValue: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dropdownFieldText: { fontSize: 14, fontWeight: '600', color: '#0D1829' },
+  dropdownFieldPlaceholder: { fontSize: 14, color: '#9CA3AF' },
+  dropdownOptions: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginTop: 6,
+    paddingHorizontal: 14,
+  },
+  dropdownOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F8',
+  },
+  dropdownOptionRowLast: { borderBottomWidth: 0 },
+  dropdownOptionText: { flex: 1, fontSize: 14, fontWeight: '600', color: '#0D1829' },
+  dropdownSearchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F4F8',
+  },
+  dropdownSearchInput: { flex: 1, fontSize: 14, color: '#0D1829', padding: 0 },
+  dropdownEmptyText: { fontSize: 13, color: '#9CA3AF', paddingVertical: 14, textAlign: 'center' },
+  customFieldInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0D1829',
+    padding: 0,
+  },
 
   peopleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 },
   stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -550,7 +892,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperValue: { fontSize: 15, fontWeight: '800', color: '#0D1829', minWidth: 18, textAlign: 'center' },
+  stepperValue: { fontSize: 15, fontWeight: '700', color: '#4B5A72', minWidth: 18, textAlign: 'center' },
   anyPill: {
     paddingHorizontal: 12,
     paddingVertical: 7,
@@ -560,7 +902,7 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   anyPillActive: { backgroundColor: '#1B2B4B', borderColor: '#1B2B4B' },
-  anyPillText: { fontSize: 12, fontWeight: '700', color: '#0D1829' },
+  anyPillText: { fontSize: 12, fontWeight: '600', color: '#4B5A72' },
   anyPillTextActive: { color: '#fff' },
 
   expiryCard: {
@@ -572,7 +914,7 @@ const styles = StyleSheet.create({
   },
   expiryToggleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   expiryTitle: { fontSize: 14, fontWeight: '700', color: '#0D1829' },
-  expirySubtitle: { fontSize: 12, color: '#8A9BB0', marginTop: 2 },
+  expirySubtitle: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   expiryOptionsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 },
   expiryPill: {
     paddingHorizontal: 12,
@@ -605,7 +947,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   linkTitle: { fontSize: 14, fontWeight: '700', color: '#0D1829' },
-  linkSubtitle: { fontSize: 12, color: '#8A9BB0', marginTop: 2 },
+  linkSubtitle: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
   linkedChallengeRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -620,12 +962,15 @@ const styles = StyleSheet.create({
   linkedChallengeTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: '#0D1829' },
   linkOptionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 10,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F4F8',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
   },
+  linkOptionRowLast: { marginBottom: 0 },
   linkOptionIcon: { fontSize: 18 },
   linkOptionTitle: { fontSize: 13, fontWeight: '700', color: '#0D1829' },
+  linkOptionDescription: { fontSize: 12, color: '#8A9BB0', marginTop: 2, lineHeight: 16 },
 });
