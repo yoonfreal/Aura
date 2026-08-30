@@ -105,6 +105,120 @@ export async function notifyReaction(
 
 
 /* =========================================================
+   CHALLENGE INVITE NOTIFICATIONS (1v1 + team)
+========================================================= */
+
+export async function notifyChallengeInvite(
+  recipientId: string,
+  actorId: string,
+  challengeId: string
+): Promise<void> {
+  if (recipientId === actorId) return;
+  if (!(await isNotificationTypeEnabled(recipientId, 'challengeInvites'))) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: recipientId,
+      actor_id: actorId,
+      type: 'challenge_invite',
+      challenge_id: challengeId,
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+export async function notifyTeamInvite(
+  recipientId: string,
+  actorId: string,
+  challengeId: string
+): Promise<void> {
+  if (recipientId === actorId) return;
+  if (!(await isNotificationTypeEnabled(recipientId, 'challengeInvites'))) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: recipientId,
+      actor_id: actorId,
+      type: 'team_invite',
+      challenge_id: challengeId,
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
+   CHALLENGE RESPONSE NOTIFICATION (accept + decline)
+========================================================= */
+
+// Tells the inviter whether their 1v1/team invite was accepted or declined — declines in
+// particular have no other way to surface, since a declined row never shows up as a new
+// teammate or opponent anywhere else in the app. Stays on the single 'challenge_response'
+// type (rather than two distinct types) because the DB's notifications_type_check
+// constraint only whitelists a fixed set of values and doesn't know about new ones —
+// accept vs. decline is instead encoded in `message`, the same free-text column
+// admin_warning already uses, which isn't constrained.
+export async function notifyChallengeResponse(
+  recipientId: string,
+  actorId: string,
+  challengeId: string,
+  accepted: boolean
+): Promise<void> {
+  if (recipientId === actorId) return;
+  if (!(await isNotificationTypeEnabled(recipientId, 'challengeAccepted'))) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: recipientId,
+      actor_id: actorId,
+      type: 'challenge_response',
+      challenge_id: challengeId,
+      message: accepted ? 'accepted' : 'declined',
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+// Tells the team's founder someone new joined — whether by browsing open teams and
+// tapping Join, or by accepting an invite from a teammate other than the founder (an
+// invite accepted from the founder themself is covered by notifyChallengeResponse
+// instead, so this is skipped for that case to avoid notifying them twice for one event).
+// Shares 'challenge_response''s type for the same DB-constraint reason (see above);
+// message: 'joined' distinguishes it from an accept/decline.
+export async function notifyTeamMemberJoined(
+  founderId: string,
+  actorId: string,
+  challengeId: string
+): Promise<void> {
+  if (founderId === actorId) return;
+  if (!(await isNotificationTypeEnabled(founderId, 'challengeAccepted'))) return;
+
+  const { error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: founderId,
+      actor_id: actorId,
+      type: 'challenge_response',
+      challenge_id: challengeId,
+      message: 'joined',
+      post_id: null,
+      comment_id: null,
+    });
+
+  if (error) throw error;
+}
+
+
+/* =========================================================
    CHALLENGE COMPLETE NOTIFICATION
 ========================================================= */
 
@@ -243,17 +357,23 @@ export async function notifyFriendsOfPost(
 ========================================================= */
 
 export async function countUnreadNotifications(
-  userId: string
+  userId: string,
+  types?: NotificationType[]
 ): Promise<number> {
-  const { count, error } =
-    await supabase
-      .from('notifications')
-      .select('id', {
-        count: 'exact',
-        head: true,
-      })
-      .eq('user_id', userId)
-      .eq('read', false);
+  let query = supabase
+    .from('notifications')
+    .select('id', {
+      count: 'exact',
+      head: true,
+    })
+    .eq('user_id', userId)
+    .eq('read', false);
+
+  if (types) {
+    query = query.in('type', types);
+  }
+
+  const { count, error } = await query;
 
   if (error) throw error;
 
@@ -278,6 +398,31 @@ export type NotificationType =
   | 'team_invite'
   | 'admin_warning';
 
+// Every type that should take a tap to the challenge it's about, rather than a post (or
+// nowhere). Shared by every screen's notification handler so the list can't drift between
+// them the way four separately-maintained copies would.
+const CHALLENGE_LINKED_TYPES: NotificationType[] = [
+  'challenge_invite',
+  'team_invite',
+  'challenge_response',
+  'challenge_complete',
+];
+
+export function notificationLinksToChallenge(type: NotificationType): boolean {
+  return CHALLENGE_LINKED_TYPES.includes(type);
+}
+
+// The types that belong to the Social tab's world (friend activity on posts/friendships)
+// as opposed to challenge/system notifications — used to scope the Social tab's badge
+// dot to only what's actually social, separately from the shared all-types unread count
+// the bell icons on every tab use.
+export const SOCIAL_NOTIFICATION_TYPES: NotificationType[] = [
+  'comment',
+  'post',
+  'reaction',
+  'friend_request',
+];
+
 export type AppNotification = {
   id: string;
   type: NotificationType;
@@ -285,6 +430,9 @@ export type AppNotification = {
   postId: string | null;
   challengeId: string | null;
   previewText: string | null;
+  // Only meaningful for type 'challenge_response' — read off the `message` column to
+  // tell an accept, a decline, and a new team member joining apart, null otherwise.
+  responseStatus: 'accepted' | 'declined' | 'joined' | null;
   createdAt: string;
   read: boolean;
 };
@@ -467,11 +615,20 @@ export async function fetchNotifications(
           ? comment?.body ??
             null
           : r.type === 'challenge_complete' ||
-            r.type === 'challenge_ending_soon'
+            r.type === 'challenge_ending_soon' ||
+            r.type === 'challenge_invite' ||
+            r.type === 'team_invite' ||
+            r.type === 'challenge_response'
           ? challenge?.title ?? null
           : r.type === 'admin_warning'
           ? r.message ?? null
           : postPreview(post),
+
+      responseStatus:
+        r.type === 'challenge_response' &&
+        (r.message === 'accepted' || r.message === 'declined' || r.message === 'joined')
+          ? r.message
+          : null,
 
       createdAt:
         r.created_at,

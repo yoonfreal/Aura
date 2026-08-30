@@ -34,6 +34,8 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 
@@ -131,6 +133,11 @@ export default function LeaderboardScreen() {
       (s) => s.setNotificationCount
     );
 
+  const setSocialNotificationCount =
+    useUserStore(
+      (s) => s.setSocialNotificationCount
+    );
+
   const [showNotifications, setShowNotifications] =
     useState(false);
 
@@ -175,10 +182,18 @@ export default function LeaderboardScreen() {
       )
         .then(setNotificationCount)
         .catch(() => {});
+
+      countUnreadNotifications(
+        currentUserId,
+        SOCIAL_NOTIFICATION_TYPES
+      )
+        .then(setSocialNotificationCount)
+        .catch(() => {});
     }, [
       currentUserId,
       setFriendRequestCount,
       setNotificationCount,
+      setSocialNotificationCount,
     ]),
   );
 
@@ -201,6 +216,7 @@ export default function LeaderboardScreen() {
       );
 
       setNotificationCount(0);
+      setSocialNotificationCount(0);
     } catch (err) {
       console.error(
         'Failed to load notifications',
@@ -218,7 +234,7 @@ export default function LeaderboardScreen() {
   ) {
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       router.push({
         pathname: '/(tabs)/challenges',
         params: { openChallengeId: notification.challengeId },

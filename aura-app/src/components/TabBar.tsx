@@ -70,7 +70,7 @@ function TabItem({
 export function TabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
   const claimableCount = useUserStore((s) => s.claimableCount);
-  const notificationCount = useUserStore((s) => s.notificationCount);
+  const socialNotificationCount = useUserStore((s) => s.socialNotificationCount);
 
   return (
     <View style={[styles.wrapper, { paddingBottom: insets.bottom > 0 ? insets.bottom - 4 : 10 }]}>
@@ -88,7 +88,7 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
                 tab.name === 'challenges'
                   ? claimableCount
                   : tab.name === 'social'
-                    ? notificationCount
+                    ? socialNotificationCount
                     : undefined
               }
               onPress={() => {

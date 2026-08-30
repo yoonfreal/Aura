@@ -42,6 +42,8 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 
@@ -245,6 +247,11 @@ export default function ChallengesScreen() {
       (state) => state.setNotificationCount
     );
 
+  const setSocialNotificationCount =
+    useUserStore(
+      (state) => state.setSocialNotificationCount
+    );
+
   const userId =
     user?.id;
 
@@ -339,6 +346,13 @@ export default function ChallengesScreen() {
             )
               .then(setNotificationCount)
               .catch(() => {});
+
+            countUnreadNotifications(
+              userId,
+              SOCIAL_NOTIFICATION_TYPES
+            )
+              .then(setSocialNotificationCount)
+              .catch(() => {});
           }
         )
         .catch((err) => {
@@ -361,6 +375,7 @@ export default function ChallengesScreen() {
       setClaimableCount,
       setFriendRequestCount,
       setNotificationCount,
+      setSocialNotificationCount,
     ]);
 
 
@@ -808,6 +823,11 @@ function UserChallengesView({
       (s) => s.setNotificationCount
     );
 
+  const setSocialNotificationCount =
+    useUserStore(
+      (s) => s.setSocialNotificationCount
+    );
+
 
   const [
     showNotifications,
@@ -925,9 +945,14 @@ function UserChallengesView({
       countUnreadNotifications(userId)
         .then(setNotificationCount)
         .catch(() => {});
+
+      countUnreadNotifications(userId, SOCIAL_NOTIFICATION_TYPES)
+        .then(setSocialNotificationCount)
+        .catch(() => {});
     }, [
       userId,
       setNotificationCount,
+      setSocialNotificationCount,
     ])
   );
 
@@ -949,6 +974,7 @@ function UserChallengesView({
       );
 
       setNotificationCount(0);
+      setSocialNotificationCount(0);
 
     } catch (err) {
 
@@ -972,7 +998,7 @@ function UserChallengesView({
 
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       // Already on this screen, so there's no route param to trigger the effect —
       // jump to the challenge directly instead of navigating.
       focusOnChallenge(notification.challengeId);
@@ -1891,6 +1917,16 @@ function UserChallengesView({
             ?.teams ?? []
         }
 
+        goalValue={
+          teamPickerChallenge
+            ?.goalValue ?? 0
+        }
+
+        goalUnit={
+          teamPickerChallenge
+            ?.goalUnit ?? ''
+        }
+
         onClose={() =>
           setTeamPickerChallenge(
             null
@@ -1997,6 +2033,8 @@ function UserChallengesView({
           }
 
           title="Invite a Friend"
+
+          friendsOnly
 
           onClose={() =>
             setTeamInvitePickerChallenge(

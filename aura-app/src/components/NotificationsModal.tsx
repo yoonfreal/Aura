@@ -31,9 +31,9 @@ export function NotificationsModal({
   onPressNotification,
 }: NotificationsModalProps) {
   function getIcon(
-    type: AppNotification['type']
+    notification: AppNotification
   ): keyof typeof Ionicons.glyphMap {
-    switch (type) {
+    switch (notification.type) {
       case 'reaction':
         return 'heart';
 
@@ -50,6 +50,8 @@ export function NotificationsModal({
         return 'trophy';
 
       case 'challenge_response':
+        if (notification.responseStatus === 'declined') return 'close-circle';
+        if (notification.responseStatus === 'joined') return 'people';
         return 'checkmark-circle';
 
       case 'challenge_complete':
@@ -92,6 +94,9 @@ export function NotificationsModal({
         return 'invited you to a challenge';
 
       case 'challenge_response':
+        if (notification.responseStatus === 'declined') return 'declined your challenge invite';
+        if (notification.responseStatus === 'accepted') return 'accepted your challenge invite';
+        if (notification.responseStatus === 'joined') return 'joined your team';
         return 'responded to your challenge';
 
       case 'challenge_complete':
@@ -200,7 +205,7 @@ export function NotificationsModal({
                   >
                     <Ionicons
                       name={getIcon(
-                        item.type
+                        item
                       )}
                       size={15}
                       color={item.type === 'admin_warning' ? '#B45309' : '#1B2B4B'}

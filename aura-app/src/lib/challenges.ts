@@ -1,7 +1,14 @@
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
 import { incrementDailyStat } from '@/lib/api';
-import { notifyChallengeComplete, notifyChallengeEndingSoon } from '@/lib/notifications';
+import {
+  notifyChallengeComplete,
+  notifyChallengeEndingSoon,
+  notifyChallengeInvite,
+  notifyChallengeResponse,
+  notifyTeamInvite,
+  notifyTeamMemberJoined,
+} from '@/lib/notifications';
 import { thailandDateISO } from '@/lib/thailandTime';
 import type { Challenge, ChallengeTeam, ChallengeParticipant, ChallengeType, InviteStatus } from '@/types';
 
@@ -575,6 +582,12 @@ export async function inviteOpponent(
   // Upsert, not insert: a stale row can be left over from an earlier cancel/decline/rematch
   // that only partially cleaned up (RLS silently skips rows it can't touch on delete), so
   // this must fully overwrite — including claimed — rather than assume a clean slate.
+  // joined_at is set explicitly (not left to the column default) because this is an
+  // upsert: a stale row's old joined_at would otherwise survive the conflict path and
+  // get used as the progress baseline, pulling in activity from long before this pairing
+  // existed. The opponent's row is still 'pending' — its joined_at is finalized for real
+  // when they actually accept, in respondToInvite, not at invite time.
+  const now = new Date().toISOString();
   const { error } = await supabase.from('challenge_participants').upsert(
     [
       {
@@ -585,6 +598,7 @@ export async function inviteOpponent(
         current_value: 0,
         completed: false,
         claimed: false,
+        joined_at: now,
       },
       {
         user_id: opponentId,
@@ -594,11 +608,14 @@ export async function inviteOpponent(
         current_value: 0,
         completed: false,
         claimed: false,
+        joined_at: now,
       },
     ],
     { onConflict: 'challenge_id,user_id' },
   );
   if (error) throw error;
+
+  await notifyChallengeInvite(opponentId, userId, challengeId);
 }
 
 // Removes both sides of a pairing that hasn't turned into an active race yet — lets the
@@ -617,11 +634,40 @@ export async function cancelInvite(
 }
 
 export async function respondToInvite(participantId: string, accept: boolean): Promise<void> {
-  const { error } = await supabase
+  // On accept, joined_at is stamped to this exact moment — not left at whatever value it
+  // had from when the invite was sent — so progress only ever counts activity from after
+  // the invitee actually joined, however long they sat on the pending invite.
+  const { data, error } = await supabase
     .from('challenge_participants')
-    .update({ status: accept ? 'accepted' : 'declined' })
-    .eq('id', participantId);
+    .update({
+      status: accept ? 'accepted' : 'declined',
+      ...(accept ? { joined_at: new Date().toISOString() } : {}),
+    })
+    .eq('id', participantId)
+    .select('user_id, opponent_id, challenge_id, team_id')
+    .single();
   if (error) throw error;
+
+  // opponent_id holds "who invited me" for both a pending 1v1 and a pending team
+  // invite — the inviter, who otherwise has no way to learn about a decline.
+  const row = data as { user_id: string; opponent_id: string | null; challenge_id: string; team_id: string | null };
+  if (row.opponent_id) {
+    await notifyChallengeResponse(row.opponent_id, row.user_id, row.challenge_id, accept);
+  }
+
+  // Also let the team's founder know someone joined — unless they're the one who sent
+  // the invite, in which case the notification above already told them.
+  if (accept && row.team_id) {
+    const { data: team } = await supabase
+      .from('challenge_teams')
+      .select('created_by')
+      .eq('id', row.team_id)
+      .single();
+    const founderId = (team as { created_by: string } | null)?.created_by;
+    if (founderId && founderId !== row.opponent_id) {
+      await notifyTeamMemberJoined(founderId, row.user_id, row.challenge_id);
+    }
+  }
 }
 
 // durationDays stamps one shared deadline for the whole team from the moment it's
@@ -650,6 +696,9 @@ export async function createTeam(
 
   // Upsert: the creator could already have a stale row on this challenge (e.g. a declined
   // invite to a different team) — must fully reset it rather than assume a clean slate.
+  // joined_at is stamped explicitly for the same reason: on the conflict/update path the
+  // column default doesn't reapply, so an old join date would otherwise survive and pull
+  // pre-join daily_stats into this brand-new team's progress.
   const { error: joinError } = await supabase.from('challenge_participants').upsert(
     {
       user_id: userId,
@@ -660,6 +709,7 @@ export async function createTeam(
       current_value: 0,
       completed: false,
       claimed: false,
+      joined_at: new Date().toISOString(),
     },
     { onConflict: 'challenge_id,user_id' },
   );
@@ -693,12 +743,22 @@ export async function joinTeam(
       current_value: 0,
       completed: false,
       claimed: false,
+      joined_at: new Date().toISOString(),
     },
     { onConflict: 'challenge_id,user_id' },
   );
   if (error) throw error;
 
   await refreshStatsBasedProgress(userId);
+
+  const { data: team } = await supabase
+    .from('challenge_teams')
+    .select('created_by')
+    .eq('id', teamId)
+    .single();
+  if (team) {
+    await notifyTeamMemberJoined((team as { created_by: string }).created_by, userId, challengeId);
+  }
 }
 
 // Path A: a team member invites a specific friend — they start 'pending' and must accept
@@ -723,6 +783,8 @@ export async function inviteToTeam(
     { onConflict: 'challenge_id,user_id' },
   );
   if (error) throw error;
+
+  await notifyTeamInvite(inviteeId, inviterId, challengeId);
 }
 
 // Just records progress — reaching the goal only marks it eligible to claim. XP is
@@ -1025,8 +1087,13 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
     const deadline = team?.expires_at ?? (challenge.type === 'individual' ? `${challenge.end_date}T23:59:59` : row.expires_at);
     if (deadline && Date.now() > new Date(deadline).getTime()) continue;
 
-    const startDate = team?.created_at.split('T')[0]
-      ?? (challenge.type === 'individual' ? challenge.start_date : row.joined_at.split('T')[0]);
+    // Each member's own join date is the baseline — using the team's shared
+    // creation date here would pull in a member's unrelated activity from
+    // before they personally joined. joined_at is a UTC timestamptz, so it must go
+    // through thailandDateISO (not a raw string split) to match daily_stats.date,
+    // which is always Thailand-local — otherwise a join in the early Thailand morning
+    // resolves to the UTC "yesterday" and pulls in a day of unrelated activity.
+    const startDate = challenge.type === 'individual' ? challenge.start_date : thailandDateISO(new Date(row.joined_at));
     const unit = challenge.goal_unit.trim().toLowerCase() as 'steps' | 'calories';
     const sum = stats
       .filter((s) => s.date >= startDate)
