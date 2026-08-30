@@ -168,25 +168,25 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
 export type PostType = 'achievement' | 'thoughts' | 'partner';
 
 export const ACTIVITY_TYPES: { value: string; label: string; icon: string }[] = [
-  { value: 'running', label: 'Running', icon: '🏃' },
-  { value: 'gym', label: 'Gym', icon: '🏋️' },
-  { value: 'basketball', label: 'Basketball', icon: '🏀' },
   { value: 'badminton', label: 'Badminton', icon: '🏸' },
+  { value: 'basketball', label: 'Basketball', icon: '🏀' },
+  { value: 'cycling', label: 'Cycling', icon: '🚴' },
+  { value: 'gym', label: 'Gym', icon: '🏋️' },
+  { value: 'running', label: 'Running', icon: '🏃' },
   { value: 'swimming', label: 'Swimming', icon: '🏊' },
   { value: 'yoga', label: 'Yoga', icon: '🧘' },
-  { value: 'cycling', label: 'Cycling', icon: '🚴' },
   { value: 'other', label: 'Other', icon: '⚡' },
 ];
 
 export const CAMPUS_LOCATIONS: string[] = [
-  'Gym',
-  'Sports Field',
-  'Swimming Pool',
   'Basketball Court',
+  'Gym',
+  'Library',
+  'Sports Field',
+  'Student Center',
+  'Swimming Pool',
   'Tennis Court',
   'Track',
-  'Student Center',
-  'Library',
 ];
 
 export type ExpiryOption = 'after_event' | '24h' | '48h' | '1w';
