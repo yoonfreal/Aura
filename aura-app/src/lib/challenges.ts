@@ -267,6 +267,10 @@ export async function fetchChallenges(userId: string): Promise<ChallengeWithStat
 export function isChallengeExpired(challenge: ChallengeWithStatus): boolean {
   if (challenge.type === '1v1') return false;
   if (challenge.participation?.claimed) return false;
+  // A declined invite was never really "in" this challenge — it has no deadline of its
+  // own to have missed, so it must never get swept away by the team's shared expiry
+  // (which belongs to the members who actually joined, not someone who declined).
+  if (challenge.participation?.status === 'declined') return false;
 
   const isTeam = challenge.type === 'team';
   const myTeam = isTeam ? challenge.teams.find((t) => t.id === challenge.participation?.teamId) : undefined;
@@ -634,6 +638,31 @@ export async function cancelInvite(
 }
 
 export async function respondToInvite(participantId: string, accept: boolean): Promise<void> {
+  const { data: existing, error: fetchError } = await supabase
+    .from('challenge_participants')
+    .select('user_id, opponent_id, challenge_id, team_id')
+    .eq('id', participantId)
+    .single();
+  if (fetchError) throw fetchError;
+  const existingRow = existing as { user_id: string; opponent_id: string | null; challenge_id: string; team_id: string | null };
+
+  // Declining a 1v1 invite (team_id null — a team invite's opponent_id means "who invited
+  // me to the team", not "my racing opponent") cancels the pairing outright instead of
+  // leaving a 'declined' row behind. That way both sides just see the same "no
+  // opponent yet" card they'd see before any invite existed — one consistent UI whichever
+  // side declined, rather than a special one-off "declined" message.
+  if (!accept && existingRow.opponent_id && !existingRow.team_id) {
+    const { error: deleteError } = await supabase
+      .from('challenge_participants')
+      .delete()
+      .eq('challenge_id', existingRow.challenge_id)
+      .in('user_id', [existingRow.user_id, existingRow.opponent_id]);
+    if (deleteError) throw deleteError;
+
+    await notifyChallengeResponse(existingRow.opponent_id, existingRow.user_id, existingRow.challenge_id, false);
+    return;
+  }
+
   // On accept, joined_at is stamped to this exact moment — not left at whatever value it
   // had from when the invite was sent — so progress only ever counts activity from after
   // the invitee actually joined, however long they sat on the pending invite.
@@ -653,6 +682,27 @@ export async function respondToInvite(participantId: string, accept: boolean): P
   const row = data as { user_id: string; opponent_id: string | null; challenge_id: string; team_id: string | null };
   if (row.opponent_id) {
     await notifyChallengeResponse(row.opponent_id, row.user_id, row.challenge_id, accept);
+  }
+
+  // 1v1 only (team_id null — a team invite's opponent_id means something different, "who
+  // invited me to the team", not "my racing opponent"): the race is meant to start fair for
+  // both sides the moment they're both actually in, not whenever the inviter happened to send
+  // the invite. The inviter's row is upserted 'accepted' immediately on invite, so without
+  // this they could rack up real progress — even finish solo — while the invitee hasn't even
+  // seen the invite yet. Resetting the inviter's row here, at the instant of acceptance,
+  // makes both sides start from the same zeroed line.
+  if (accept && row.opponent_id && !row.team_id) {
+    const { error: resetError } = await supabase
+      .from('challenge_participants')
+      .update({
+        current_value: 0,
+        completed: false,
+        claimed: false,
+        joined_at: new Date().toISOString(),
+      })
+      .eq('challenge_id', row.challenge_id)
+      .eq('user_id', row.opponent_id);
+    if (resetError) throw resetError;
   }
 
   // Also let the team's founder know someone joined — unless they're the one who sent
@@ -939,12 +989,21 @@ async function applyOneVOneProgress(
   if (row.opponent_id) {
     const { data: opponentRow } = await supabase
       .from('challenge_participants')
-      .select('completed')
+      .select('completed, status')
       .eq('challenge_id', row.challenge_id)
       .eq('user_id', row.opponent_id)
       .maybeSingle();
 
-    if ((opponentRow as { completed: boolean } | null)?.completed) {
+    const opponent = opponentRow as { completed: boolean; status: string } | null;
+
+    // The race hasn't actually started until both sides are in. Without this, the inviter
+    // (whose own row is 'accepted' immediately on invite) would keep accruing real
+    // current_value from every subsequent refresh while the invitee's invite is still
+    // sitting untouched — real steps counting toward a race the other person hasn't even
+    // agreed to yet. So nothing here gets written at all until the opponent has accepted.
+    if (opponent?.status !== 'accepted') return;
+
+    if (opponent.completed) {
       // Opponent already won this race — record progress, nothing to claim on our side.
       const { error } = await supabase
         .from('challenge_participants')
@@ -973,11 +1032,15 @@ async function applyOneVOneProgress(
 
   if (!row.opponent_id) return;
 
+  // Only close out an opponent who's actually racing — a still-pending invite must stay
+  // untouched (completed: false) so accepting it later starts a real race instead of
+  // instantly showing a loss for a round they were never in.
   const { error: closeOutError } = await supabase
     .from('challenge_participants')
     .update({ completed: true, claimed: true })
     .eq('challenge_id', row.challenge_id)
     .eq('user_id', row.opponent_id)
+    .eq('status', 'accepted')
     .eq('completed', false);
   if (closeOutError) throw closeOutError;
 }

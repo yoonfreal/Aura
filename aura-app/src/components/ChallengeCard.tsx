@@ -62,6 +62,7 @@ export function ChallengeCard({
     : !!challenge.participation;
   const canClaim = hasJoined && isCompleted && !isClaimed && !isExpired;
   const isPendingTeamInvite = isTeam && challenge.participation?.status === 'pending';
+  const isDeclinedTeamInvite = isTeam && challenge.participation?.status === 'declined';
   const inviterName = myTeam?.members.find((m) => m.userId === challenge.participation?.opponentId)?.name;
   const accent = typeColor(challenge.type);
   const showCategoryTag = challenge.category && challenge.category.toLowerCase() !== challenge.type;
@@ -142,6 +143,14 @@ export function ChallengeCard({
         </View>
       )}
 
+      {isDeclinedTeamInvite && (
+        <View style={styles.declinedBanner}>
+          <Text style={styles.declinedBannerText}>
+            You declined the invite to join {myTeam?.name ?? 'this team'}
+          </Text>
+        </View>
+      )}
+
       <View style={styles.footerRow}>
         {isPendingTeamInvite ? (
           <View style={styles.inviteActions}>
@@ -151,6 +160,10 @@ export function ChallengeCard({
             <TouchableOpacity style={styles.acceptBtn} onPress={onAcceptTeamInvite}>
               <Text style={styles.acceptBtnText}>Accept</Text>
             </TouchableOpacity>
+          </View>
+        ) : isDeclinedTeamInvite ? (
+          <View style={styles.pillDisabled}>
+            <Text style={styles.pillDisabledText}>Declined</Text>
           </View>
         ) : isTeam ? (
           <>
@@ -376,6 +389,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   inviteBannerText: { fontSize: 12, fontWeight: '700', color: '#8A6D00' },
+  declinedBanner: {
+    backgroundColor: '#F2F6F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  declinedBannerText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
   inviteActions: { flexDirection: 'row', gap: 8, flex: 1 },
   declineBtn: {
     flex: 1,

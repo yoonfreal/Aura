@@ -116,8 +116,20 @@ function matchesFilter(
   mainFilter: FilterPill,
   subFilter: FilterPill
 ): boolean {
+  // Pending covers both directions of "still waiting on a response": the invitee's own
+  // row sitting at 'pending' (them being the one who needs to act), and — for 1v1 only,
+  // via c.opponent — the inviter's side while their sent invite hasn't been answered yet
+  // (their own row is 'accepted' immediately on send, so it'd otherwise land in Ongoing
+  // even though there's no race happening yet).
   const isPendingInvite =
-    c.participation?.status === 'pending';
+    c.participation?.status === 'pending' ||
+    c.opponent?.status === 'pending';
+
+  // Declining an invite must not make the card vanish from wherever the user was just
+  // looking at it (the Pending tab, almost always) — it stays put there, now showing a
+  // "declined" state instead of the accept/decline banner, rather than disappearing.
+  const isDeclinedInvite =
+    c.participation?.status === 'declined';
 
   const isDone =
     !!c.participation?.claimed;
@@ -174,7 +186,7 @@ function matchesFilter(
   }
 
   if (subFilter === 'Pending') {
-    if (!isPendingInvite) {
+    if (!isPendingInvite && !isDeclinedInvite) {
       return false;
     }
   }
@@ -2002,6 +2014,10 @@ function UserChallengesView({
           currentUserId={
             userId
           }
+
+          title="Invite an Opponent"
+
+          friendsOnly
 
           onClose={() =>
             setOpponentPickerChallenge(
