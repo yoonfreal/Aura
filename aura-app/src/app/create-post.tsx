@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Alert,
 } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -27,6 +28,8 @@ import { Calendar } from 'react-native-calendars';
 import { useUserStore } from '@/store/userStore';
 import {
   createPost,
+  updatePost,
+  fetchPostById,
   fetchRecentAchievements,
   ACTIVITY_TYPES,
   CAMPUS_LOCATIONS,
@@ -66,9 +69,39 @@ function parseTimeText(timeText: string): { hour: number; minute: number } | nul
   return { hour, minute };
 }
 
+function toDateInputValue(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function toTimeInputValue(d: Date): string {
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+// The exact expiry choice isn't stored — only the resulting timestamp — so this is a
+// best-effort guess when loading a post back into the editor: exact match on activityAt
+// means "after event", otherwise pick whichever fixed duration is closest.
+function guessExpiryOption(expiresAt: string, activityAt: string | null): ExpiryOption {
+  if (activityAt && Math.abs(new Date(expiresAt).getTime() - new Date(activityAt).getTime()) < 60_000) {
+    return 'after_event';
+  }
+  const hoursLeft = (new Date(expiresAt).getTime() - Date.now()) / 3_600_000;
+  const durations: { value: ExpiryOption; hours: number }[] = [
+    { value: '24h', hours: 24 },
+    { value: '48h', hours: 48 },
+    { value: '1w', hours: 24 * 7 },
+  ];
+  return durations.reduce((best, d) => (Math.abs(d.hours - hoursLeft) < Math.abs(best.hours - hoursLeft) ? d : best))
+    .value;
+}
+
+type LinkedChallengeInfo = { id: string; title: string; icon: string };
+
 export default function CreatePostScreen() {
   const router = useRouter();
   const user = useUserStore((state) => state.user);
+  const { editPostId } = useLocalSearchParams<{ editPostId?: string }>();
+  const isEditing = !!editPostId;
+  const [loadingExisting, setLoadingExisting] = useState(isEditing);
 
   const [type, setType] = useState<PostType | null>(null);
   const [caption, setCaption] = useState('');
@@ -114,19 +147,79 @@ export default function CreatePostScreen() {
   const [expiryOption, setExpiryOption] = useState<ExpiryOption | null>(null);
 
   // Link a challenge (any post type)
-  const [linkedChallenge, setLinkedChallenge] = useState<LinkableChallenge | null>(null);
+  const [linkedChallenge, setLinkedChallenge] = useState<LinkedChallengeInfo | null>(null);
   const [showChallengePicker, setShowChallengePicker] = useState(false);
   const [linkableChallenges, setLinkableChallenges] = useState<LinkableChallenge[]>([]);
   const [loadingLinkable, setLoadingLinkable] = useState(false);
   const [challengeQuery, setChallengeQuery] = useState('');
 
   useEffect(() => {
-    if (type !== 'achievement' || !user?.id || achievements.length > 0) return;
+    if (isEditing || type !== 'achievement' || !user?.id || achievements.length > 0) return;
     setLoadingAchievements(true);
     fetchRecentAchievements(user.id)
       .then(setAchievements)
       .finally(() => setLoadingAchievements(false));
-  }, [type, user?.id]);
+  }, [isEditing, type, user?.id]);
+
+  useEffect(() => {
+    if (!editPostId) return;
+    let cancelled = false;
+    fetchPostById(editPostId)
+      .then((post) => {
+        if (cancelled || !post) return;
+        setType(post.type);
+        setCaption(post.caption ?? '');
+
+        if (post.type === 'achievement') {
+          setSelectedAchievement({
+            kind: 'stat',
+            title: post.achievementTitle ?? '',
+            icon: post.achievementIcon ?? '🏆',
+            xp: post.achievementXp,
+            sortKey: post.createdAt,
+          });
+        }
+
+        if (post.type === 'partner') {
+          if (post.activityType && !ACTIVITY_TYPES.some((a) => a.value === post.activityType)) {
+            setActivityType('other');
+            setCustomActivityType(post.activityType);
+          } else {
+            setActivityType(post.activityType);
+          }
+          if (post.location && !CAMPUS_LOCATIONS.includes(post.location)) {
+            setLocation('Other');
+            setCustomLocation(post.location);
+          } else {
+            setLocation(post.location);
+          }
+          setPeopleNeeded(post.peopleNeeded);
+          if (post.activityAt) {
+            const d = new Date(post.activityAt);
+            setActivityDate(toDateInputValue(d));
+            setTimeText(toTimeInputValue(d));
+          }
+          if (post.expiresAt) {
+            setAutoExpire(true);
+            setExpiryOption(guessExpiryOption(post.expiresAt, post.activityAt));
+          }
+        }
+
+        if (post.linkedChallengeId) {
+          setLinkedChallenge({
+            id: post.linkedChallengeId,
+            title: post.linkedChallengeTitle ?? '',
+            icon: post.linkedChallengeIcon ?? '🏆',
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingExisting(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editPostId]);
 
   function handleToggleAutoExpire(value: boolean) {
     setAutoExpire(value);
@@ -174,20 +267,34 @@ export default function CreatePostScreen() {
     if (!user?.id || !type || !canPost) return;
     setPosting(true);
     try {
-      await createPost(user.id, {
-        type,
-        caption: caption.trim(),
-        achievement: type === 'achievement' ? (selectedAchievement ?? undefined) : undefined,
-        partner:
-          type === 'partner' && effectiveActivityType && activityAt && effectiveLocation
-            ? { activityType: effectiveActivityType, activityAt: activityAt.toISOString(), location: effectiveLocation, peopleNeeded }
-            : undefined,
-        expiryOption: type === 'partner' && autoExpire ? expiryOption : null,
-        challengeId: linkedChallenge?.id ?? null,
-      });
+      const partner =
+        type === 'partner' && effectiveActivityType && activityAt && effectiveLocation
+          ? { activityType: effectiveActivityType, activityAt: activityAt.toISOString(), location: effectiveLocation, peopleNeeded }
+          : undefined;
+      if (isEditing && editPostId) {
+        await updatePost(user.id, editPostId, {
+          caption: caption.trim(),
+          partner,
+          expiryOption: type === 'partner' && autoExpire ? expiryOption : null,
+          challengeId: linkedChallenge?.id ?? null,
+        });
+      } else {
+        await createPost(user.id, {
+          type,
+          caption: caption.trim(),
+          achievement: type === 'achievement' ? (selectedAchievement ?? undefined) : undefined,
+          partner,
+          expiryOption: type === 'partner' && autoExpire ? expiryOption : null,
+          challengeId: linkedChallenge?.id ?? null,
+        });
+      }
       router.back();
-    } catch {
+    } catch (err) {
       setPosting(false);
+      Alert.alert(
+        isEditing ? 'Could not save changes' : 'Could not post',
+        (err as { message?: string })?.message ?? 'Please try again.'
+      );
     }
   }
 
@@ -197,7 +304,7 @@ export default function CreatePostScreen() {
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="chevron-back" size={20} color="#0D1829" />
         </TouchableOpacity>
-        <Text style={styles.title}>Create post</Text>
+        <Text style={styles.title}>{isEditing ? 'Edit post' : 'Create post'}</Text>
         <TouchableOpacity
           style={[styles.postBtn, !canPost && styles.postBtnDisabled]}
           disabled={!canPost}
@@ -206,14 +313,23 @@ export default function CreatePostScreen() {
           {posting ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Text style={[styles.postBtnText, !canPost && styles.postBtnTextDisabled]}>Post</Text>
+            <Text style={[styles.postBtnText, !canPost && styles.postBtnTextDisabled]}>
+              {isEditing ? 'Save' : 'Post'}
+            </Text>
           )}
         </TouchableOpacity>
       </View>
 
+      {loadingExisting ? (
+        <ActivityIndicator style={{ marginTop: 40 }} color="#1B2B4B" />
+      ) : (
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.sectionLabel}>POST TYPE</Text>
-        <View style={styles.typeRow} onLayout={(e) => setTypeTrackWidth(e.nativeEvent.layout.width)}>
+        <View
+          style={[styles.typeRow, isEditing && styles.typeRowDisabled]}
+          pointerEvents={isEditing ? 'none' : 'auto'}
+          onLayout={(e) => setTypeTrackWidth(e.nativeEvent.layout.width)}
+        >
           {typeTrackWidth > 0 && (() => {
             const itemWidth =
               (typeTrackWidth - TYPE_PILL_PADDING * 2 - TYPE_PILL_GAP * (POST_TYPES.length - 1)) / POST_TYPES.length;
@@ -267,7 +383,23 @@ export default function CreatePostScreen() {
           onChangeText={setCaption}
         />
 
-        {type === 'achievement' && (
+        {type === 'achievement' && isEditing && selectedAchievement && (
+          <View style={[styles.section, styles.sectionWhite]}>
+            <Text style={styles.sectionLabel}>ACHIEVEMENT</Text>
+            <Text style={styles.emptyText}>Which achievement was shared can't be changed after posting.</Text>
+            <View style={[styles.achievementRow, { marginTop: 10 }]}>
+              <Text style={styles.achievementIcon}>{selectedAchievement.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.achievementTitle}>{selectedAchievement.title}</Text>
+                {selectedAchievement.xp != null && (
+                  <Text style={styles.achievementXp}>+{selectedAchievement.xp} XP</Text>
+                )}
+              </View>
+            </View>
+          </View>
+        )}
+
+        {type === 'achievement' && !isEditing && (
           <View style={[styles.section, styles.sectionWhite]}>
             <Text style={styles.sectionLabel}>YOUR RECENT ACHIEVEMENTS</Text>
             {loadingAchievements ? (
@@ -691,6 +823,7 @@ export default function CreatePostScreen() {
           )}
         </View>
       </ScrollView>
+      )}
     </SafeAreaView>
   );
 }
@@ -745,6 +878,7 @@ const styles = StyleSheet.create({
     padding: 4,
     borderRadius: 16,
   },
+  typeRowDisabled: { opacity: 0.6 },
   typeCard: {
     flex: 1,
     flexDirection: 'row',

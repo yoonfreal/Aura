@@ -22,6 +22,7 @@ type PostCardProps = {
   post: FeedPost;
   avatarColor: string;
   currentUserId: string | undefined;
+  onEdit: () => void;
   onDelete: () => void;
   onOpenLinkedChallenge: () => void;
 
@@ -50,6 +51,7 @@ export function PostCard({
   post,
   avatarColor,
   currentUserId,
+  onEdit,
   onDelete,
   onOpenLinkedChallenge,
   reaction,
@@ -82,9 +84,14 @@ export function PostCard({
           <Text style={styles.feedTime}>{timeAgo(post.createdAt)}</Text>
         </View>
         {isSelf && (
-          <TouchableOpacity onPress={onDelete} hitSlop={8}>
-            <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
-          </TouchableOpacity>
+          <View style={styles.ownPostActions}>
+            <TouchableOpacity onPress={onEdit} hitSlop={8}>
+              <Ionicons name="create-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onDelete} hitSlop={8}>
+              <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -247,6 +254,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   feedTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ownPostActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   feedName: { fontSize: 14, fontWeight: '800', color: '#0D1829' },
