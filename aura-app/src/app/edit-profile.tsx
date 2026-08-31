@@ -26,8 +26,6 @@ export default function EditProfileScreen() {
   // =====================================================
 
   const [username, setUsername] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('');
 
@@ -72,8 +70,6 @@ export default function EditProfileScreen() {
       }
 
       setUsername(data?.username ?? '');
-      setFirstName(data?.first_name ?? '');
-      setLastName(data?.last_name ?? '');
       setAge(
         data?.age != null
           ? String(data.age)
@@ -110,21 +106,6 @@ export default function EditProfileScreen() {
       return;
     }
 
-    if (!firstName.trim()) {
-      Alert.alert(
-        'Error',
-        'First name cannot be empty.'
-      );
-      return;
-    }
-
-    if (!lastName.trim()) {
-      Alert.alert(
-        'Error',
-        'Last name cannot be empty.'
-      );
-      return;
-    }
 
     // Check age
     if (age.trim()) {
@@ -162,8 +143,6 @@ export default function EditProfileScreen() {
         .from('profiles')
         .update({
           username: username.trim(),
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
 
           age: age.trim()
             ? Number(age.trim())
@@ -211,7 +190,6 @@ export default function EditProfileScreen() {
 
   const avatarLetter =
     (
-      firstName.trim() ||
       username.trim() ||
       'U'
     )
@@ -313,37 +291,6 @@ export default function EditProfileScreen() {
             style={styles.input}
           />
 
-          {/* FIRST NAME */}
-
-          <Text
-            style={styles.label}
-          >
-            First Name
-          </Text>
-
-          <TextInput
-            value={firstName}
-            onChangeText={setFirstName}
-            placeholder="Enter first name"
-            placeholderTextColor="#A6ADBB"
-            style={styles.input}
-          />
-
-          {/* LAST NAME */}
-
-          <Text
-            style={styles.label}
-          >
-            Last Name
-          </Text>
-
-          <TextInput
-            value={lastName}
-            onChangeText={setLastName}
-            placeholder="Enter last name"
-            placeholderTextColor="#A6ADBB"
-            style={styles.input}
-          />
 
           {/* AGE */}
 

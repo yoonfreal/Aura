@@ -677,33 +677,82 @@ export default function CreatePostScreen() {
                 </View>
               )}
 
-              <View style={styles.peopleRow}>
-                <Text style={styles.fieldLabel}>People needed</Text>
-                <View style={styles.stepper}>
-                  <TouchableOpacity
-                    style={[styles.anyPill, peopleNeeded === null && styles.anyPillActive]}
-                    onPress={() => setPeopleNeeded((n) => (n === null ? 2 : null))}
-                  >
-                    <Text style={[styles.anyPillText, peopleNeeded === null && styles.anyPillTextActive]}>Any</Text>
-                  </TouchableOpacity>
-                  {peopleNeeded !== null && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => setPeopleNeeded((n) => Math.max(1, (n ?? 1) - 1))}
+              <View style={styles.peopleSection}>
+                <View style={styles.peopleTopRow}>
+                  <Text style={styles.peopleLabel}>People needed</Text>
+
+                  <View style={styles.peopleOptionsRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.peopleOptionSmall,
+                        peopleNeeded === null && styles.peopleOptionActive,
+                      ]}
+                      onPress={() => setPeopleNeeded(null)}
+                    >
+                      <Text
+                        style={[
+                          styles.peopleOptionText,
+                          peopleNeeded === null && styles.peopleOptionTextActive,
+                        ]}
                       >
-                        <Ionicons name="remove" size={16} color="#0D1829" />
-                      </TouchableOpacity>
-                      <Text style={styles.stepperValue}>{peopleNeeded}</Text>
-                      <TouchableOpacity
-                        style={styles.stepperBtn}
-                        onPress={() => setPeopleNeeded((n) => Math.min(20, (n ?? 1) + 1))}
+                        Any
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.peopleOptionSmall,
+                        peopleNeeded !== null && styles.peopleOptionActive,
+                      ]}
+                      onPress={() =>
+                        setPeopleNeeded((current) =>
+                          current === null ? 2 : current
+                        )
+                      }
+                    >
+                      <Text
+                        style={[
+                          styles.peopleOptionText,
+                          peopleNeeded !== null && styles.peopleOptionTextActive,
+                        ]}
                       >
-                        <Ionicons name="add" size={16} color="#0D1829" />
-                      </TouchableOpacity>
-                    </>
-                  )}
+                        Set number
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+
+                {peopleNeeded !== null && (
+                  <View style={styles.numberAdjustRow}>
+                    <TouchableOpacity
+                      style={styles.peopleStepperBtn}
+                      onPress={() =>
+                        setPeopleNeeded((current) =>
+                          Math.max(1, (current ?? 1) - 1)
+                        )
+                      }
+                    >
+                      <Ionicons name="remove" size={16} color="#0D1829" />
+                    </TouchableOpacity>
+
+                    <View style={styles.numberValueBox}>
+                      <Text style={styles.numberValueText}>
+                        {peopleNeeded}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.peopleStepperBtn}
+                      onPress={() =>
+                        setPeopleNeeded((current) =>
+                          Math.min(20, (current ?? 1) + 1)
+                        )
+                      }
+                    >
+                      <Ionicons name="add" size={16} color="#0D1829" />
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             </View>
 
@@ -1014,11 +1063,62 @@ const styles = StyleSheet.create({
     padding: 0,
   },
 
-  peopleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 14 },
-  stepper: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  stepperBtn: {
-    width: 32,
-    height: 32,
+  peopleSection: {
+    marginTop: 14,
+  },
+
+  peopleTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+
+  peopleLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#8A9BB0',
+  },
+
+  peopleOptionsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  peopleOptionSmall: {
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+
+  peopleOptionActive: {
+    backgroundColor: '#1B2B4B',
+    borderColor: '#1B2B4B',
+  },
+
+  peopleOptionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0D1829',
+  },
+
+  peopleOptionTextActive: {
+    color: '#fff',
+  },
+
+  numberAdjustRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+
+  peopleStepperBtn: {
+    width: 36,
+    height: 36,
     borderRadius: 10,
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -1026,18 +1126,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperValue: { fontSize: 15, fontWeight: '700', color: '#4B5A72', minWidth: 18, textAlign: 'center' },
-  anyPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
+
+  numberValueBox: {
+    width: 42,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  anyPillActive: { backgroundColor: '#1B2B4B', borderColor: '#1B2B4B' },
-  anyPillText: { fontSize: 12, fontWeight: '600', color: '#4B5A72' },
-  anyPillTextActive: { color: '#fff' },
+
+  numberValueText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0D1829',
+  },
 
   expiryCard: {
     backgroundColor: '#fff',
