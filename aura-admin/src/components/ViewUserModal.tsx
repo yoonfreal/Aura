@@ -5,10 +5,12 @@ import { fetchFlagHistory, xpForLevel, type AdminUser, type FlagHistoryEntry } f
 import { avatarColorFor, TITLE_STYLES } from '@/lib/userDisplay';
 import { MedalIcon } from '@/components/icons';
 import {
+  fetchUserAverageDailyStats,
   fetchUserBadges,
   fetchUserFriends,
   fetchUserPosts,
   fetchUserWeeklyProgress,
+  type AverageDailyStats,
   type DailyProgressPoint,
   type EarnedBadge,
   type FriendSummary,
@@ -51,6 +53,7 @@ export function ViewUserModal({
   const [posts, setPosts] = useState<UserPost[] | null>(null);
   const [flagHistory, setFlagHistory] = useState<FlagHistoryEntry[] | null>(null);
   const [weeklyProgress, setWeeklyProgress] = useState<DailyProgressPoint[] | null>(null);
+  const [averageStats, setAverageStats] = useState<AverageDailyStats | null>(null);
   const [selectedDay, setSelectedDay] = useState<DailyProgressPoint | null>(null);
   const [detailError, setDetailError] = useState(false);
   const [friendsExpanded, setFriendsExpanded] = useState(false);
@@ -63,14 +66,16 @@ export function ViewUserModal({
       fetchUserPosts(user.id),
       fetchFlagHistory(user.id),
       fetchUserWeeklyProgress(user.id),
+      fetchUserAverageDailyStats(user.id),
     ])
-      .then(([f, b, p, h, w]) => {
+      .then(([f, b, p, h, w, a]) => {
         if (cancelled) return;
         setFriends(f);
         setBadges(b);
         setPosts(p);
         setFlagHistory(h);
         setWeeklyProgress(w);
+        setAverageStats(a);
       })
       .catch(() => {
         if (!cancelled) setDetailError(true);
@@ -211,6 +216,33 @@ export function ViewUserModal({
                     </div>
                   ))}
                 </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <p className="mb-2 text-xs font-bold tracking-wide text-gray-500">PERSONAL DAILY AVERAGE (LAST 28 DAYS)</p>
+          <div className="rounded-xl bg-gray-50 p-3">
+            {!averageStats ? (
+              <p className="text-xs text-gray-400">Loading…</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 gap-2 text-center">
+                  <div>
+                    <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgSteps.toLocaleString()}</p>
+                    <p className="text-[11px] text-gray-500">Avg steps/day</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgCalories.toLocaleString()}</p>
+                    <p className="text-[11px] text-gray-500">Avg calories/day</p>
+                  </div>
+                </div>
+                <p className="mt-2 text-[11px] text-gray-400">
+                  {averageStats.personalized
+                    ? `Based on ${averageStats.historyDays} logged days — this is the baseline unusual-activity flags compare against.`
+                    : `Only ${averageStats.historyDays} logged day${averageStats.historyDays === 1 ? '' : 's'} so far — flags use the standard limits until 7+ days are logged.`}
+                </p>
               </>
             )}
           </div>

@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { addDaysToISO, thailandWeekRange } from './thailandTime';
+import { addDaysToISO, thailandDateISO, thailandWeekRange } from './thailandTime';
 
 // Extra profile data shown in the admin's user detail view — mirrors the sections aura-app
 // shows on a friend's profile screen (aura-app's src/app/friend/[id].tsx), so admins see the
@@ -148,6 +148,40 @@ const WEEK_DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 function getCurrentWeekDates(): string[] {
   const { start } = thailandWeekRange();
   return Array.from({ length: 7 }, (_, i) => addDaysToISO(start, i));
+}
+
+export type AverageDailyStats = { avgSteps: number; avgCalories: number; historyDays: number; personalized: boolean };
+
+const AVERAGE_LOOKBACK_DAYS = 28;
+const MIN_HISTORY_DAYS_FOR_AVERAGE = 7; // mirrors flag_unusual_daily_activity's v_min_history_days
+
+// Same trailing window (and the same 7-day minimum) the flag_unusual_daily_activity Postgres
+// trigger uses to build a user's personal baseline — this is the actual number a flag gets
+// compared against, not a separate admin-only estimate, so an admin reviewing a flag can see
+// whether it was genuinely unusual for that person or just a fluke of a low history count.
+export async function fetchUserAverageDailyStats(userId: string): Promise<AverageDailyStats> {
+  const today = thailandDateISO();
+  const lookbackStart = addDaysToISO(today, -AVERAGE_LOOKBACK_DAYS);
+
+  const { data, error } = await supabase
+    .from('daily_stats')
+    .select('steps, calories')
+    .eq('user_id', userId)
+    .gte('date', lookbackStart)
+    .lt('date', today);
+  if (error) throw error;
+
+  const rows = (data ?? []) as { steps: number; calories: number }[];
+  const historyDays = rows.length;
+  const avgSteps = historyDays > 0 ? rows.reduce((sum, r) => sum + r.steps, 0) / historyDays : 0;
+  const avgCalories = historyDays > 0 ? rows.reduce((sum, r) => sum + r.calories, 0) / historyDays : 0;
+
+  return {
+    avgSteps: Math.round(avgSteps),
+    avgCalories: Math.round(avgCalories),
+    historyDays,
+    personalized: historyDays >= MIN_HISTORY_DAYS_FOR_AVERAGE,
+  };
 }
 
 export async function fetchUserWeeklyProgress(userId: string): Promise<DailyProgressPoint[]> {
