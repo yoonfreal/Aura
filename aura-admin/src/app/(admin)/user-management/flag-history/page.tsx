@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
   fetchAllFlagHistory,
@@ -18,6 +18,62 @@ import { ClearFlagModal } from '@/components/ClearFlagModal';
 
 type StatusFilter = 'all' | 'open' | 'cleared';
 type SortOption = 'flagged-desc' | 'flagged-asc' | 'username-asc' | 'username-desc' | 'most-flagged';
+
+type UserFlagGroup = {
+  userId: string;
+  username: string;
+  suspended: boolean;
+  totalFlags: number;
+  openFlags: number;
+  mostRecentReason: string;
+  mostRecentFlaggedAt: string;
+  mostRecentClearedAt: string | null;
+  mostRecentClearedByUsername: string | null;
+  mostRecentAdminNote: string | null;
+};
+
+// entries arrive newest-flagged-first (see fetchAllFlagHistory), so the first entry seen
+// for a given user is that user's most recent flag/clear cycle.
+function groupByUser(entries: AllFlagHistoryEntry[]): UserFlagGroup[] {
+  const groups = new Map<string, UserFlagGroup>();
+  for (const e of entries) {
+    const existing = groups.get(e.userId);
+    if (!existing) {
+      groups.set(e.userId, {
+        userId: e.userId,
+        username: e.username,
+        suspended: e.suspended,
+        totalFlags: 1,
+        openFlags: e.clearedAt ? 0 : 1,
+        mostRecentReason: e.reason,
+        mostRecentFlaggedAt: e.flaggedAt,
+        mostRecentClearedAt: e.clearedAt,
+        mostRecentClearedByUsername: e.clearedByUsername,
+        mostRecentAdminNote: e.adminNote,
+      });
+    } else {
+      existing.totalFlags += 1;
+      if (!e.clearedAt) existing.openFlags += 1;
+    }
+  }
+  return [...groups.values()];
+}
+
+type FlagSeverity = 'low' | 'medium' | 'high';
+
+// 1-3 lifetime flags is common enough (a single bad-data day) not to warrant escalation;
+// 4-9 marks a repeat pattern worth a closer look; 10+ is a chronic offender.
+function severityFor(totalFlags: number): FlagSeverity {
+  if (totalFlags >= 10) return 'high';
+  if (totalFlags >= 4) return 'medium';
+  return 'low';
+}
+
+const SEVERITY_STYLES: Record<FlagSeverity, string> = {
+  low: 'bg-green-100 text-green-700',
+  medium: 'bg-yellow-100 text-yellow-700',
+  high: 'bg-red-100 text-red-700',
+};
 
 const SORT_OPTIONS: { value: SortOption; label: string }[] = [
   { value: 'flagged-desc', label: 'Newest flagged first' },
@@ -45,6 +101,7 @@ export default function FlagHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewingUser, setViewingUser] = useState<(AdminUser & { levelTitle: string; active: boolean }) | null>(null);
   const [clearingUser, setClearingUser] = useState<AdminUser | null>(null);
+  const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [sortOption, setSortOption] = useState<SortOption>('flagged-desc');
@@ -89,47 +146,70 @@ export default function FlagHistoryPage() {
     );
   }
 
-  async function handleToggleSuspend(entry: AllFlagHistoryEntry) {
-    const next = !entry.suspended;
-    if (next && !confirm(`Suspend "${entry.username}"? They'll be signed out and blocked from logging back in until unsuspended.`)) {
+  function toggleExpanded(userId: string) {
+    setExpandedUsers((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  // The per-row Clear button only needs id/username/flagReason to drive ClearFlagModal —
+  // building it from the flag row avoids a fetchUserById round trip just to open the modal.
+  function handleClearEntry(entry: AllFlagHistoryEntry) {
+    setClearingUser({
+      id: entry.userId,
+      username: entry.username,
+      level: 1,
+      xp: 0,
+      streak: 0,
+      lastSeenAt: null,
+      createdAt: '',
+      suspended: entry.suspended,
+      flagged: true,
+      flagReason: entry.reason,
+    });
+  }
+
+  async function handleToggleSuspend(group: UserFlagGroup) {
+    const next = !group.suspended;
+    if (next && !confirm(`Suspend "${group.username}"? They'll be signed out and blocked from logging back in until unsuspended.`)) {
       return;
     }
     try {
-      await setUserSuspended(entry.userId, next);
-      setEntries((prev) => prev && prev.map((e) => (e.userId === entry.userId ? { ...e, suspended: next } : e)));
+      await setUserSuspended(group.userId, next);
+      setEntries((prev) => prev && prev.map((e) => (e.userId === group.userId ? { ...e, suspended: next } : e)));
     } catch {
-      alert(`Could not ${next ? 'suspend' : 'unsuspend'} "${entry.username}". Try again.`);
+      alert(`Could not ${next ? 'suspend' : 'unsuspend'} "${group.username}". Try again.`);
     }
   }
 
-  const flagCountByUser = new Map<string, number>();
-  for (const e of entries ?? []) {
-    flagCountByUser.set(e.userId, (flagCountByUser.get(e.userId) ?? 0) + 1);
-  }
+  const userGroups = groupByUser(entries ?? []);
 
-  const filtered = (entries ?? [])
-    .filter((e) => e.username.toLowerCase().includes(search.trim().toLowerCase()))
-    .filter((e) => {
+  const filtered = userGroups
+    .filter((g) => g.username.toLowerCase().includes(search.trim().toLowerCase()))
+    .filter((g) => {
       if (statusFilter === 'all') return true;
-      if (statusFilter === 'open') return !e.clearedAt;
-      return !!e.clearedAt;
+      if (statusFilter === 'open') return g.openFlags > 0;
+      return g.openFlags === 0;
     });
 
   const sorted = [...filtered].sort((a, b) => {
     switch (sortOption) {
       case 'flagged-asc':
-        return new Date(a.flaggedAt).getTime() - new Date(b.flaggedAt).getTime();
+        return new Date(a.mostRecentFlaggedAt).getTime() - new Date(b.mostRecentFlaggedAt).getTime();
       case 'username-asc':
         return a.username.localeCompare(b.username);
       case 'username-desc':
         return b.username.localeCompare(a.username);
       case 'most-flagged': {
-        const diff = (flagCountByUser.get(b.userId) ?? 0) - (flagCountByUser.get(a.userId) ?? 0);
-        return diff !== 0 ? diff : new Date(b.flaggedAt).getTime() - new Date(a.flaggedAt).getTime();
+        const diff = b.totalFlags - a.totalFlags;
+        return diff !== 0 ? diff : new Date(b.mostRecentFlaggedAt).getTime() - new Date(a.mostRecentFlaggedAt).getTime();
       }
       case 'flagged-desc':
       default:
-        return new Date(b.flaggedAt).getTime() - new Date(a.flaggedAt).getTime();
+        return new Date(b.mostRecentFlaggedAt).getTime() - new Date(a.mostRecentFlaggedAt).getTime();
     }
   });
 
@@ -142,7 +222,7 @@ export default function FlagHistoryPage() {
 
       <div className="rounded-2xl bg-white p-5 shadow-sm">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs font-bold tracking-wide text-gray-500">ALL FLAG EVENTS</p>
+          <p className="text-xs font-bold tracking-wide text-gray-500">FLAGGED ACCOUNTS</p>
           <div className="flex flex-wrap items-center gap-2">
             <input
               value={search}
@@ -203,8 +283,8 @@ export default function FlagHistoryPage() {
                         onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
                       >
                         <option value="all">All statuses</option>
-                        <option value="open">Open</option>
-                        <option value="cleared">Cleared</option>
+                        <option value="open">Pending</option>
+                        <option value="cleared">Resolved</option>
                       </select>
                     </FilterField>
                   </div>
@@ -218,94 +298,172 @@ export default function FlagHistoryPage() {
         {!error && !entries && <p className="text-sm text-gray-500">Loading…</p>}
         {!error && entries && entries.length === 0 && <p className="text-sm text-gray-400">No accounts have been flagged yet.</p>}
         {!error && entries && entries.length > 0 && sorted.length === 0 && (
-          <p className="text-sm text-gray-400">No flag events match your search/filter.</p>
+          <p className="text-sm text-gray-400">No accounts match your search/filter.</p>
         )}
 
         {sorted.length > 0 && (
           <table className="w-full table-fixed text-sm">
             <colgroup>
               <col className="w-[16%]" />
-              <col className="w-[32%]" />
+              <col className="w-[28%]" />
               <col className="w-[11%]" />
-              <col className="w-[9%]" />
-              <col className="w-[13%]" />
-              <col className="w-[19%]" />
+              <col className="w-[12%]" />
+              <col className="w-[12%]" />
+              <col className="w-[21%]" />
             </colgroup>
             <thead>
               <tr className="bg-gray-50 text-left text-xs font-bold text-gray-500">
                 <th className="rounded-l-lg px-3 py-2">Username</th>
-                <th className="px-3 py-2">Reason</th>
-                <th className="px-3 py-2">Flagged</th>
+                <th className="px-3 py-2">Most recent reason</th>
+                <th className="px-3 py-2">Flags</th>
                 <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2">Cleared</th>
+                <th className="px-3 py-2">Last flagged</th>
                 <th className="rounded-r-lg px-3 py-2">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {sorted.map((e) => (
-                <tr key={e.id} className="border-b border-gray-50">
-                  <td className="px-3 py-3">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <div
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
-                        style={{ backgroundColor: avatarColorFor(e.username) }}
-                      >
-                        {e.username.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="group relative min-w-0">
-                        <span className="block truncate font-bold text-[#0D1829]">{e.username}</span>
-                        <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-md bg-[#1B2B4B] px-2 py-1 text-xs font-bold text-white shadow-lg group-hover:block">
-                          {e.username}
-                        </span>
-                      </span>
-                    </div>
-                  </td>
-                  <td className="px-3 py-3">
-                    <span className="line-clamp-2 text-gray-600">{e.reason}</span>
-                  </td>
-                  <td className="px-3 py-3 text-gray-500">{new Date(e.flaggedAt).toLocaleDateString()}</td>
-                  <td className="px-3 py-3">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${
-                        e.clearedAt ? 'bg-gray-100 text-gray-500' : 'bg-amber-100 text-amber-700'
-                      }`}
+              {sorted.map((g) => {
+                const isExpanded = expandedUsers.has(g.userId);
+                const userEntries = (entries ?? []).filter((e) => e.userId === g.userId);
+                const mostRecentEntry = userEntries[0];
+                // Skip the most recent entry when listing sub-rows — it's already shown in
+                // this row's "Most recent reason" column, so repeating it below would duplicate it.
+                const olderEntries = userEntries.slice(1);
+                const hasHistory = olderEntries.length > 0;
+                return (
+                  <Fragment key={g.userId}>
+                    <tr
+                      onClick={hasHistory ? () => toggleExpanded(g.userId) : undefined}
+                      className={`border-b border-gray-50 ${hasHistory ? 'cursor-pointer hover:bg-gray-50/60' : ''}`}
                     >
-                      {e.clearedAt ? 'Cleared' : 'Open'}
-                    </span>
-                  </td>
-                  <td className="px-3 py-3 text-gray-500">
-                    {e.clearedAt ? (
-                      <>
-                        {new Date(e.clearedAt).toLocaleDateString()}
-                        {e.clearedByUsername && <span className="block text-[11px] text-gray-400">by {e.clearedByUsername}</span>}
-                        {e.adminNote && <span className="mt-0.5 block truncate text-[11px] italic text-gray-400">"{e.adminNote}"</span>}
-                      </>
-                    ) : (
-                      '—'
-                    )}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        onClick={() => handleView(e.userId)}
-                        className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-200 px-2.5 text-xs font-bold text-gray-500 hover:border-[#1B2B4B] hover:text-[#1B2B4B]"
-                      >
-                        View
-                      </button>
-                      <button
-                        onClick={() => handleToggleSuspend(e)}
-                        className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 text-xs font-bold ${
-                          e.suspended
-                            ? 'border-gray-200 text-green-700 hover:border-green-600'
-                            : 'border-gray-200 text-red-600 hover:border-red-600'
-                        }`}
-                      >
-                        {e.suspended ? 'Unsuspend' : 'Suspend'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      <td className="px-3 py-3">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          {hasHistory ? (
+                            <svg
+                              width="10"
+                              height="10"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="3"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              className={`shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                            >
+                              <polyline points="6 9 12 15 18 9" />
+                            </svg>
+                          ) : (
+                            <span className="w-[10px] shrink-0" />
+                          )}
+                          <div
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white"
+                            style={{ backgroundColor: avatarColorFor(g.username) }}
+                          >
+                            {g.username.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="group relative min-w-0">
+                            <span className="block truncate font-bold text-[#0D1829]">{g.username}</span>
+                            <span className="pointer-events-none absolute left-0 top-full z-20 mt-1 hidden whitespace-nowrap rounded-md bg-[#1B2B4B] px-2 py-1 text-xs font-bold text-white shadow-lg group-hover:block">
+                              {g.username}
+                            </span>
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="line-clamp-2 text-gray-600">{g.mostRecentReason}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold ${SEVERITY_STYLES[severityFor(g.totalFlags)]}`}
+                        >
+                          {g.totalFlags} {g.totalFlags === 1 ? 'flag' : 'flags'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                            g.openFlags > 0 ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'
+                          }`}
+                        >
+                          {g.openFlags > 0 ? 'Pending' : 'Resolved'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-gray-500">{new Date(g.mostRecentFlaggedAt).toLocaleDateString()}</td>
+                      <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex flex-nowrap items-center gap-1.5">
+                          <button
+                            onClick={() => handleView(g.userId)}
+                            className="flex h-8 items-center whitespace-nowrap rounded-lg border border-gray-200 px-2 text-xs font-bold text-gray-500 hover:border-[#1B2B4B] hover:text-[#1B2B4B]"
+                          >
+                            Profile
+                          </button>
+                          <button
+                            onClick={() => handleToggleSuspend(g)}
+                            className={`flex h-8 items-center whitespace-nowrap rounded-lg border px-2 text-xs font-bold ${
+                              g.suspended
+                                ? 'border-gray-200 text-green-700 hover:border-green-600'
+                                : 'border-gray-200 text-red-600 hover:border-red-600'
+                            }`}
+                          >
+                            {g.suspended ? 'Unsuspend' : 'Suspend'}
+                          </button>
+                          {g.openFlags > 0 && (
+                            <button
+                              onClick={() => handleClearEntry(mostRecentEntry)}
+                              className="flex h-8 items-center whitespace-nowrap rounded-lg border border-gray-200 px-2 text-xs font-bold text-gray-500 hover:border-[#1B2B4B] hover:text-[#1B2B4B]"
+                            >
+                              Resolve
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+
+                    {isExpanded &&
+                      olderEntries.map((e, i) => (
+                        <tr key={e.id} className="border-b border-gray-50 bg-gray-50/40">
+                          <td className="relative px-3 py-2.5">
+                            <div
+                              className="absolute left-[19px] top-0 w-px bg-gray-200"
+                              style={{ bottom: i === olderEntries.length - 1 ? '50%' : '0' }}
+                            />
+                            <div className="absolute left-[19px] top-1/2 h-px w-3 -translate-y-1/2 bg-gray-200" />
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <p className="text-xs font-bold text-[#0D1829]">{e.reason}</p>
+                            <p className="mt-0.5 text-[11px] text-gray-500">
+                              {e.clearedAt
+                                ? `Resolved ${new Date(e.clearedAt).toLocaleDateString()}${e.clearedByUsername ? ` by ${e.clearedByUsername}` : ''}`
+                                : 'Still pending'}
+                            </p>
+                            {e.adminNote && <p className="mt-0.5 text-[11px] italic text-gray-400">&quot;{e.adminNote}&quot;</p>}
+                          </td>
+                          <td className="px-3 py-2.5"></td>
+                          <td className="px-3 py-2.5">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                e.clearedAt ? 'bg-gray-200 text-gray-500' : 'bg-amber-100 text-amber-700'
+                              }`}
+                            >
+                              {e.clearedAt ? 'Resolved' : 'Pending'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2.5 text-gray-400">{new Date(e.flaggedAt).toLocaleDateString()}</td>
+                          <td className="px-3 py-2.5">
+                            {!e.clearedAt && (
+                              <button
+                                onClick={() => handleClearEntry(e)}
+                                className="flex h-7 items-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-200 px-2.5 text-xs font-bold text-gray-500 hover:border-[#1B2B4B] hover:text-[#1B2B4B]"
+                              >
+                                Resolve
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         )}

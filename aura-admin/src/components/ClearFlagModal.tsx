@@ -59,7 +59,7 @@ export function ClearFlagModal({
   return (
     <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="w-[26rem] rounded-2xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <p className="text-sm font-extrabold text-[#0D1829]">Clear flag on {user.username}</p>
+        <p className="text-sm font-extrabold text-[#0D1829]">Resolve flag on {user.username}</p>
         {user.flagReason && <p className="mt-1 text-xs text-gray-500">{user.flagReason}</p>}
 
         <label className="mb-4 mt-4 block">
@@ -67,7 +67,7 @@ export function ClearFlagModal({
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Why was this cleared? e.g. false alarm, or warned the user…"
+            placeholder="Why was this resolved? e.g. false alarm, or warned the user…"
             rows={3}
             className="w-full resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm text-black outline-none focus:border-[#1B2B4B]"
           />
@@ -107,7 +107,7 @@ export function ClearFlagModal({
             disabled={submitting}
             className="flex-1 rounded-xl bg-[#1B2B4B] py-2 text-sm font-extrabold text-white disabled:opacity-50"
           >
-            {submitting ? 'Clearing…' : 'Clear Flag'}
+            {submitting ? 'Resolving…' : 'Resolve Flag'}
           </button>
         </div>
       </div>

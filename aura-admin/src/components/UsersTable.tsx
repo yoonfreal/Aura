@@ -335,7 +335,7 @@ export function UsersTable() {
                       title={u.flagReason ?? undefined}
                       className="flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg border border-gray-200 px-2.5 text-xs font-bold text-amber-700 hover:border-amber-600"
                     >
-                      🚩 Clear Flag
+                      🚩 Resolve Flag
                     </button>
                   )}
                 </div>
