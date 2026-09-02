@@ -226,7 +226,7 @@ export function ViewUserModal({
               onClick={() => onClearFlag(user)}
               className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-amber-700 shadow-sm hover:bg-amber-700 hover:text-white"
             >
-              Clear Flag
+              Resolve Flag
             </button>
           </div>
         )}
@@ -261,10 +261,10 @@ export function ViewUserModal({
                     <p className="mt-0.5 text-gray-500">
                       Flagged {new Date(h.flaggedAt).toLocaleDateString()}
                       {h.clearedAt
-                        ? ` · Cleared ${new Date(h.clearedAt).toLocaleDateString()}${h.clearedByUsername ? ` by ${h.clearedByUsername}` : ''}`
-                        : ' · Still open'}
+                        ? ` · Resolved ${new Date(h.clearedAt).toLocaleDateString()}${h.clearedByUsername ? ` by ${h.clearedByUsername}` : ''}`
+                        : ' · Still pending'}
                     </p>
-                    {h.adminNote && <p className="mt-0.5 italic text-gray-400">"{h.adminNote}"</p>}
+                    {h.adminNote && <p className="mt-0.5 italic text-gray-400">&quot;{h.adminNote}&quot;</p>}
                   </div>
                 ))}
               </div>
