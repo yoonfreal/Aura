@@ -25,6 +25,7 @@ const TYPE_PILL_PADDING = 4;
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Calendar } from 'react-native-calendars';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useUserStore } from '@/store/userStore';
 import {
   createPost,
@@ -59,22 +60,8 @@ function formatSelectedDate(iso: string): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-// Accepts HH:MM (24h); returns null while incomplete/invalid.
-function parseTimeText(timeText: string): { hour: number; minute: number } | null {
-  const match = timeText.trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return null;
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (hour > 23 || minute > 59) return null;
-  return { hour, minute };
-}
-
 function toDateInputValue(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function toTimeInputValue(d: Date): string {
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 // The exact expiry choice isn't stored — only the resulting timestamp — so this is a
@@ -137,7 +124,8 @@ export default function CreatePostScreen() {
   const [activityTypeQuery, setActivityTypeQuery] = useState('');
   const [activityDate, setActivityDate] = useState<string | null>(null);
   const [showCalendar, setShowCalendar] = useState(false);
-  const [timeText, setTimeText] = useState('');
+  const [activityTime, setActivityTime] = useState<Date | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [location, setLocation] = useState<string | null>(null);
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [locationQuery, setLocationQuery] = useState('');
@@ -197,7 +185,7 @@ export default function CreatePostScreen() {
           if (post.activityAt) {
             const d = new Date(post.activityAt);
             setActivityDate(toDateInputValue(d));
-            setTimeText(toTimeInputValue(d));
+            setActivityTime(d);
           }
           if (post.expiresAt) {
             setAutoExpire(true);
@@ -239,11 +227,23 @@ export default function CreatePostScreen() {
     }
   }
 
-  const parsedTime = parseTimeText(timeText);
-  const timeInvalid = timeText.length > 0 && !parsedTime;
+  const now = new Date();
+  const isSelectedDateToday = !!activityDate && activityDate === toDateInputValue(now);
+  const selectedTimeIsPast =
+    isSelectedDateToday &&
+    !!activityTime &&
+    (() => {
+      const selected = new Date(now);
+      selected.setHours(activityTime.getHours(), activityTime.getMinutes(), 0, 0);
+      return selected <= now;
+    })();
+
   const activityAt =
-    activityDate && parsedTime
-      ? new Date(`${activityDate}T${String(parsedTime.hour).padStart(2, '0')}:${String(parsedTime.minute).padStart(2, '0')}:00`)
+    activityDate && activityTime && !selectedTimeIsPast
+      ? (() => {
+          const [year, month, day] = activityDate.split('-').map(Number);
+          return new Date(year, month - 1, day, activityTime.getHours(), activityTime.getMinutes(), 0, 0);
+        })()
       : null;
   const selectedActivityType = ACTIVITY_TYPES.find((a) => a.value === activityType);
   const filteredActivityTypes = ACTIVITY_TYPES.filter((a) =>
@@ -554,19 +554,54 @@ export default function CreatePostScreen() {
                   <Ionicons name={showCalendar ? 'chevron-up' : 'chevron-down'} size={16} color="#8A9BB0" />
                 </TouchableOpacity>
 
-                <View style={styles.dateTimeField}>
-                  <Ionicons name="time-outline" size={16} color="#8A9BB0" />
-                  <TextInput
-                    style={styles.dateTimeInput}
-                    placeholder="HH:MM"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="number-pad"
-                    maxLength={5}
-                    value={timeText}
-                    onChangeText={setTimeText}
-                  />
-                </View>
+                  <TouchableOpacity
+                  style={styles.dateTimeField}
+                  onPress={() => {
+                    if (!activityDate) {
+                      Alert.alert('Select a date first', 'Please select a date before choosing a time.');
+                      return;
+                    }
+                    setShowTimePicker(true);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="time-outline" size={16} color={activityTime ? '#1B2B4B' : '#8A9BB0'} />
+                  <Text style={activityTime ? styles.dateTimeInputText : styles.dateTimePlaceholder}>
+                    {activityTime
+                      ? activityTime.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+                      : 'Select time'}
+                  </Text>
+                </TouchableOpacity>
               </View>
+
+              {showTimePicker && activityDate && (
+                <View style={styles.timePickerWrap}>
+                  <DateTimePicker
+                    value={activityTime ?? new Date()}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    is24Hour={false}
+                    style={Platform.OS === 'ios' ? styles.timePickerSpinner : undefined}
+                    onValueChange={(_event, selected) => {
+                      setActivityTime(selected);
+                      if (Platform.OS !== 'ios') {
+                        setShowTimePicker(false);
+                      }
+                    }}
+                    onDismiss={() => {
+                      if (Platform.OS !== 'ios') {
+                        setShowTimePicker(false);
+                      }
+                    }}
+                  />
+                  <TouchableOpacity
+                    style={styles.timePickerDone}
+                    onPress={() => setShowTimePicker(false)}
+                  >
+                    <Text style={styles.timePickerDoneText}>Done</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
 
               {showCalendar && (
                 <View style={styles.calendarWrap}>
@@ -592,8 +627,8 @@ export default function CreatePostScreen() {
 
               {activityAt ? (
                 <Text style={styles.dateSummary}>{formatDateTime(activityAt)}</Text>
-              ) : timeInvalid ? (
-                <Text style={styles.dateError}>Use 24h HH:MM (e.g. 18:30)</Text>
+              ) : selectedTimeIsPast ? (
+                <Text style={styles.dateError}>Please select a time later than the current time.</Text>
               ) : null}
 
               <Text style={styles.fieldLabel}>Location on campus</Text>
@@ -1001,6 +1036,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   dateTimeInput: { flex: 1, fontSize: 14, color: '#0D1829', fontWeight: '600', padding: 0 },
+  dateTimeInputText: { flex: 1, fontSize: 14, color: '#0D1829', fontWeight: '600' },
+  dateTimePlaceholder: { flex: 1, fontSize: 14, color: '#9CA3AF' },
+  timePickerWrap: { marginTop: 8, borderRadius: 12, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  timePickerSpinner: { height: 180 },
+  timePickerDone: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 8 },
+  timePickerDoneText: { fontSize: 13, fontWeight: '700', color: '#1B2B4B' },
   dateSummary: { fontSize: 12, color: '#1B2B4B', fontWeight: '700', marginTop: 8 },
   dateError: { fontSize: 12, color: '#DC2626', marginTop: 8, lineHeight: 17 },
   calendarWrap: {
