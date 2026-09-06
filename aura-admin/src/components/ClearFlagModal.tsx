@@ -48,7 +48,7 @@ export function ClearFlagModal({
 
     const trimmedNote = note.trim() || null;
     try {
-      await clearUserFlag(user.id, adminUsername, trimmedNote);
+      await clearUserFlag(user.id, adminId, adminUsername, trimmedNote);
       onCleared({ note: trimmedNote });
     } catch (err) {
       setSubmitting(false);

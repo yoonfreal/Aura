@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { logAdminActivity } from './activityLog';
 
 export type AdminUser = {
   id: string;
@@ -104,8 +105,8 @@ export async function fetchUserById(userId: string): Promise<AdminUser | null> {
   return data ? toAdminUser(data as ProfileRow) : null;
 }
 
-export async function setUserSuspended(userId: string, suspended: boolean): Promise<void> {
-  const { data, error } = await supabase.from('profiles').update({ suspended }).eq('id', userId).select('id');
+export async function setUserSuspended(userId: string, suspended: boolean, adminId: string, adminUsername: string): Promise<void> {
+  const { data, error } = await supabase.from('profiles').update({ suspended }).eq('id', userId).select('id, username');
   if (error) throw error;
   // RLS blocks (rather than errors on) an update with no visible matching row, so an
   // empty result here means the write silently did nothing — surface that instead of
@@ -113,17 +114,29 @@ export async function setUserSuspended(userId: string, suspended: boolean): Prom
   if (!data || data.length === 0) {
     throw new Error('Suspend update did not apply — check the admin update policy on profiles.');
   }
+
+  try {
+    const targetUsername = (data[0] as { username: string }).username;
+    await logAdminActivity(adminId, adminUsername, suspended ? 'Suspended user' : 'Unsuspended user', targetUsername);
+  } catch {
+    // Best-effort — the suspend/unsuspend itself already succeeded.
+  }
 }
 
 // Clears a flag once an admin has reviewed it and decided it was a false alarm (or has
 // already dealt with the account another way). There's no manual "flag" counterpart —
 // flags are only ever raised automatically by aura-app's unusual-activity checks.
-export async function clearUserFlag(userId: string, clearedByUsername: string | null, note?: string | null): Promise<void> {
+export async function clearUserFlag(
+  userId: string,
+  adminId: string | null,
+  clearedByUsername: string | null,
+  note?: string | null,
+): Promise<void> {
   const { data, error } = await supabase
     .from('profiles')
     .update({ flagged: false, flag_reason: null })
     .eq('id', userId)
-    .select('id');
+    .select('id, username');
   if (error) throw error;
   if (!data || data.length === 0) {
     throw new Error('Flag clear did not apply — check the admin update policy on profiles.');
@@ -140,6 +153,15 @@ export async function clearUserFlag(userId: string, clearedByUsername: string | 
       .is('cleared_at', null);
   } catch {
     // Best-effort.
+  }
+
+  if (adminId && clearedByUsername) {
+    try {
+      const targetUsername = (data[0] as { username: string }).username;
+      await logAdminActivity(adminId, clearedByUsername, 'Cleared flag', note ? `${targetUsername} — ${note}` : targetUsername);
+    } catch {
+      // Best-effort.
+    }
   }
 }
 
