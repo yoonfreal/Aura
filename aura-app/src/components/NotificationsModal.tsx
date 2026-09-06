@@ -69,6 +69,9 @@ export function NotificationsModal({
       case 'admin_warning':
         return 'warning';
 
+      case 'announcement':
+        return 'megaphone';
+
       default:
         return 'notifications';
     }
@@ -113,6 +116,9 @@ export function NotificationsModal({
 
       case 'admin_warning':
         return 'sent you a warning';
+
+      case 'announcement':
+        return 'posted an announcement';
 
       default:
         return 'sent you a notification';

@@ -93,7 +93,7 @@ export function UsersTable() {
       return;
     }
     try {
-      await setUserSuspended(user.id, next);
+      await setUserSuspended(user.id, next, admin?.id ?? '', admin?.username ?? 'Admin');
       setUsers((prev) => prev && prev.map((u) => (u.id === user.id ? { ...u, suspended: next } : u)));
     } catch {
       alert(`Could not ${next ? 'suspend' : 'unsuspend'} "${user.username}". Try again.`);

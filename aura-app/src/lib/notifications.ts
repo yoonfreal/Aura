@@ -396,7 +396,8 @@ export type NotificationType =
   | 'challenge_ending_soon'
   | 'streak_reminder'
   | 'team_invite'
-  | 'admin_warning';
+  | 'admin_warning'
+  | 'announcement';
 
 // Every type that should take a tap to the challenge it's about, rather than a post (or
 // nowhere). Shared by every screen's notification handler so the list can't drift between
@@ -593,10 +594,10 @@ export async function fetchNotifications(
 
       type: r.type,
 
-      // Warnings come from an admin acting on behalf of the platform, not a specific
-      // person — never surface which admin's account sent it.
+      // Warnings and announcements come from an admin acting on behalf of the platform, not
+      // a specific person — never surface which admin's account sent it.
       actorName:
-        r.type === 'admin_warning'
+        r.type === 'admin_warning' || r.type === 'announcement'
           ? 'Admin'
           : displayName(
               profileById.get(
@@ -620,7 +621,7 @@ export async function fetchNotifications(
             r.type === 'team_invite' ||
             r.type === 'challenge_response'
           ? challenge?.title ?? null
-          : r.type === 'admin_warning'
+          : r.type === 'admin_warning' || r.type === 'announcement'
           ? r.message ?? null
           : postPreview(post),
 

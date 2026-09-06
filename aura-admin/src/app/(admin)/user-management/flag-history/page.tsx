@@ -178,7 +178,7 @@ export default function FlagHistoryPage() {
       return;
     }
     try {
-      await setUserSuspended(group.userId, next);
+      await setUserSuspended(group.userId, next, admin?.id ?? '', admin?.username ?? 'Admin');
       setEntries((prev) => prev && prev.map((e) => (e.userId === group.userId ? { ...e, suspended: next } : e)));
     } catch {
       alert(`Could not ${next ? 'suspend' : 'unsuspend'} "${group.username}". Try again.`);

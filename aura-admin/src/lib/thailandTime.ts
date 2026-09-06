@@ -48,3 +48,29 @@ export function thailandMonthStart(dateISO: string = thailandDateISO()): string 
   const [y, m] = dateISO.split('-');
   return `${y}-${m}-01`;
 }
+
+// The first and last day (both inclusive, Y-M-D) of the calendar month `offsetMonths` away
+// from the current month in Thailand — 0 = this month, -1 = last month, etc. Used for
+// month-over-month analytics comparisons (this month to date vs. the equivalent prior
+// month).
+export function thailandMonthRange(offsetMonths = 0): { start: string; end: string } {
+  const today = thailandDateISO();
+  const [y, m] = today.split('-').map(Number);
+  const zeroBasedMonth = m - 1 + offsetMonths;
+  const year = y + Math.floor(zeroBasedMonth / 12);
+  const month = ((zeroBasedMonth % 12) + 12) % 12;
+  const start = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const end = `${year}-${String(month + 1).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+  return { start, end };
+}
+
+// Whole calendar days between two Y-M-D dates (end - start), for turning a raw count over a
+// date range into a weekly/daily rate.
+export function daysBetweenISO(startISO: string, endISO: string): number {
+  const [y1, m1, d1] = startISO.split('-').map(Number);
+  const [y2, m2, d2] = endISO.split('-').map(Number);
+  const start = Date.UTC(y1, m1 - 1, d1);
+  const end = Date.UTC(y2, m2 - 1, d2);
+  return Math.round((end - start) / 86400000);
+}

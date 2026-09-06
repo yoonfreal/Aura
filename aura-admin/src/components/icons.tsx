@@ -117,3 +117,78 @@ export function DumbbellIcon() {
     </>,
   );
 }
+
+export function FootprintsIcon() {
+  return base(
+    <>
+      <ellipse cx="8" cy="16" rx="3" ry="4.5" transform="rotate(-15 8 16)" />
+      <circle cx="10.4" cy="9.6" r="1" />
+      <circle cx="8.4" cy="8.2" r="1" />
+      <circle cx="6.6" cy="7.4" r="0.9" />
+      <ellipse cx="16" cy="9" rx="3" ry="4.5" transform="rotate(15 16 9)" />
+      <circle cx="13.6" cy="15.4" r="1" />
+      <circle cx="15.6" cy="16.8" r="1" />
+      <circle cx="17.4" cy="17.6" r="0.9" />
+    </>,
+  );
+}
+
+export function FlameIcon() {
+  return base(
+    <path d="M12 22c4 0 7-2.5 7-6.5 0-3-2-5-3-6.5.2 2-1 3-1.8 2C13 9 13.5 6 12 3c.3 2.5-1.5 4-3 6-1.2 1.6-2 3-2 5.5C7 20 8.5 22 12 22z" />,
+  );
+}
+
+export function QrCodeIcon() {
+  return base(
+    <>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="3" height="3" rx="0.5" />
+      <rect x="18" y="14" width="3" height="3" rx="0.5" />
+      <rect x="14" y="18" width="3" height="3" rx="0.5" />
+      <rect x="18" y="18" width="3" height="3" rx="0.5" />
+    </>,
+  );
+}
+
+export function TrendingUpIcon() {
+  return base(
+    <>
+      <polyline points="3 17 9 11 13 15 21 6" />
+      <polyline points="15 6 21 6 21 12" />
+    </>,
+  );
+}
+
+export function GearIcon() {
+  return base(
+    <>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </>,
+  );
+}
+
+export function MegaphoneIcon() {
+  return base(
+    <>
+      <path d="M3 11v2a1 1 0 0 0 1 1h2l3.5 4.5A1 1 0 0 0 11 18V6a1 1 0 0 0-1.5-.87L6 10H4a1 1 0 0 0-1 1z" />
+      <path d="M15 8a3 3 0 0 1 0 8" />
+      <path d="M18 5.5a6.5 6.5 0 0 1 0 13" />
+    </>,
+  );
+}
+
+export function ClipboardListIcon() {
+  return base(
+    <>
+      <rect x="5" y="4" width="14" height="17" rx="2" />
+      <path d="M9 3h6a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+      <line x1="8" y1="11" x2="16" y2="11" />
+      <line x1="8" y1="15" x2="16" y2="15" />
+      <line x1="8" y1="19" x2="12" y2="19" />
+    </>,
+  );
+}
