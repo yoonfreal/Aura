@@ -131,6 +131,7 @@ export async function clearUserFlag(
   adminId: string | null,
   clearedByUsername: string | null,
   note?: string | null,
+  flagHistoryId?: string,
 ): Promise<void> {
   const { data, error } = await supabase
     .from('profiles')
@@ -142,15 +143,32 @@ export async function clearUserFlag(
     throw new Error('Flag clear did not apply — check the admin update policy on profiles.');
   }
 
-  // Closes out the open flag_history row so the record shows who cleared it, when, and any
-  // note the admin left about it. Best-effort: never let a history-write hiccup undo the
-  // clear that already succeeded.
+  // Closes out exactly one open flag_history row: the specific one the admin resolved, if
+  // known (the Flag History page's per-row Resolve button knows this), or otherwise the
+  // single most recent open row for this user (User Management's Clear Flag only ever deals
+  // with "the current flag", which is the most recent one). Deliberately never a blanket
+  // "every open row for this user_id" — a user can accumulate more than one open flag (e.g.
+  // flagged again the next day before the first was reviewed), and closing all of them
+  // whenever just one gets resolved would silently disappear the others from "Pending".
+  // Best-effort: never let a history-write hiccup undo the clear that already succeeded.
   try {
-    await supabase
-      .from('flag_history')
-      .update({ cleared_at: new Date().toISOString(), cleared_by_username: clearedByUsername, admin_note: note ?? null })
-      .eq('user_id', userId)
-      .is('cleared_at', null);
+    let targetId = flagHistoryId;
+    if (!targetId) {
+      const { data: openRows } = await supabase
+        .from('flag_history')
+        .select('id')
+        .eq('user_id', userId)
+        .is('cleared_at', null)
+        .order('flagged_at', { ascending: false })
+        .limit(1);
+      targetId = openRows?.[0]?.id;
+    }
+    if (targetId) {
+      await supabase
+        .from('flag_history')
+        .update({ cleared_at: new Date().toISOString(), cleared_by_username: clearedByUsername, admin_note: note ?? null })
+        .eq('id', targetId);
+    }
   } catch {
     // Best-effort.
   }

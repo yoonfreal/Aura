@@ -18,12 +18,18 @@ export function ClearFlagModal({
   user,
   adminId,
   adminUsername,
+  flagHistoryId,
   onClose,
   onCleared,
 }: {
   user: AdminUser;
   adminId: string | null;
   adminUsername: string | null;
+  // The specific flag_history row to resolve, when known (the Flag History page's per-row
+  // Resolve knows exactly which entry was clicked). Omitted elsewhere (User Management's
+  // Clear Flag only knows "the current flag"), where clearUserFlag falls back to closing the
+  // single most recent open row instead of guessing which of possibly several to close.
+  flagHistoryId?: string;
   onClose: () => void;
   onCleared: (result: { note: string | null }) => void;
 }) {
@@ -48,7 +54,7 @@ export function ClearFlagModal({
 
     const trimmedNote = note.trim() || null;
     try {
-      await clearUserFlag(user.id, adminId, adminUsername, trimmedNote);
+      await clearUserFlag(user.id, adminId, adminUsername, trimmedNote, flagHistoryId);
       onCleared({ note: trimmedNote });
     } catch (err) {
       setSubmitting(false);

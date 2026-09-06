@@ -5,20 +5,23 @@ export type AppSettings = {
   communityPostsEnabled: boolean;
   partnerFinderEnabled: boolean;
   filterBannedKeywords: boolean;
+  maintenanceModeEnabled: boolean;
 };
 
 type AppSettingsRow = {
   community_posts_enabled: boolean;
   partner_finder_enabled: boolean;
   filter_banned_keywords: boolean;
+  maintenance_mode_enabled: boolean;
 };
 
 // Singleton row (id = 1) — see the app_settings table. aura-app reads the same row to decide
-// whether to allow posting/replying and whether to run the banned-keyword filter.
+// whether to allow posting/replying, whether to run the banned-keyword filter, and whether to
+// show the maintenance screen instead of letting anyone into the app at all.
 export async function fetchAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')
-    .select('community_posts_enabled, partner_finder_enabled, filter_banned_keywords')
+    .select('community_posts_enabled, partner_finder_enabled, filter_banned_keywords, maintenance_mode_enabled')
     .eq('id', 1)
     .single();
   if (error) throw error;
@@ -28,6 +31,7 @@ export async function fetchAppSettings(): Promise<AppSettings> {
     communityPostsEnabled: row.community_posts_enabled,
     partnerFinderEnabled: row.partner_finder_enabled,
     filterBannedKeywords: row.filter_banned_keywords,
+    maintenanceModeEnabled: row.maintenance_mode_enabled,
   };
 }
 
@@ -35,6 +39,7 @@ const SETTING_LABELS: Record<keyof AppSettings, string> = {
   communityPostsEnabled: 'Community posts',
   partnerFinderEnabled: 'Partner finder posts',
   filterBannedKeywords: 'Filter banned keywords',
+  maintenanceModeEnabled: 'Maintenance mode',
 };
 
 // Saves the whole Moderation card at once (it has one Save button, not per-toggle autosave)
@@ -47,6 +52,7 @@ export async function updateAppSettings(adminId: string, adminUsername: string, 
       community_posts_enabled: next.communityPostsEnabled,
       partner_finder_enabled: next.partnerFinderEnabled,
       filter_banned_keywords: next.filterBannedKeywords,
+      maintenance_mode_enabled: next.maintenanceModeEnabled,
       updated_by: adminId,
       updated_at: new Date().toISOString(),
     })

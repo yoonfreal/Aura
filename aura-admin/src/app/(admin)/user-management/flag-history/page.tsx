@@ -101,6 +101,7 @@ export default function FlagHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewingUser, setViewingUser] = useState<(AdminUser & { levelTitle: string; active: boolean }) | null>(null);
   const [clearingUser, setClearingUser] = useState<AdminUser | null>(null);
+  const [clearingFlagId, setClearingFlagId] = useState<string | null>(null);
   const [expandedUsers, setExpandedUsers] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -134,16 +135,18 @@ export default function FlagHistoryPage() {
     }
   }
 
-  function handleFlagCleared(userId: string, note: string | null) {
-    setEntries(
-      (prev) =>
-        prev &&
-        prev.map((e) =>
-          e.userId === userId && !e.clearedAt
-            ? { ...e, clearedAt: new Date().toISOString(), clearedByUsername: admin?.username ?? null, adminNote: note }
-            : e,
-        ),
-    );
+  // Mirrors clearUserFlag's own targeting: update exactly the entry that was resolved
+  // (flagId, when known), or — if this clear came from a context with no specific entry —
+  // only the single most recently flagged open entry for that user, never every open entry.
+  function handleFlagCleared(userId: string, flagId: string | null, note: string | null) {
+    setEntries((prev) => {
+      if (!prev) return prev;
+      const targetId = flagId ?? prev.find((e) => e.userId === userId && !e.clearedAt)?.id;
+      if (!targetId) return prev;
+      return prev.map((e) =>
+        e.id === targetId ? { ...e, clearedAt: new Date().toISOString(), clearedByUsername: admin?.username ?? null, adminNote: note } : e,
+      );
+    });
   }
 
   function toggleExpanded(userId: string) {
@@ -157,7 +160,10 @@ export default function FlagHistoryPage() {
 
   // The per-row Clear button only needs id/username/flagReason to drive ClearFlagModal —
   // building it from the flag row avoids a fetchUserById round trip just to open the modal.
+  // entry.id (the specific flag_history row) is tracked separately so resolving this exact
+  // entry doesn't also close any other still-open flag this user might have.
   function handleClearEntry(entry: AllFlagHistoryEntry) {
+    setClearingFlagId(entry.id);
     setClearingUser({
       id: entry.userId,
       username: entry.username,
@@ -474,7 +480,10 @@ export default function FlagHistoryPage() {
           key={`view-${viewingUser.id}`}
           user={viewingUser}
           onClose={() => setViewingUser(null)}
-          onClearFlag={(u) => setClearingUser(u)}
+          onClearFlag={(u) => {
+            setClearingFlagId(null);
+            setClearingUser(u);
+          }}
         />
       )}
 
@@ -484,10 +493,15 @@ export default function FlagHistoryPage() {
           user={clearingUser}
           adminId={admin?.id ?? null}
           adminUsername={admin?.username ?? null}
-          onClose={() => setClearingUser(null)}
-          onCleared={({ note }) => {
-            handleFlagCleared(clearingUser.id, note);
+          flagHistoryId={clearingFlagId ?? undefined}
+          onClose={() => {
             setClearingUser(null);
+            setClearingFlagId(null);
+          }}
+          onCleared={({ note }) => {
+            handleFlagCleared(clearingUser.id, clearingFlagId, note);
+            setClearingUser(null);
+            setClearingFlagId(null);
             setViewingUser(null);
           }}
         />

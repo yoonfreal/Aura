@@ -7,7 +7,7 @@ import {
 import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
 import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
 import { fetchAppSettings } from '@/lib/appSettings';
-import { containsBannedKeyword } from '@/constants/bannedWords';
+import { fetchBannedKeywords, containsBannedKeyword } from '@/lib/bannedWords';
 import type { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { MissionType } from '@/types';
 
@@ -261,14 +261,18 @@ export type NewPost = {
 };
 
 export async function createPost(userId: string, input: NewPost): Promise<void> {
-  const settings = await fetchAppSettings();
+  const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
+  // communityPostsEnabled is the master switch — it covers every post type, partner included.
+  // partnerFinderEnabled is a narrower, additional gate only checked once the master switch
+  // is already on, so turning off Community posts blocks partner posts too even if partner
+  // finder itself is still toggled on.
+  if (!settings.communityPostsEnabled) {
+    throw new Error('Posting is temporarily disabled by an admin.');
+  }
   if (input.type === 'partner' && !settings.partnerFinderEnabled) {
     throw new Error('Partner finder posts are temporarily disabled by an admin.');
   }
-  if (input.type !== 'partner' && !settings.communityPostsEnabled) {
-    throw new Error('Posting is temporarily disabled by an admin.');
-  }
-  if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption)) {
+  if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption, bannedKeywords)) {
     throw new Error('Your post contains language that isn’t allowed.');
   }
 
@@ -327,8 +331,8 @@ export type UpdatePostInput = {
 // unlike a partner post's activity/date/location/expiry, which are safe to change after
 // the fact.
 export async function updatePost(userId: string, postId: string, input: UpdatePostInput): Promise<void> {
-  const settings = await fetchAppSettings();
-  if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption)) {
+  const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
+  if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption, bannedKeywords)) {
     throw new Error('Your post contains language that isn’t allowed.');
   }
 
@@ -678,11 +682,11 @@ export async function addComment(userId: string, postId: string, postAuthorId: s
   const trimmed = body.trim();
   if (!trimmed) return;
 
-  const settings = await fetchAppSettings();
+  const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
   if (!settings.communityPostsEnabled) {
     throw new Error('Replies are temporarily disabled by an admin.');
   }
-  if (settings.filterBannedKeywords && containsBannedKeyword(trimmed)) {
+  if (settings.filterBannedKeywords && containsBannedKeyword(trimmed, bannedKeywords)) {
     throw new Error('Your reply contains language that isn’t allowed.');
   }
 
