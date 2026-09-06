@@ -10,6 +10,7 @@ import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
 import { ensureActiveToday, updateLastSeen, checkStreakReminder } from '@/lib/api';
 import { checkChallengesEndingSoon } from '@/lib/challenges';
+import { fetchAppSettings } from '@/lib/appSettings';
 import { useUserStore } from '@/store/userStore';
 
 type ProfileRow = {
@@ -97,6 +98,17 @@ export default function RootLayout() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Checked before anything else, signed in or not — maintenance mode blocks the whole
+        // app, not just posting, so there's no point fetching a profile only to redirect away
+        // from it a moment later. This only runs at launch and on sign-in/sign-out (whatever
+        // triggers onAuthStateChange) — flipping the toggle while someone's already past this
+        // check and sitting in the tabs won't kick them out mid-session.
+        const settings = await fetchAppSettings();
+        if (settings.maintenanceModeEnabled) {
+          setPendingRedirect('/maintenance');
+          return;
+        }
+
         if (
           (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           session?.user

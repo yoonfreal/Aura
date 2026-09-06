@@ -40,6 +40,7 @@ import {
   type ExpiryOption,
 } from '@/lib/posts';
 import { fetchLinkableChallenges, type LinkableChallenge } from '@/lib/challenges';
+import { fetchAppSettings, type AppSettings } from '@/lib/appSettings';
 import { thailandDateISO } from '@/lib/thailandTime';
 import { ActivityTypeIcon } from '@/components/ActivityTypeIcon';
 
@@ -107,7 +108,32 @@ export default function CreatePostScreen() {
     ]).start();
   }, [typeIndex]);
 
+  // Fetched once so the type picker can tell the user up front which post types an admin has
+  // turned off, instead of only finding out after filling in the whole form and hitting Post
+  // (posts.ts still enforces this for real at submit time — this is just the earlier warning).
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+
+  useEffect(() => {
+    fetchAppSettings().then(setAppSettings);
+  }, []);
+
+  // communityPostsEnabled is the master switch for every type, including partner —
+  // partnerFinderEnabled is only checked once that master switch is already on.
+  function isTypeDisabled(t: PostType): boolean {
+    if (!appSettings) return false;
+    if (!appSettings.communityPostsEnabled) return true;
+    return t === 'partner' && !appSettings.partnerFinderEnabled;
+  }
+
   function handleSelectType(next: PostType) {
+    if (appSettings && !appSettings.communityPostsEnabled) {
+      Alert.alert('Posting is off', 'An admin has temporarily disabled posting.');
+      return;
+    }
+    if (next === 'partner' && appSettings && !appSettings.partnerFinderEnabled) {
+      Alert.alert('Partner finder is off', 'An admin has temporarily disabled partner finder posts.');
+      return;
+    }
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setType(next);
   }
@@ -356,6 +382,7 @@ export default function CreatePostScreen() {
           })()}
           {POST_TYPES.map((pt) => {
             const active = type === pt.type;
+            const disabled = isTypeDisabled(pt.type);
             return (
               <TouchableOpacity
                 key={pt.type}
@@ -366,9 +393,11 @@ export default function CreatePostScreen() {
                 <Ionicons
                   name={active ? pt.icon : (`${pt.icon}-outline` as keyof typeof Ionicons.glyphMap)}
                   size={18}
-                  color={active ? '#F5B800' : '#8A9BB0'}
+                  color={disabled ? '#C7CED9' : active ? '#F5B800' : '#8A9BB0'}
                 />
-                <Text style={[styles.typeLabel, active && styles.typeLabelActive]}>{pt.label}</Text>
+                <Text style={[styles.typeLabel, active && styles.typeLabelActive, disabled && styles.typeLabelDisabled]}>
+                  {pt.label}
+                </Text>
               </TouchableOpacity>
             );
           })}
@@ -988,6 +1017,7 @@ const styles = StyleSheet.create({
   },
   typeLabel: { fontSize: 13, fontWeight: '700', color: '#8A9BB0' },
   typeLabelActive: { color: '#fff' },
+  typeLabelDisabled: { color: '#C7CED9' },
 
   captionInput: {
     backgroundColor: '#fff',

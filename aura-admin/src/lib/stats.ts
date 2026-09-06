@@ -252,23 +252,22 @@ export type FeatureEngagement = { label: string; percent: number };
 // Share of all users who touched each feature at least once in the last 30 days. There's no
 // generic event-tracking table in this app, so each feature is measured against the table
 // that already records someone using it: a completed daily mission, an accepted challenge
-// joined in the window, a gym QR check-in, or a new post. Leaderboard has no such table (it's
-// a read-only view) — earning any XP is the closest proxy for "shows up on the leaderboard",
-// so that one instead checks profiles.xp > 0 with no time window.
+// joined in the window, a gym QR check-in, or a new post. (Leaderboard was dropped from this
+// list — it's a read-only view with no table recording "viewed it", and profiles.xp > 0 was
+// only ever a rough proxy, not a real usage measurement like the other four.)
 export async function fetchFeatureEngagement(): Promise<FeatureEngagement[]> {
   const since = addDaysToISO(thailandDateISO(), -30);
   const sinceTimestamp = `${since}T00:00:00`;
   const totalUsers = await fetchTotalUsers();
 
   // Promise.allSettled, not Promise.all: each feature's query hits its own table, and one
-  // table being missing or mid-migration (e.g. gym_checkins isn't deployed yet as of writing)
-  // shouldn't take down every other feature's number along with it.
-  const [missions, challenges, checkins, posts, leaderboard] = await Promise.allSettled([
+  // table being missing or mid-migration shouldn't take down every other feature's number
+  // along with it.
+  const [missions, challenges, checkins, posts] = await Promise.allSettled([
     supabase.from('user_missions').select('user_id').eq('completed', true).gte('date', since),
     supabase.from('challenge_participants').select('user_id').eq('status', 'accepted').gte('joined_at', sinceTimestamp),
     supabase.from('gym_checkins').select('user_id').gte('date', since),
     supabase.from('posts').select('user_id').gte('created_at', sinceTimestamp),
-    supabase.from('profiles').select('id', { count: 'exact', head: true }).gt('xp', 0),
   ]);
 
   const distinctUsers = (rows: { user_id: string }[]) => new Set(rows.map((r) => r.user_id)).size;
@@ -280,17 +279,12 @@ export async function fetchFeatureEngagement(): Promise<FeatureEngagement[]> {
     if (result.status !== 'fulfilled' || result.value.error) return null;
     return percentOf(distinctUsers((result.value.data ?? []) as { user_id: string }[]));
   };
-  const percentFromCount = (result: PromiseSettledResult<{ count: number | null; error: unknown }>): number | null => {
-    if (result.status !== 'fulfilled' || result.value.error) return null;
-    return percentOf(result.value.count ?? 0);
-  };
 
   const candidates: { label: string; percent: number | null }[] = [
     { label: 'Daily missions', percent: percentFromRows(missions) },
     { label: 'Challenges', percent: percentFromRows(challenges) },
     { label: 'QR check-in', percent: percentFromRows(checkins) },
     { label: 'Social posts', percent: percentFromRows(posts) },
-    { label: 'Leaderboard', percent: percentFromCount(leaderboard) },
   ];
 
   return candidates

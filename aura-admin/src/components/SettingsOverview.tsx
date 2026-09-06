@@ -7,17 +7,26 @@ import { sendAnnouncement } from '@/lib/notifications';
 import { fetchRecentActivity, type ActivityLogEntry } from '@/lib/activityLog';
 import { searchUsersByUsername, setUserRole, type ManagedUser } from '@/lib/adminManagement';
 import { fetchCurrentEmail, updateEmail, updatePassword } from '@/lib/account';
+import { fetchBannedWords, addBannedWord, removeBannedWord, type BannedWord } from '@/lib/bannedWords';
 
 function extractErrorMessage(err: unknown): string {
   const e = err as { message?: string } | null;
   return e?.message ?? 'Please try again.';
 }
 
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (checked: boolean) => void }) {
+function ToggleSwitch({
+  checked,
+  onChange,
+  activeColor = '#1F6D46',
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  activeColor?: string;
+}) {
   return (
     <label className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} className="peer sr-only" />
-      <span className="absolute inset-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-[#1F6D46]" />
+      <span className="absolute inset-0 rounded-full transition-colors" style={{ backgroundColor: checked ? activeColor : '#D1D5DB' }} />
       <span className="absolute left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
     </label>
   );
@@ -38,18 +47,30 @@ function ModerationCard({
   const [draft, setDraft] = useState(settings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [justSaved, setJustSaved] = useState(false);
 
   const dirty =
     draft.communityPostsEnabled !== settings.communityPostsEnabled ||
     draft.partnerFinderEnabled !== settings.partnerFinderEnabled ||
-    draft.filterBannedKeywords !== settings.filterBannedKeywords;
+    draft.filterBannedKeywords !== settings.filterBannedKeywords ||
+    draft.maintenanceModeEnabled !== settings.maintenanceModeEnabled;
 
   async function handleSave() {
+    // Maintenance mode locks every user out of the whole app, not just one feature — worth a
+    // confirmation the other toggles here don't need, same reasoning as confirming a suspend.
+    if (draft.maintenanceModeEnabled && !settings.maintenanceModeEnabled) {
+      if (!confirm('Turn on maintenance mode? Every user will be locked out of the app until you turn this back off.')) {
+        return;
+      }
+    }
+
     setSaving(true);
     setError(null);
+    setJustSaved(false);
     try {
       await updateAppSettings(admin?.id ?? '', admin?.username ?? 'Admin', settings, draft);
       onSaved(draft);
+      setJustSaved(true);
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -64,7 +85,7 @@ function ModerationCard({
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-[#0D1829]">Community posts</p>
-          <p className="text-xs text-gray-500">Allow student posts &amp; replies</p>
+          <p className="text-xs text-gray-500">Master switch — turns off all posts &amp; replies, partner included</p>
         </div>
         <ToggleSwitch checked={draft.communityPostsEnabled} onChange={(v) => setDraft((d) => ({ ...d, communityPostsEnabled: v }))} />
       </div>
@@ -72,7 +93,7 @@ function ModerationCard({
       <div className="mt-4 flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-bold text-[#0D1829]">Partner finder posts</p>
-          <p className="text-xs text-gray-500">Allow find-partner listings</p>
+          <p className="text-xs text-gray-500">Allow find-partner listings (only while Community posts is on)</p>
         </div>
         <ToggleSwitch checked={draft.partnerFinderEnabled} onChange={(v) => setDraft((d) => ({ ...d, partnerFinderEnabled: v }))} />
       </div>
@@ -87,7 +108,22 @@ function ModerationCard({
         <span className="text-sm font-bold text-gray-700">Filter banned keywords</span>
       </label>
 
+      <div className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2.5">
+        <div>
+          <p className="text-sm font-bold text-red-700">Maintenance mode</p>
+          <p className="text-xs text-red-600/80">Locks every user out of the app until turned off</p>
+        </div>
+        <ToggleSwitch
+          checked={draft.maintenanceModeEnabled}
+          onChange={(v) => setDraft((d) => ({ ...d, maintenanceModeEnabled: v }))}
+          activeColor="#DC2626"
+        />
+      </div>
+
+      <BannedWordsSection />
+
       {error && <p className="mt-3 text-xs text-red-600">{error}</p>}
+      {justSaved && !dirty && <p className="mt-3 text-xs font-bold text-emerald-600">Saved.</p>}
 
       <div className="mt-auto flex justify-end gap-2 pt-5">
         <button
@@ -106,6 +142,104 @@ function ModerationCard({
         >
           {saving ? 'Saving…' : 'Save'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Each add/remove is its own immediate action against the banned_keywords table — unlike the
+// toggles above, there's no draft/Save step, since there's no ambiguity about "did I mean to
+// add this word" the way there can be for a toggle someone might flip back and forth.
+function BannedWordsSection() {
+  const { user: admin } = useAuth();
+  const [words, setWords] = useState<BannedWord[] | null>(null);
+  const [newWord, setNewWord] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function load() {
+    fetchBannedWords()
+      .then(setWords)
+      .catch(() => setWords(null));
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function handleAdd(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = newWord.trim().toLowerCase();
+    if (!trimmed) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await addBannedWord(trimmed, admin?.id ?? '', admin?.username ?? 'Admin');
+      setNewWord('');
+      load();
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  async function handleRemove(word: BannedWord) {
+    setRemovingId(word.id);
+    setError(null);
+    try {
+      await removeBannedWord(word.id, word.word, admin?.id ?? '', admin?.username ?? 'Admin');
+      setWords((prev) => prev && prev.filter((w) => w.id !== word.id));
+    } catch (err) {
+      setError(extractErrorMessage(err));
+    } finally {
+      setRemovingId(null);
+    }
+  }
+
+  return (
+    <div className="mt-4 border-t border-gray-100 pt-4">
+      <p className="mb-2 text-xs font-bold tracking-wide text-gray-500">BANNED WORDS</p>
+      <form onSubmit={handleAdd} className="flex gap-2">
+        <input
+          value={newWord}
+          onChange={(e) => setNewWord(e.target.value)}
+          placeholder="Add a word…"
+          className="flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm text-black outline-none focus:border-[#1B2B4B]"
+        />
+        <button
+          type="submit"
+          disabled={!newWord.trim() || adding}
+          className="rounded-lg bg-[#1B2B4B] px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+        >
+          {adding ? '…' : 'Add'}
+        </button>
+      </form>
+
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {words === null ? (
+          <p className="text-xs text-gray-400">Could not load the word list.</p>
+        ) : words.length === 0 ? (
+          <p className="text-xs text-gray-400">No words in the list.</p>
+        ) : (
+          words.map((w) => (
+            <span key={w.id} className="flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1 text-xs font-bold text-gray-700">
+              {w.word}
+              <button
+                type="button"
+                onClick={() => handleRemove(w)}
+                disabled={removingId === w.id}
+                aria-label={`Remove ${w.word}`}
+                className="text-gray-400 hover:text-red-600 disabled:opacity-50"
+              >
+                ×
+              </button>
+            </span>
+          ))
+        )}
       </div>
     </div>
   );
