@@ -549,24 +549,54 @@ function timeAgo(iso: string): string {
 }
 
 function ActivityLogCard({ entries }: { entries: ActivityLogEntry[] | null }) {
+  const [showAll, setShowAll] = useState(false);
+
+  const visibleEntries = showAll ? entries : entries?.slice(0, 5);
+
   return (
     <div className="rounded-2xl bg-white p-5 shadow-sm">
-      <p className="mb-4 text-xs font-bold tracking-wide text-gray-500">ACTIVITY LOG</p>
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-xs font-bold tracking-wide text-gray-500">
+          ACTIVITY LOG
+        </p>
+
+        {entries && entries.length > 5 && (
+          <button
+            type="button"
+            onClick={() => setShowAll((prev) => !prev)}
+            className="text-xs font-bold text-[#1B2B4B] hover:underline"
+          >
+            {showAll ? 'Show less' : 'See all →'}
+          </button>
+        )}
+      </div>
+
       {entries === null ? (
         <p className="text-xs text-gray-400">Could not load.</p>
       ) : entries.length === 0 ? (
         <p className="text-xs text-gray-400">No admin activity yet.</p>
       ) : (
         <div className="divide-y divide-gray-100">
-          {entries.map((entry) => (
-            <div key={entry.id} className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
+          {visibleEntries?.map((entry) => (
+            <div
+              key={entry.id}
+              className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0"
+            >
               <div>
                 <p className="text-sm text-[#0D1829]">
-                  <span className="font-bold">{entry.adminUsername}</span> {entry.action.toLowerCase()}
-                  {entry.details ? <span className="text-gray-500"> — {entry.details}</span> : null}
+                  <span className="font-bold">{entry.adminUsername}</span>{' '}
+                  {entry.action.toLowerCase()}
+                  {entry.details ? (
+                    <span className="text-gray-500">
+                      {' '}— {entry.details}
+                    </span>
+                  ) : null}
                 </p>
               </div>
-              <span className="shrink-0 text-xs text-gray-400">{timeAgo(entry.createdAt)}</span>
+
+              <span className="shrink-0 text-xs text-gray-400">
+                {timeAgo(entry.createdAt)}
+              </span>
             </div>
           ))}
         </div>
