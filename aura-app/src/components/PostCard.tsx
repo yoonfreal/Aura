@@ -9,6 +9,7 @@ import {
   type JoinState,
   type Comment,
 } from '@/lib/posts';
+import { ActivityTypeIcon } from '@/components/ActivityTypeIcon';
 
 function formatPartnerDate(iso: string): string {
   const d = new Date(iso);
@@ -21,6 +22,7 @@ type PostCardProps = {
   post: FeedPost;
   avatarColor: string;
   currentUserId: string | undefined;
+  onEdit: () => void;
   onDelete: () => void;
   onOpenLinkedChallenge: () => void;
 
@@ -30,6 +32,7 @@ type PostCardProps = {
   join: JoinState;
   onToggleJoin: () => void;
   onOpenChallenge: () => void;
+  onViewJoiners: () => void;
 
   commentCount: number;
   commentsExpanded: boolean;
@@ -49,6 +52,7 @@ export function PostCard({
   post,
   avatarColor,
   currentUserId,
+  onEdit,
   onDelete,
   onOpenLinkedChallenge,
   reaction,
@@ -56,6 +60,7 @@ export function PostCard({
   join,
   onToggleJoin,
   onOpenChallenge,
+  onViewJoiners,
   commentCount,
   commentsExpanded,
   onToggleComments,
@@ -81,9 +86,14 @@ export function PostCard({
           <Text style={styles.feedTime}>{timeAgo(post.createdAt)}</Text>
         </View>
         {isSelf && (
-          <TouchableOpacity onPress={onDelete} hitSlop={8}>
-            <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
-          </TouchableOpacity>
+          <View style={styles.ownPostActions}>
+            <TouchableOpacity onPress={onEdit} hitSlop={8}>
+              <Ionicons name="create-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={onDelete} hitSlop={8}>
+              <Ionicons name="trash-outline" size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 
@@ -100,7 +110,17 @@ export function PostCard({
       {post.type === 'partner' && (
         <View style={styles.partnerCard}>
           <View style={styles.partnerRow}>
-            <Text style={styles.partnerIcon}>{ACTIVITY_TYPES.find((a) => a.value === post.activityType)?.icon ?? '⚡'}</Text>
+            <ActivityTypeIcon
+              activityType={
+                ACTIVITY_TYPES.find((a) => a.value === post.activityType) ?? {
+                  value: post.activityType ?? 'other',
+                  label: post.activityType ?? 'Other',
+                  icon: 'ellipsis-horizontal-outline',
+                }
+              }
+              size={14}
+              color="#374151"
+            />
             <Text style={styles.partnerText}>
               {ACTIVITY_TYPES.find((a) => a.value === post.activityType)?.label ?? post.activityType}
             </Text>
@@ -117,14 +137,26 @@ export function PostCard({
               <Text style={styles.partnerText}>{post.location}</Text>
             </View>
           )}
-          <View style={styles.partnerRow}>
-            <Ionicons name="people-outline" size={14} color="#6B7280" />
-            <Text style={styles.partnerText}>
-              {post.peopleNeeded != null
-                ? `${join.count}/${post.peopleNeeded} joined${isFull ? ' · Full' : ''}`
-                : `${join.count} joined · Open to anyone`}
-            </Text>
-          </View>
+          {isSelf && join.count > 0 ? (
+            <TouchableOpacity style={styles.partnerRow} activeOpacity={0.6} onPress={onViewJoiners}>
+              <Ionicons name="people-outline" size={14} color="#6B7280" />
+              <Text style={[styles.partnerText, styles.partnerTextLink]}>
+                {post.peopleNeeded != null
+                  ? `${join.count}/${post.peopleNeeded} joined${isFull ? ' · Full' : ''}`
+                  : `${join.count} joined · Open to anyone`}
+              </Text>
+              <Ionicons name="chevron-forward" size={13} color="#1B2B4B" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.partnerRow}>
+              <Ionicons name="people-outline" size={14} color="#6B7280" />
+              <Text style={styles.partnerText}>
+                {post.peopleNeeded != null
+                  ? `${join.count}/${post.peopleNeeded} joined${isFull ? ' · Full' : ''}`
+                  : `${join.count} joined · Open to anyone`}
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -236,6 +268,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   feedTopRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  ownPostActions: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   feedName: { fontSize: 14, fontWeight: '800', color: '#0D1829' },
@@ -265,8 +298,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   partnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  partnerIcon: { fontSize: 14 },
   partnerText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  partnerTextLink: { color: '#1B2B4B', flex: 1 },
 
   linkedChallengePill: {
     flexDirection: 'row',

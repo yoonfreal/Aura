@@ -106,6 +106,7 @@ export default function EditProfileScreen() {
       return;
     }
 
+
     // Check age
     if (age.trim()) {
       const ageNumber = Number(age.trim());
@@ -289,6 +290,7 @@ export default function EditProfileScreen() {
             autoCapitalize="none"
             style={styles.input}
           />
+
 
           {/* AGE */}
 

@@ -31,10 +31,21 @@ export function HeadToHeadCard({
   const participation = challenge.participation;
   const opponent = challenge.opponent;
   const mine = participation?.currentValue ?? 0;
-  const total = mine + (opponent?.currentValue ?? 0);
-  const myPct = total > 0 ? (mine / total) * 100 : 50;
+  const opponentValue = opponent?.currentValue ?? 0;
+  // Each racer's own bar fills toward the goal independently — not one bar split by
+  // share of the combined total, which made a lead look identical whether both racers
+  // were crawling along or both already near the finish.
+  const myGoalPct = Math.min(100, (mine / challenge.goalValue) * 100);
+  const opponentGoalPct = Math.min(100, (opponentValue / challenge.goalValue) * 100);
 
-  if (!participation) {
+  // A 1v1 participation row always has an opponent_id from the moment it's created — the
+  // only way to end up with participation but no resolvable opponent is a declined pairing
+  // whose other side got deleted out from under it (declining can only ever delete the
+  // decliner's own row — RLS only lets a row's own user touch it, not the row across the
+  // pairing). Rather than falling through to the active-race UI with a "?" for opponent,
+  // this is treated exactly like never having engaged with the challenge at all — the same
+  // "Invite an Opponent" card either way.
+  if (!participation || !opponent) {
     return (
       <View style={styles.card}>
         <View style={styles.oneVOneBadge}>
@@ -114,14 +125,6 @@ export function HeadToHeadCard({
     );
   }
 
-  if (participation.status === 'declined') {
-    return (
-      <View style={styles.card}>
-        <Text style={styles.subtitle}>You declined this 1v1 invite.</Text>
-      </View>
-    );
-  }
-
   if (opponent?.status === 'pending') {
     return (
       <View style={styles.card}>
@@ -150,18 +153,6 @@ export function HeadToHeadCard({
         <TouchableOpacity style={styles.cancelBtn} onPress={onCancel}>
           <Ionicons name="close-circle-outline" size={14} color="#DC2626" />
           <Text style={styles.cancelBtnText}>Cancel Invite</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
-  if (opponent?.status === 'declined') {
-    return (
-      <View style={styles.card}>
-        <Text style={styles.subtitle}>{opponent.name} declined your 1v1 invite.</Text>
-        <TouchableOpacity style={styles.joinBtn} onPress={onCancel}>
-          <Ionicons name="person-add" size={16} color="#fff" />
-          <Text style={styles.joinBtnText}>Invite Someone Else</Text>
         </TouchableOpacity>
       </View>
     );
@@ -282,18 +273,27 @@ export function HeadToHeadCard({
 
       <Text style={styles.subtitle}>{challenge.description ?? challenge.title}</Text>
 
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${myPct}%` }]} />
+      <View style={styles.racerProgress}>
+        <View style={styles.racerProgressHeader}>
+          <Text style={styles.racerProgressName}>You</Text>
+          <Text style={styles.racerProgressValue}>
+            {mine.toLocaleString()} / {challenge.goalValue.toLocaleString()}
+          </Text>
+        </View>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${myGoalPct}%`, backgroundColor: '#065F46' }]} />
+        </View>
       </View>
 
-      <View style={styles.scoreRow}>
-        <View>
-          <Text style={styles.scoreLabel}>You</Text>
-          <Text style={styles.scoreValue}>{mine.toLocaleString()}</Text>
+      <View style={styles.racerProgress}>
+        <View style={styles.racerProgressHeader}>
+          <Text style={styles.racerProgressName}>{opponent ? opponent.name : 'Waiting…'}</Text>
+          <Text style={styles.racerProgressValue}>
+            {opponentValue.toLocaleString()} / {challenge.goalValue.toLocaleString()}
+          </Text>
         </View>
-        <View style={styles.scoreRight}>
-          <Text style={styles.scoreLabel}>{opponent ? opponent.name : 'Waiting…'}</Text>
-          <Text style={styles.scoreValue}>{(opponent?.currentValue ?? 0).toLocaleString()}</Text>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${opponentGoalPct}%`, backgroundColor: '#1E4D8C' }]} />
         </View>
       </View>
 
@@ -416,10 +416,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   progressFill: { height: '100%', backgroundColor: '#DC2626', borderRadius: 4 },
-  scoreRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  scoreRight: { alignItems: 'flex-end' },
-  scoreLabel: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
-  scoreValue: { fontSize: 15, color: '#0D1829', fontWeight: '800', marginTop: 2 },
+  racerProgress: { marginTop: 10 },
+  racerProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  racerProgressName: { fontSize: 12, color: '#374151', fontWeight: '700' },
+  racerProgressValue: { fontSize: 12, color: '#9CA3AF', fontWeight: '600' },
   footerText: {
     textAlign: 'center',
     fontSize: 11,

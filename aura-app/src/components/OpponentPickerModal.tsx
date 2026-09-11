@@ -1,12 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Modal, View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { searchUsers, type UserSearchResult } from '@/lib/challenges';
+import { fetchAcceptedFriends } from '@/lib/friends';
 
 type OpponentPickerModalProps = {
   visible: boolean;
   currentUserId: string;
   title?: string;
+  // When true, this picks from the user's accepted friends only (e.g. inviting to a
+  // team) instead of searching every AU user by username (the 1v1 opponent picker).
+  friendsOnly?: boolean;
   onClose: () => void;
   onInvite: (opponentId: string) => void;
 };
@@ -15,15 +19,33 @@ export function OpponentPickerModal({
   visible,
   currentUserId,
   title = 'Invite an Opponent',
+  friendsOnly = false,
   onClose,
   onInvite,
 }: OpponentPickerModalProps) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserSearchResult[]>([]);
+  const [friends, setFriends] = useState<UserSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (!visible || !friendsOnly) return;
+    setSearching(true);
+    fetchAcceptedFriends(currentUserId)
+      .then((found) => {
+        setFriends(found);
+        setResults(found);
+      })
+      .finally(() => setSearching(false));
+  }, [visible, friendsOnly, currentUserId]);
 
   async function handleSearch(text: string) {
     setQuery(text);
+    if (friendsOnly) {
+      const trimmed = text.trim().toLowerCase();
+      setResults(trimmed ? friends.filter((f) => f.name.toLowerCase().includes(trimmed)) : friends);
+      return;
+    }
     if (!text.trim()) {
       setResults([]);
       return;
@@ -53,7 +75,7 @@ export function OpponentPickerModal({
 
           <TextInput
             style={styles.input}
-            placeholder="Search by username"
+            placeholder={friendsOnly ? 'Search your friends' : 'Search by username'}
             autoCapitalize="none"
             value={query}
             onChangeText={handleSearch}
@@ -65,7 +87,15 @@ export function OpponentPickerModal({
             style={styles.list}
             ListEmptyComponent={
               <Text style={styles.emptyText}>
-                {searching ? 'Searching…' : query ? 'No users found' : 'Type a username to search'}
+                {searching
+                  ? 'Searching…'
+                  : friendsOnly
+                    ? query
+                      ? 'No friends found'
+                      : 'Add friends from the Social tab to invite them'
+                    : query
+                      ? 'No users found'
+                      : 'Type a username to search'}
               </Text>
             }
             renderItem={({ item }) => (

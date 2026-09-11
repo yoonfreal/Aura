@@ -107,7 +107,10 @@ export interface LeaderboardEntry {
 
 export interface WeeklyBarDay {
   day: string;
+  date: string;
   xp: number;
+  steps: number;
+  calories: number;
 }
 
 export interface WeeklyStats {

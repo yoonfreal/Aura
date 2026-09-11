@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchChallengeById, updateChallenge, deleteChallenge } from '@/lib/challenges';
 import { Dropdown } from '@/components/Dropdown';
+import { addDaysToISO } from '@/lib/thailandTime';
 import type { Challenge, ChallengeType } from '@/types';
 
 const TYPE_OPTIONS: { value: ChallengeType; label: string }[] = [
@@ -34,12 +35,6 @@ const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'MINUTES', 'KM', 'REPS', 'CUSTOM
 // "No limit" still needs a real end date under the hood (the column isn't nullable), so
 // it just uses a date far enough out that it never realistically comes up.
 const NO_LIMIT_DAYS = 36500;
-
-function addDaysISO(base: string, days: number): string {
-  const d = new Date(`${base}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
-}
 
 export default function EditChallengeScreen() {
   const router = useRouter();
@@ -119,7 +114,7 @@ export default function EditChallengeScreen() {
         startDate: challenge.startDate,
         // Recomputed off the challenge's original start date, not today — editing an
         // existing challenge shouldn't shift when it began.
-        endDate: addDaysISO(challenge.startDate, durationDays === null ? NO_LIMIT_DAYS : durationDays - 1),
+        endDate: addDaysToISO(challenge.startDate, durationDays === null ? NO_LIMIT_DAYS : durationDays - 1),
         durationDays: type === 'team' ? durationDays : null,
         badgeName: badgeName.trim() || null,
         badgeIcon: badgeIcon.trim() || null,

@@ -5,14 +5,35 @@ import {
   StyleSheet,
   Switch,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { useUserStore } from '@/store/userStore';
+import {
+  fetchNotificationPreferences,
+  updateNotificationPreference,
+} from '@/lib/notificationPreferences';
+
+type PreferencePatch = Partial<{
+  push_enabled: boolean;
+  friend_requests: boolean;
+  reactions: boolean;
+  comments: boolean;
+  challenge_invites: boolean;
+  challenge_accepted: boolean;
+  challenge_ending_soon: boolean;
+  streak_reminder: boolean;
+}>;
+
 export default function NotificationsScreen() {
   const router = useRouter();
+  const userId = useUserStore((state) => state.user?.id);
+
+  const [loading, setLoading] = useState(true);
 
   // Main notification switch
   const [pushNotifications, setPushNotifications] =
@@ -28,9 +49,6 @@ export default function NotificationsScreen() {
   const [comments, setComments] =
     useState(true);
 
-  const [activityJoined, setActivityJoined] =
-    useState(true);
-
   // Challenges
   const [challengeInvites, setChallengeInvites] =
     useState(true);
@@ -42,14 +60,38 @@ export default function NotificationsScreen() {
     useState(true);
 
   // Achievements
-  const [badgeUnlocked, setBadgeUnlocked] =
-    useState(true);
-
-  const [levelUp, setLevelUp] =
-    useState(true);
-
   const [streakReminder, setStreakReminder] =
     useState(true);
+
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    fetchNotificationPreferences(userId)
+      .then((prefs) => {
+        setPushNotifications(prefs.pushEnabled);
+        setFriendRequests(prefs.friendRequests);
+        setReactions(prefs.reactions);
+        setComments(prefs.comments);
+        setChallengeInvites(prefs.challengeInvites);
+        setChallengeAccepted(prefs.challengeAccepted);
+        setChallengeEnding(prefs.challengeEndingSoon);
+        setStreakReminder(prefs.streakReminder);
+      })
+      .catch((error) =>
+        console.error('Failed to load notification preferences', error)
+      )
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  function save(patch: PreferencePatch) {
+    if (!userId) return;
+    updateNotificationPreference(userId, patch).catch((error) =>
+      console.error('Failed to save notification preference', error)
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -75,6 +117,15 @@ export default function NotificationsScreen() {
         <View style={{ width: 40 }} />
 
       </View>
+
+      {loading ? (
+
+        <ActivityIndicator
+          color="#1B2B4B"
+          style={{ marginTop: 40 }}
+        />
+
+      ) : (
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -106,10 +157,12 @@ export default function NotificationsScreen() {
           </View>
 
           <Switch
+            style={styles.switchSmall}
             value={pushNotifications}
-            onValueChange={
-              setPushNotifications
-            }
+            onValueChange={(value) => {
+              setPushNotifications(value);
+              save({ push_enabled: value });
+            }}
           />
 
         </View>
@@ -142,10 +195,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={friendRequests}
-              onValueChange={
-                setFriendRequests
-              }
+              onValueChange={(value) => {
+                setFriendRequests(value);
+                save({ friend_requests: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -168,10 +223,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={reactions}
-              onValueChange={
-                setReactions
-              }
+              onValueChange={(value) => {
+                setReactions(value);
+                save({ reactions: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -179,7 +236,12 @@ export default function NotificationsScreen() {
 
           {/* Comments */}
 
-          <View style={styles.innerRow}>
+          <View
+            style={[
+              styles.innerRow,
+              styles.lastRow,
+            ]}
+          >
 
             <View style={styles.textContainer}>
 
@@ -194,41 +256,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={comments}
-              onValueChange={
-                setComments
-              }
-              disabled={!pushNotifications}
-            />
-
-          </View>
-
-          {/* Activity Joined */}
-
-          <View
-            style={[
-              styles.innerRow,
-              styles.lastRow,
-            ]}
-          >
-
-            <View style={styles.textContainer}>
-
-              <Text style={styles.rowText}>
-                Activity Joined
-              </Text>
-
-              <Text style={styles.description}>
-                When someone joins your activity
-              </Text>
-
-            </View>
-
-            <Switch
-              value={activityJoined}
-              onValueChange={
-                setActivityJoined
-              }
+              onValueChange={(value) => {
+                setComments(value);
+                save({ comments: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -263,10 +296,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={challengeInvites}
-              onValueChange={
-                setChallengeInvites
-              }
+              onValueChange={(value) => {
+                setChallengeInvites(value);
+                save({ challenge_invites: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -289,10 +324,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={challengeAccepted}
-              onValueChange={
-                setChallengeAccepted
-              }
+              onValueChange={(value) => {
+                setChallengeAccepted(value);
+                save({ challenge_accepted: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -320,10 +357,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={challengeEnding}
-              onValueChange={
-                setChallengeEnding
-              }
+              onValueChange={(value) => {
+                setChallengeEnding(value);
+                save({ challenge_ending_soon: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -336,62 +375,10 @@ export default function NotificationsScreen() {
             ================================================= */}
 
         <Text style={styles.sectionTitle}>
-          ACHIEVEMENTS
+          STREAKS
         </Text>
 
         <View style={styles.card}>
-
-          {/* Badge */}
-
-          <View style={styles.innerRow}>
-
-            <View style={styles.textContainer}>
-
-              <Text style={styles.rowText}>
-                Badge Unlocked
-              </Text>
-
-              <Text style={styles.description}>
-                When you earn a new badge
-              </Text>
-
-            </View>
-
-            <Switch
-              value={badgeUnlocked}
-              onValueChange={
-                setBadgeUnlocked
-              }
-              disabled={!pushNotifications}
-            />
-
-          </View>
-
-          {/* Level Up */}
-
-          <View style={styles.innerRow}>
-
-            <View style={styles.textContainer}>
-
-              <Text style={styles.rowText}>
-                Level Up
-              </Text>
-
-              <Text style={styles.description}>
-                When you reach a new level
-              </Text>
-
-            </View>
-
-            <Switch
-              value={levelUp}
-              onValueChange={
-                setLevelUp
-              }
-              disabled={!pushNotifications}
-            />
-
-          </View>
 
           {/* Streak */}
 
@@ -415,10 +402,12 @@ export default function NotificationsScreen() {
             </View>
 
             <Switch
+              style={styles.switchSmall}
               value={streakReminder}
-              onValueChange={
-                setStreakReminder
-              }
+              onValueChange={(value) => {
+                setStreakReminder(value);
+                save({ streak_reminder: value });
+              }}
               disabled={!pushNotifications}
             />
 
@@ -427,6 +416,8 @@ export default function NotificationsScreen() {
         </View>
 
       </ScrollView>
+
+      )}
 
     </SafeAreaView>
   );
@@ -542,6 +533,12 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     color: '#8A93A6',
     marginTop: 4,
+  },
+
+  // SWITCH
+
+  switchSmall: {
+    transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }],
   },
 
 });

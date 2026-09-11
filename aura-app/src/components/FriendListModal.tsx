@@ -11,6 +11,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search, ArrowLeft, User } from 'lucide-react-native';
 import { useState } from 'react';
+import { thailandDateISO } from '@/lib/thailandTime';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -144,10 +145,7 @@ export function FriendListModal({
               styles.activeDot,
               {
                 backgroundColor:
-                  item.last_active_date ===
-                  new Date()
-                    .toISOString()
-                    .split('T')[0]
+                  item.last_active_date === thailandDateISO()
                     ? '#45A36B'
                     : '#C8CED9',
               },

@@ -1,11 +1,23 @@
+import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { StatCard } from '@/components/StatCard';
-import type { WeeklyStats } from '@/types';
+import type { WeeklyBarDay, WeeklyStats } from '@/types';
 
 const BAR_MAX_HEIGHT = 100;
-const EMPTY_BARS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => ({ day, xp: 0 }));
+const EMPTY_BARS: WeeklyBarDay[] = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => ({
+  day,
+  date: '',
+  xp: 0,
+  steps: 0,
+  calories: 0,
+}));
+
+function formatBarDate(date: string): string | null {
+  if (!date) return null;
+  return new Date(`${date}T00:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
 
 function fmtChange(value: number | null, unit: 'percent' | 'absolute'): string | undefined {
   if (value === null) return undefined;
@@ -19,7 +31,8 @@ interface Props {
 
 export function WeeklyView({ stats }: Props) {
   const barData = stats?.barData ?? EMPTY_BARS;
-  const maxXp = Math.max(...barData.map((b) => b.xp), 1);
+  const maxSteps = Math.max(...barData.map((b) => b.steps), 1);
+  const [selectedDay, setSelectedDay] = useState<WeeklyBarDay | null>(null);
 
   if (!stats) {
     return (
@@ -74,23 +87,54 @@ export function WeeklyView({ stats }: Props) {
       <Text style={styles.sectionTitle}>WEEKLY PROGRESS</Text>
       <View style={styles.chartCard}>
         <View style={styles.barsContainer}>
-          {barData.map((bar) => (
-            <View key={bar.day} style={styles.barColumn}>
-              <View style={styles.barTrack}>
-                <View
-                  style={[
-                    styles.bar,
-                    {
-                      height: BAR_MAX_HEIGHT * (bar.xp / maxXp),
-                      backgroundColor: bar.xp === maxXp && bar.xp > 0 ? '#1B2B4B' : '#B8CCE4',
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.barDay}>{bar.day}</Text>
-            </View>
-          ))}
+          {barData.map((bar) => {
+            const isSelected = selectedDay?.day === bar.day;
+            return (
+              <TouchableOpacity
+                key={bar.day}
+                style={styles.barColumn}
+                activeOpacity={0.7}
+                onPress={() => setSelectedDay((prev) => (prev?.day === bar.day ? null : bar))}
+              >
+                <View style={styles.barTrack}>
+                  <View
+                    style={[
+                      styles.bar,
+                      {
+                        // Square-root scale, not linear — a single big day (e.g. a long hike)
+                        // would otherwise flatten every other day's bar to nearly nothing.
+                        height: BAR_MAX_HEIGHT * (Math.sqrt(bar.steps) / Math.sqrt(maxSteps)),
+                        backgroundColor: isSelected ? '#F5B800' : bar.steps === maxSteps && bar.steps > 0 ? '#1B2B4B' : '#B8CCE4',
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.barDay, isSelected && styles.barDaySelected]}>{bar.day}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
+
+        {selectedDay && (
+          <View style={styles.selectedDayCard}>
+            <Text style={styles.selectedDayTitle}>
+              {selectedDay.day}
+              {formatBarDate(selectedDay.date) ? ` · ${formatBarDate(selectedDay.date)}` : ''}
+            </Text>
+            <View style={styles.selectedDayRow}>
+              <Text style={styles.selectedDayLabel}>Steps</Text>
+              <Text style={styles.selectedDayValue}>{selectedDay.steps.toLocaleString()}</Text>
+            </View>
+            <View style={styles.selectedDayRow}>
+              <Text style={styles.selectedDayLabel}>Calories burned</Text>
+              <Text style={styles.selectedDayValue}>{selectedDay.calories.toLocaleString()} cal</Text>
+            </View>
+            <View style={styles.selectedDayRow}>
+              <Text style={styles.selectedDayLabel}>XP earned</Text>
+              <Text style={styles.selectedDayValue}>{selectedDay.xp} XP</Text>
+            </View>
+          </View>
+        )}
 
         {/* Fitness Breakdown */}
         <View style={styles.breakdown}>
@@ -188,6 +232,39 @@ const styles = StyleSheet.create({
     color: '#8A9BB0',
     fontWeight: '500',
     marginTop: 6,
+  },
+  barDaySelected: {
+    color: '#1B2B4B',
+    fontWeight: '800',
+  },
+
+  selectedDayCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    gap: 6,
+  },
+  selectedDayTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#1B2B4B',
+    marginBottom: 2,
+  },
+  selectedDayRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  selectedDayLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  selectedDayValue: {
+    fontSize: 12,
+    color: '#1B2B4B',
+    fontWeight: '700',
   },
 
   breakdown: {

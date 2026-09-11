@@ -1,9 +1,11 @@
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
-import type { Mission, DailyStats, WeeklyStats } from '@/types';
+import { notifyStreakReminder } from '@/lib/notifications';
+import { addDaysToISO, thailandDateISO, thailandHour, thailandWeekRange } from '@/lib/thailandTime';
+import type { Mission, DailyStats, WeeklyStats, WeeklyBarDay } from '@/types';
 
 function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
+  return thailandDateISO();
 }
 
 type UserMissionRow = {
@@ -114,6 +116,30 @@ export async function updateLastSeen(userId: string): Promise<void> {
   }
 }
 
+// Nudges the user once per Thailand-calendar day, after 6 PM Thailand time, if they
+// haven't logged any activity yet today — "today" here matches the same Thailand-day
+// definition updateStreak uses for last_active_date, so this only fires once the day
+// updateStreak itself would consider still open. Best-effort, silently no-ops on failure
+// since this is a nice-to-have, never something to block app startup on.
+export async function checkStreakReminder(userId: string): Promise<void> {
+  try {
+    if (thailandHour() < 18) return;
+
+    const { data } = await supabase
+      .from('profiles')
+      .select('last_active_date')
+      .eq('id', userId)
+      .single();
+
+    const lastActiveDate = (data as { last_active_date: string | null } | null)?.last_active_date;
+    if (lastActiveDate === todayISO()) return;
+
+    await notifyStreakReminder(userId);
+  } catch {
+    // Best-effort nudge.
+  }
+}
+
 export async function fetchDailyStats(
   userId: string,
 ): Promise<Pick<DailyStats, 'steps' | 'calories' | 'xpEarned'>> {
@@ -141,6 +167,9 @@ type DailyStatFields = { steps: number; calories: number; xp_earned: number };
 // Bumps today's daily_stats row so Daily/Weekly stats reflect XP/steps/calories right now —
 // missions call this for xp_earned (and steps/calories), challenge claims call it for
 // xp_earned too, since HealthKit isn't wired up yet to sync any of this automatically.
+// Unusual-activity flagging (steps/calories/XP thresholds) lives in a Postgres trigger on
+// daily_stats, not here — that way it fires no matter what writes the row (this function,
+// a future HealthKit sync, or a direct edit), not just this one call site.
 export async function incrementDailyStat(
   userId: string,
   field: 'steps' | 'calories' | 'xp_earned',
@@ -172,20 +201,9 @@ export async function incrementDailyStat(
 type StatRow = { date: string; steps: number; calories: number; xp_earned: number };
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-function getWeekRange(offsetWeeks = 0): { start: string; end: string } {
-  const now = new Date();
-  const dayOfWeek = now.getUTCDay();
-  const monday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  monday.setUTCDate(monday.getUTCDate() - ((dayOfWeek + 6) % 7) + offsetWeeks * 7);
-  const sunday = new Date(monday);
-  sunday.setUTCDate(monday.getUTCDate() + 6);
-  const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return { start: fmt(monday), end: fmt(sunday) };
-}
-
 export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
-  const thisWeek = getWeekRange(0);
-  const lastWeek = getWeekRange(-1);
+  const thisWeek = thailandWeekRange(0);
+  const lastWeek = thailandWeekRange(-1);
 
   const [{ data: thisStatsRaw, error: thisError }, { data: lastStatsRaw, error: lastError }] = await Promise.all([
     supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', thisWeek.start).lte('date', thisWeek.end),
@@ -197,16 +215,13 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const thisRows = (thisStatsRaw ?? []) as StatRow[];
   const lastRows = (lastStatsRaw ?? []) as StatRow[];
 
-  // Build bar data: Mon–Sun mapped to XP earned each day (missions + claimed challenges)
-  const xpByDate: Record<string, number> = {};
-  for (const r of thisRows) {
-    xpByDate[r.date] = r.xp_earned;
-  }
-  const mondayUTC = new Date(thisWeek.start + 'T00:00:00Z');
-  const barData = WEEK_DAYS.map((day, i) => {
-    const d = new Date(mondayUTC);
-    d.setUTCDate(mondayUTC.getUTCDate() + i);
-    return { day, xp: xpByDate[d.toISOString().split('T')[0]] ?? 0 };
+  // Build bar data: Mon–Sun mapped to each day's totals — carries steps/calories alongside
+  // xp (not just xp) so tapping a bar in the UI can show that day's full breakdown.
+  const statsByDate = new Map(thisRows.map((r) => [r.date, r]));
+  const barData: WeeklyBarDay[] = WEEK_DAYS.map((day, i) => {
+    const date = addDaysToISO(thisWeek.start, i);
+    const stat = statsByDate.get(date);
+    return { day, date, xp: stat?.xp_earned ?? 0, steps: stat?.steps ?? 0, calories: stat?.calories ?? 0 };
   });
 
   // This week aggregates
@@ -255,7 +270,7 @@ async function updateStreak(userId: string): Promise<number> {
     return row.streak_days ?? 0;
   }
 
-  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const yesterday = addDaysToISO(today, -1);
   const newStreak = row.last_active_date === yesterday ? (row.streak_days ?? 0) + 1 : 1;
 
   const { error: updateError } = await supabase

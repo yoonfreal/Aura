@@ -4,6 +4,12 @@ import {
   notifyFriendsOfPost,
   notifyReaction,
 } from '@/lib/notifications';
+import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
+import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
+import { fetchAppSettings } from '@/lib/appSettings';
+import { fetchBannedKeywords, containsBannedKeyword } from '@/lib/bannedWords';
+import type { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import type { MissionType } from '@/types';
 
 type ProfileNameRow = {
   id: string;
@@ -35,6 +41,11 @@ export type AchievementCandidate = {
   kind: AchievementKind;
   title: string;
   icon: string;
+  // Set only for the fixed stat candidates below (icon is then an Ionicons name, not an
+  // emoji) — mission/badge/challenge icons stay plain emoji since those come from the DB
+  // (admin-chosen) and can't be mapped to a fixed icon set.
+  iconKind?: 'ionicon';
+  iconColor?: string;
   // null for stat candidates — sharing "today's steps" or "current streak" isn't itself an
   // XP-earning event, unlike a mission/badge/challenge win.
   xp: number | null;
@@ -51,7 +62,7 @@ type ProfileStatRow = { streak_days: number | null; level: number | null };
 // mission/challenge event, so someone can share "how they're doing" even with nothing
 // freshly completed.
 async function fetchStatCandidates(userId: string): Promise<AchievementCandidate[]> {
-  const today = new Date().toISOString().split('T')[0];
+  const today = thailandDateISO();
   // Anchored to the start of today, not the exact current instant — using "now" would always
   // outrank a mission or challenge win from earlier today (those anchor at noon / their real
   // completion time), which broke "most recent first" ordering. This still ranks below any
@@ -71,7 +82,9 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
     candidates.push({
       kind: 'stat',
       title: `Walked ${stats.steps.toLocaleString()} steps today`,
-      icon: '🦶',
+      icon: 'footsteps-outline',
+      iconKind: 'ionicon',
+      iconColor: '#1B2B4B',
       xp: null,
       sortKey: todayStart,
     });
@@ -80,7 +93,9 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
     candidates.push({
       kind: 'stat',
       title: `Burned ${stats.calories.toLocaleString()} calories today`,
-      icon: '🏋️',
+      icon: 'flame-outline',
+      iconKind: 'ionicon',
+      iconColor: '#F59E0B',
       xp: null,
       sortKey: todayStart,
     });
@@ -89,13 +104,23 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
     candidates.push({
       kind: 'stat',
       title: `On a ${profile.streak_days}-day streak`,
-      icon: '🔥',
+      icon: 'flame',
+      iconKind: 'ionicon',
+      iconColor: '#EF4444',
       xp: null,
       sortKey: todayStart,
     });
   }
   if (profile?.level && profile.level > 1) {
-    candidates.push({ kind: 'stat', title: `Reached Level ${profile.level}`, icon: '⭐', xp: null, sortKey: todayStart });
+    candidates.push({
+      kind: 'stat',
+      title: `Reached Level ${profile.level}`,
+      icon: 'star',
+      iconKind: 'ionicon',
+      iconColor: '#F5B800',
+      xp: null,
+      sortKey: todayStart,
+    });
   }
 
   return candidates;
@@ -103,7 +128,10 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
 
 type RecentMissionRow = {
   date: string;
-  missions: { title: string; xp_reward: number; icon: string } | { title: string; xp_reward: number; icon: string }[] | null;
+  missions:
+    | { title: string; xp_reward: number; goal_unit: MissionType }
+    | { title: string; xp_reward: number; goal_unit: MissionType }[]
+    | null;
 };
 
 type RecentHistoryRow = {
@@ -119,12 +147,12 @@ type RecentHistoryRow = {
 // from the last `days` days, plus the user's own current stats (steps/calories/streak/level)
 // so there's always something to share even with nothing freshly completed. Newest first.
 export async function fetchRecentAchievements(userId: string, days = 3): Promise<AchievementCandidate[]> {
-  const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
+  const since = addDaysToISO(thailandDateISO(), -days);
 
   const [missionsRes, historyRes, statCandidates] = await Promise.all([
     supabase
       .from('user_missions')
-      .select('date, missions(title, xp_reward, icon)')
+      .select('date, missions(title, xp_reward, goal_unit)')
       .eq('user_id', userId)
       .eq('completed', true)
       .gte('date', since)
@@ -141,11 +169,16 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
 
   const missionItems: AchievementCandidate[] = ((missionsRes.data ?? []) as RecentMissionRow[])
     .map((r) => ({ ...r, missions: Array.isArray(r.missions) ? r.missions[0] : r.missions }))
-    .filter((r): r is RecentMissionRow & { missions: { title: string; xp_reward: number; icon: string } } => !!r.missions)
+    .filter(
+      (r): r is RecentMissionRow & { missions: { title: string; xp_reward: number; goal_unit: MissionType } } =>
+        !!r.missions
+    )
     .map((r) => ({
       kind: 'mission' as const,
       title: `Completed ${r.missions.title}`,
-      icon: r.missions.icon || '🏅',
+      icon: MISSION_TYPE_ICON[r.missions.goal_unit].icon,
+      iconKind: 'ionicon' as const,
+      iconColor: MISSION_TYPE_ICON[r.missions.goal_unit].color,
       xp: r.missions.xp_reward,
       sortKey: `${r.date}T12:00:00.000Z`,
     }));
@@ -167,15 +200,22 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
 
 export type PostType = 'achievement' | 'thoughts' | 'partner';
 
-export const ACTIVITY_TYPES: { value: string; label: string; icon: string }[] = [
-  { value: 'badminton', label: 'Badminton', icon: '🏸' },
-  { value: 'basketball', label: 'Basketball', icon: '🏀' },
-  { value: 'cycling', label: 'Cycling', icon: '🚴' },
-  { value: 'gym', label: 'Gym', icon: '🏋️' },
-  { value: 'running', label: 'Running', icon: '🏃' },
-  { value: 'swimming', label: 'Swimming', icon: '🏊' },
-  { value: 'yoga', label: 'Yoga', icon: '🧘' },
-  { value: 'other', label: 'Other', icon: '⚡' },
+export type ActivityTypeOption =
+  | { value: string; label: string; iconSet: 'material'; icon: keyof typeof MaterialCommunityIcons.glyphMap }
+  | { value: string; label: string; iconSet?: undefined; icon: keyof typeof Ionicons.glyphMap };
+
+export const ACTIVITY_TYPES: ActivityTypeOption[] = [
+  { value: 'badminton', label: 'Badminton', iconSet: 'material', icon: 'badminton' },
+  { value: 'basketball', label: 'Basketball', icon: 'basketball-outline' },
+  { value: 'cycling', label: 'Cycling', icon: 'bicycle-outline' },
+  { value: 'football', label: 'Football', icon: 'football-outline' },
+  { value: 'gym', label: 'Gym', icon: 'barbell-outline' },
+  { value: 'running', label: 'Running', icon: 'walk-outline' },
+  { value: 'snooker', label: 'Snooker', icon: 'bowling-ball-outline' },
+  { value: 'swimming', label: 'Swimming', icon: 'water-outline' },
+  { value: 'tennis', label: 'Tennis', icon: 'tennisball-outline' },
+  { value: 'yoga', label: 'Yoga', icon: 'body-outline' },
+  { value: 'other', label: 'Other', icon: 'ellipsis-horizontal-outline' },
 ];
 
 export const CAMPUS_LOCATIONS: string[] = [
@@ -187,6 +227,7 @@ export const CAMPUS_LOCATIONS: string[] = [
   'Swimming Pool',
   'Tennis Court',
   'Track',
+  'Other',
 ];
 
 export type ExpiryOption = 'after_event' | '24h' | '48h' | '1w';
@@ -220,6 +261,21 @@ export type NewPost = {
 };
 
 export async function createPost(userId: string, input: NewPost): Promise<void> {
+  const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
+  // communityPostsEnabled is the master switch — it covers every post type, partner included.
+  // partnerFinderEnabled is a narrower, additional gate only checked once the master switch
+  // is already on, so turning off Community posts blocks partner posts too even if partner
+  // finder itself is still toggled on.
+  if (!settings.communityPostsEnabled) {
+    throw new Error('Posting is temporarily disabled by an admin.');
+  }
+  if (input.type === 'partner' && !settings.partnerFinderEnabled) {
+    throw new Error('Partner finder posts are temporarily disabled by an admin.');
+  }
+  if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption, bannedKeywords)) {
+    throw new Error('Your post contains language that isn’t allowed.');
+  }
+
   const { data, error } = await supabase
     .from('posts')
     .insert({
@@ -258,6 +314,51 @@ export async function deletePost(userId: string, postId: string): Promise<void> 
   if (error) throw error;
 }
 
+export type UpdatePostInput = {
+  caption: string;
+  partner?: {
+    activityType: string;
+    activityAt: string;
+    location: string;
+    peopleNeeded: number | null;
+  };
+  expiryOption?: ExpiryOption | null;
+  challengeId?: string | null;
+};
+
+// Deliberately leaves the post's type and achievement_* columns untouched — which
+// achievement was shared is tied to the moment it was posted and isn't re-pickable later,
+// unlike a partner post's activity/date/location/expiry, which are safe to change after
+// the fact.
+export async function updatePost(userId: string, postId: string, input: UpdatePostInput): Promise<void> {
+  const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
+  if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption, bannedKeywords)) {
+    throw new Error('Your post contains language that isn’t allowed.');
+  }
+
+  const { data, error } = await supabase
+    .from('posts')
+    .update({
+      caption: input.caption || null,
+      activity_type: input.partner?.activityType ?? null,
+      activity_at: input.partner?.activityAt ?? null,
+      location: input.partner?.location ?? null,
+      people_needed: input.partner?.peopleNeeded ?? null,
+      expires_at: computeExpiresAt(input.expiryOption, input.partner?.activityAt ?? null),
+      challenge_id: input.challengeId ?? null,
+    })
+    .eq('id', postId)
+    .eq('user_id', userId)
+    .select('id');
+  if (error) throw error;
+  // RLS can block the update while still reporting no error — Postgres just matches zero
+  // rows. Without this check, an update denied by a missing/misconfigured policy looks
+  // identical to a successful save.
+  if (!data || data.length === 0) {
+    throw new Error('Post could not be updated — it may no longer exist or you may not have permission to edit it.');
+  }
+}
+
 export type FeedPost = {
   id: string;
   userId: string;
@@ -271,6 +372,7 @@ export type FeedPost = {
   activityAt: string | null;
   location: string | null;
   peopleNeeded: number | null;
+  expiresAt: string | null;
   linkedChallengeId: string | null;
   linkedChallengeTitle: string | null;
   linkedChallengeIcon: string | null;
@@ -289,13 +391,14 @@ type PostRow = {
   activity_at: string | null;
   location: string | null;
   people_needed: number | null;
+  expires_at: string | null;
   challenge_id: string | null;
   challenges: { title: string; icon: string } | { title: string; icon: string }[] | null;
   created_at: string;
 };
 
 const POST_SELECT =
-  'id, user_id, type, caption, achievement_title, achievement_icon, achievement_xp, activity_type, activity_at, location, people_needed, challenge_id, challenges(title, icon), created_at';
+  'id, user_id, type, caption, achievement_title, achievement_icon, achievement_xp, activity_type, activity_at, location, people_needed, expires_at, challenge_id, challenges(title, icon), created_at';
 
 function mapPostRows(rows: PostRow[], profileById: Map<string, ProfileNameRow>): FeedPost[] {
   return rows.map((r) => {
@@ -313,6 +416,7 @@ function mapPostRows(rows: PostRow[], profileById: Map<string, ProfileNameRow>):
       activityAt: r.activity_at,
       location: r.location,
       peopleNeeded: r.people_needed,
+      expiresAt: r.expires_at,
       linkedChallengeId: r.challenge_id,
       linkedChallengeTitle: challenge?.title ?? null,
       linkedChallengeIcon: challenge?.icon ?? null,
@@ -409,6 +513,25 @@ export async function joinPost(userId: string, postId: string, peopleNeeded: num
 
   const { error } = await supabase.from('post_joins').insert({ post_id: postId, user_id: userId });
   if (error) throw error;
+}
+
+export type JoinedUser = { id: string; name: string };
+
+// Who joined a Partner post — shown only to the post's author, so they can reach out to
+// whoever signed up (e.g. to start a chat) instead of just seeing a bare count.
+export async function fetchJoinedUsers(postId: string): Promise<JoinedUser[]> {
+  const { data: joinRows, error } = await supabase
+    .from('post_joins')
+    .select('user_id, created_at')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const userIds = ((joinRows ?? []) as { user_id: string }[]).map((r) => r.user_id);
+  if (userIds.length === 0) return [];
+
+  const profileById = await fetchProfilesById(userIds);
+  return userIds.map((id) => ({ id, name: displayName(profileById.get(id)) }));
 }
 
 export async function leavePost(userId: string, postId: string): Promise<void> {
@@ -577,6 +700,14 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
 export async function addComment(userId: string, postId: string, postAuthorId: string, body: string): Promise<void> {
   const trimmed = body.trim();
   if (!trimmed) return;
+
+  const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
+  if (!settings.communityPostsEnabled) {
+    throw new Error('Replies are temporarily disabled by an admin.');
+  }
+  if (settings.filterBannedKeywords && containsBannedKeyword(trimmed, bannedKeywords)) {
+    throw new Error('Your reply contains language that isn’t allowed.');
+  }
 
   const { data, error } = await supabase
     .from('post_comments')

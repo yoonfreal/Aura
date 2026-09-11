@@ -31,9 +31,9 @@ export function NotificationsModal({
   onPressNotification,
 }: NotificationsModalProps) {
   function getIcon(
-    type: AppNotification['type']
+    notification: AppNotification
   ): keyof typeof Ionicons.glyphMap {
-    switch (type) {
+    switch (notification.type) {
       case 'reaction':
         return 'heart';
 
@@ -50,13 +50,27 @@ export function NotificationsModal({
         return 'trophy';
 
       case 'challenge_response':
+        if (notification.responseStatus === 'declined') return 'close-circle';
+        if (notification.responseStatus === 'joined') return 'people';
         return 'checkmark-circle';
 
       case 'challenge_complete':
         return 'ribbon';
 
+      case 'challenge_ending_soon':
+        return 'hourglass';
+
+      case 'streak_reminder':
+        return 'flame';
+
       case 'team_invite':
         return 'people';
+
+      case 'admin_warning':
+        return 'warning';
+
+      case 'announcement':
+        return 'megaphone';
 
       default:
         return 'notifications';
@@ -83,13 +97,28 @@ export function NotificationsModal({
         return 'invited you to a challenge';
 
       case 'challenge_response':
+        if (notification.responseStatus === 'declined') return 'declined your challenge invite';
+        if (notification.responseStatus === 'accepted') return 'accepted your challenge invite';
+        if (notification.responseStatus === 'joined') return 'joined your team';
         return 'responded to your challenge';
 
       case 'challenge_complete':
         return 'completed a challenge';
 
+      case 'challenge_ending_soon':
+        return 'have a challenge ending soon';
+
+      case 'streak_reminder':
+        return 'are about to lose your streak';
+
       case 'team_invite':
         return 'invited you to a team';
+
+      case 'admin_warning':
+        return 'sent you a warning';
+
+      case 'announcement':
+        return 'posted an announcement';
 
       default:
         return 'sent you a notification';
@@ -175,16 +204,17 @@ export function NotificationsModal({
 
                   {/* Icon */}
                   <View
-                    style={
-                      styles.dot
-                    }
+                    style={[
+                      styles.dot,
+                      item.type === 'admin_warning' && styles.warningDot,
+                    ]}
                   >
                     <Ionicons
                       name={getIcon(
-                        item.type
+                        item
                       )}
                       size={15}
-                      color="#1B2B4B"
+                      color={item.type === 'admin_warning' ? '#B45309' : '#1B2B4B'}
                     />
                   </View>
 
@@ -207,7 +237,9 @@ export function NotificationsModal({
                           styles.rowName
                         }
                       >
-                        {item.type === 'challenge_complete'
+                        {item.type === 'challenge_complete' ||
+                        item.type === 'challenge_ending_soon' ||
+                        item.type === 'streak_reminder'
                           ? 'You'
                           : item.actorName}
                       </Text>
@@ -383,6 +415,12 @@ const styles =
 
       justifyContent:
         'center',
+    },
+
+
+    warningDot: {
+      backgroundColor:
+        '#FEF3C7',
     },
 
 

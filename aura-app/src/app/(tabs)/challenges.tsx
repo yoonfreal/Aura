@@ -42,6 +42,8 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 
@@ -114,8 +116,20 @@ function matchesFilter(
   mainFilter: FilterPill,
   subFilter: FilterPill
 ): boolean {
+  // Pending covers both directions of "still waiting on a response": the invitee's own
+  // row sitting at 'pending' (them being the one who needs to act), and — for 1v1 only,
+  // via c.opponent — the inviter's side while their sent invite hasn't been answered yet
+  // (their own row is 'accepted' immediately on send, so it'd otherwise land in Ongoing
+  // even though there's no race happening yet).
   const isPendingInvite =
-    c.participation?.status === 'pending';
+    c.participation?.status === 'pending' ||
+    c.opponent?.status === 'pending';
+
+  // Declining an invite must not make the card vanish from wherever the user was just
+  // looking at it (the Pending tab, almost always) — it stays put there, now showing a
+  // "declined" state instead of the accept/decline banner, rather than disappearing.
+  const isDeclinedInvite =
+    c.participation?.status === 'declined';
 
   const isDone =
     !!c.participation?.claimed;
@@ -172,7 +186,7 @@ function matchesFilter(
   }
 
   if (subFilter === 'Pending') {
-    if (!isPendingInvite) {
+    if (!isPendingInvite && !isDeclinedInvite) {
       return false;
     }
   }
@@ -243,6 +257,11 @@ export default function ChallengesScreen() {
   const setNotificationCount =
     useUserStore(
       (state) => state.setNotificationCount
+    );
+
+  const setSocialNotificationCount =
+    useUserStore(
+      (state) => state.setSocialNotificationCount
     );
 
   const userId =
@@ -339,6 +358,13 @@ export default function ChallengesScreen() {
             )
               .then(setNotificationCount)
               .catch(() => {});
+
+            countUnreadNotifications(
+              userId,
+              SOCIAL_NOTIFICATION_TYPES
+            )
+              .then(setSocialNotificationCount)
+              .catch(() => {});
           }
         )
         .catch((err) => {
@@ -361,6 +387,7 @@ export default function ChallengesScreen() {
       setClaimableCount,
       setFriendRequestCount,
       setNotificationCount,
+      setSocialNotificationCount,
     ]);
 
 
@@ -808,6 +835,11 @@ function UserChallengesView({
       (s) => s.setNotificationCount
     );
 
+  const setSocialNotificationCount =
+    useUserStore(
+      (s) => s.setSocialNotificationCount
+    );
+
 
   const [
     showNotifications,
@@ -925,9 +957,14 @@ function UserChallengesView({
       countUnreadNotifications(userId)
         .then(setNotificationCount)
         .catch(() => {});
+
+      countUnreadNotifications(userId, SOCIAL_NOTIFICATION_TYPES)
+        .then(setSocialNotificationCount)
+        .catch(() => {});
     }, [
       userId,
       setNotificationCount,
+      setSocialNotificationCount,
     ])
   );
 
@@ -949,6 +986,7 @@ function UserChallengesView({
       );
 
       setNotificationCount(0);
+      setSocialNotificationCount(0);
 
     } catch (err) {
 
@@ -972,7 +1010,7 @@ function UserChallengesView({
 
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       // Already on this screen, so there's no route param to trigger the effect —
       // jump to the challenge directly instead of navigating.
       focusOnChallenge(notification.challengeId);
@@ -1461,6 +1499,7 @@ function UserChallengesView({
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.7}
+            onPress={() => router.push('/chat')}
           >
 
             <Ionicons
@@ -1891,6 +1930,16 @@ function UserChallengesView({
             ?.teams ?? []
         }
 
+        goalValue={
+          teamPickerChallenge
+            ?.goalValue ?? 0
+        }
+
+        goalUnit={
+          teamPickerChallenge
+            ?.goalUnit ?? ''
+        }
+
         onClose={() =>
           setTeamPickerChallenge(
             null
@@ -1967,6 +2016,10 @@ function UserChallengesView({
             userId
           }
 
+          title="Invite an Opponent"
+
+          friendsOnly
+
           onClose={() =>
             setOpponentPickerChallenge(
               null
@@ -1997,6 +2050,8 @@ function UserChallengesView({
           }
 
           title="Invite a Friend"
+
+          friendsOnly
 
           onClose={() =>
             setTeamInvitePickerChallenge(

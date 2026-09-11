@@ -287,7 +287,7 @@ When building a feature:
   else return 'Legend'
 
 ## level calculation formula
- XP to reach level N = 80 × N^1.3
+ Cumulative XP to reach level N = 80 × (N-1)^1.3 (so level 1 starts at 0 XP)
  
 ## Communication
  

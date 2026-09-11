@@ -43,10 +43,12 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 
-import { getLevelTitle, xpForLevel } from '@/lib/level';
+import { getLevelTitle, xpAtLevelStart, xpForLevel } from '@/lib/level';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -70,6 +72,7 @@ export default function HomeScreen() {
     setClaimableCount,
     setFriendRequestCount,
     setNotificationCount,
+    setSocialNotificationCount,
   } = useUserStore();
 
   const pillAnim = useRef(new Animated.Value(0)).current;
@@ -146,6 +149,11 @@ export default function HomeScreen() {
             await countUnreadNotifications(user!.id);
 
           setNotificationCount(unreadNotifications);
+
+          const unreadSocialNotifications =
+            await countUnreadNotifications(user!.id, SOCIAL_NOTIFICATION_TYPES);
+
+          setSocialNotificationCount(unreadSocialNotifications);
         } catch (err) {
           console.error('loadData failed', err);
         }
@@ -169,6 +177,7 @@ export default function HomeScreen() {
       await markAllNotificationsRead(user.id);
 
       setNotificationCount(0);
+      setSocialNotificationCount(0);
     } catch (err) {
       console.error(
         'Failed to load notifications',
@@ -186,7 +195,7 @@ export default function HomeScreen() {
   ) {
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       router.push({
         pathname: '/(tabs)/challenges',
         params: { openChallengeId: notification.challengeId },
@@ -355,9 +364,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.iconBtn}
               activeOpacity={0.7}
-              onPress={() => {
-                // Keep your existing chat behavior here
-              }}
+              onPress={() => router.push('/chat')}
             >
               <Ionicons
                 name="chatbubble-outline"
@@ -400,15 +407,27 @@ export default function HomeScreen() {
             </Text>
 
             <Text style={styles.xpText}>
-              {user.xp.toLocaleString()} /{' '}
-              {user.xpForNextLevel.toLocaleString()} XP
+              {(
+                user.xp - xpAtLevelStart(user.level)
+              ).toLocaleString()}{' '}
+              /{' '}
+              {(
+                user.xpForNextLevel -
+                xpAtLevelStart(user.level)
+              ).toLocaleString()}{' '}
+              XP
             </Text>
           </View>
 
           <View style={styles.xpBarWrap}>
             <XPBar
-              current={user.xp}
-              max={user.xpForNextLevel}
+              current={
+                user.xp - xpAtLevelStart(user.level)
+              }
+              max={
+                user.xpForNextLevel -
+                xpAtLevelStart(user.level)
+              }
             />
           </View>
         </View>
