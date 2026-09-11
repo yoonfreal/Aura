@@ -1,10 +1,11 @@
 import "../../global.css";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Linking from 'expo-linking';
 
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
@@ -95,6 +96,15 @@ export default function RootLayout() {
   const navigationState = useRootNavigationState();
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
 
+  // The URL the app was cold-launched with (e.g. auraapp://friend/<id> from Share > Send
+  // To, or a shared chat link) — captured in a ref so the auth listener below always reads
+  // its latest value without needing to resubscribe every time it changes.
+  const launchUrl = Linking.useURL();
+  const launchUrlRef = useRef(launchUrl);
+  useEffect(() => {
+    launchUrlRef.current = launchUrl;
+  }, [launchUrl]);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
@@ -117,8 +127,13 @@ export default function RootLayout() {
           if (result === 'suspended') {
             Alert.alert('Account Suspended', 'Your account has been suspended. Contact support for more information.');
             setPendingRedirect('/(auth)/signup');
+          } else if (result === 'onboarding') {
+            setPendingRedirect('/(onboarding)');
           } else {
-            setPendingRedirect(result === 'tabs' ? '/(tabs)' : '/(onboarding)');
+            // A cold start via a shared deep link (e.g. auraapp://friend/<id>) should land
+            // on that screen, not get overridden by the default tabs redirect below.
+            const path = launchUrlRef.current ? Linking.parse(launchUrlRef.current).path : null;
+            setPendingRedirect(path ? `/${path}` : '/(tabs)');
           }
         } else if (
           event === 'SIGNED_OUT' ||

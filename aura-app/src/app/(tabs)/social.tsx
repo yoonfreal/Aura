@@ -18,13 +18,16 @@ import {
   fetchComments,
   addComment,
   deleteComment,
+  fetchJoinedUsers,
   type FeedPost,
   type ReactionCounts,
   type ReactionKind,
   type JoinState,
   type Comment,
+  type JoinedUser,
 } from '@/lib/posts';
 import { fetchOpen1v1Challenges, inviteOpponent, type Open1v1Challenge } from '@/lib/challenges';
+import { getOrCreateDirectConversation } from '@/lib/chat';
 import {
   countUnreadNotifications,
   fetchNotifications,
@@ -35,6 +38,7 @@ import {
 } from '@/lib/notifications';
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
 import { NotificationsModal } from '@/components/NotificationsModal';
+import { JoinedUsersModal } from '@/components/JoinedUsersModal';
 import { PostCard } from '@/components/PostCard';
 
 const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F'];
@@ -79,6 +83,10 @@ export default function SocialScreen() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [joinedUsersVisible, setJoinedUsersVisible] = useState(false);
+  const [joinedUsers, setJoinedUsers] = useState<JoinedUser[]>([]);
+  const [loadingJoinedUsers, setLoadingJoinedUsers] = useState(false);
+  const [messagingUserId, setMessagingUserId] = useState<string | null>(null);
 
   useEffect(() => {
     Animated.timing(filterPillAnim, {
@@ -178,6 +186,29 @@ export default function SocialScreen() {
       Alert.alert('Challenge sent!', `${friendName} has been invited to race. Check the Challenges tab.`);
     } catch (err) {
       Alert.alert('Could not send challenge', (err as { message?: string })?.message ?? 'Please try again.');
+    }
+  }
+
+  function handleViewJoiners(postId: string) {
+    setJoinedUsersVisible(true);
+    setLoadingJoinedUsers(true);
+    fetchJoinedUsers(postId)
+      .then(setJoinedUsers)
+      .catch(() => setJoinedUsers([]))
+      .finally(() => setLoadingJoinedUsers(false));
+  }
+
+  async function handleMessageJoiner(joiner: JoinedUser) {
+    if (!userId || messagingUserId) return;
+    setMessagingUserId(joiner.id);
+    try {
+      const conversationId = await getOrCreateDirectConversation(userId, joiner.id);
+      setJoinedUsersVisible(false);
+      router.push({ pathname: '/chat/[id]', params: { id: conversationId, name: joiner.name } });
+    } catch (err) {
+      Alert.alert('Could not open chat', (err as { message?: string })?.message ?? 'Please try again.');
+    } finally {
+      setMessagingUserId(null);
     }
   }
 
@@ -314,14 +345,6 @@ export default function SocialScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Social</Text>
         <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications}>
-            <Ionicons name="notifications-outline" size={20} color="#1B2B4B" />
-            {unreadNotifications > 0 && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/create-post')}>
             <Ionicons name="add-circle-outline" size={22} color="#1B2B4B" />
           </TouchableOpacity>
@@ -333,8 +356,16 @@ export default function SocialScreen() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/chat')}>
             <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications}>
+            <Ionicons name="notifications-outline" size={20} color="#1B2B4B" />
+            {unreadNotifications > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -428,6 +459,7 @@ export default function SocialScreen() {
                     join={joins.get(post.id) ?? EMPTY_JOIN}
                     onToggleJoin={() => handleJoinToggle(post)}
                     onOpenChallenge={() => handleOpenChallenge(post)}
+                    onViewJoiners={() => handleViewJoiners(post.id)}
                     commentCount={commentCounts.get(post.id) ?? 0}
                     commentsExpanded={expandedPostId === post.id}
                     onToggleComments={() => handleToggleComments(post.id)}
@@ -470,6 +502,15 @@ export default function SocialScreen() {
         loading={loadingNotifications}
         onClose={() => setShowNotifications(false)}
         onPressNotification={handleNotificationPress}
+      />
+
+      <JoinedUsersModal
+        visible={joinedUsersVisible}
+        loading={loadingJoinedUsers}
+        users={joinedUsers}
+        messagingUserId={messagingUserId}
+        onClose={() => setJoinedUsersVisible(false)}
+        onMessage={handleMessageJoiner}
       />
     </SafeAreaView>
   );

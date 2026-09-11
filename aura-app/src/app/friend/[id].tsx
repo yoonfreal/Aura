@@ -1573,6 +1573,12 @@ setPosts(friendPosts);
                 }
 
                 /*
+                 * Not the author's own post on this
+                 * screen, so there's nothing to view.
+                 */
+                onViewJoiners={() => {}}
+
+                /*
                  * COMMENTS
                  */
                 commentCount={

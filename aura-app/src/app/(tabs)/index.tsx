@@ -364,9 +364,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.iconBtn}
               activeOpacity={0.7}
-              onPress={() => {
-                // Keep your existing chat behavior here
-              }}
+              onPress={() => router.push('/chat')}
             >
               <Ionicons
                 name="chatbubble-outline"
