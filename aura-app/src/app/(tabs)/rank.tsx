@@ -929,6 +929,7 @@ export default function LeaderboardScreen() {
                 styles.iconBtn
               }
               activeOpacity={0.7}
+              onPress={() => router.push('/chat')}
             >
               <Ionicons
                 name="chatbubble-outline"

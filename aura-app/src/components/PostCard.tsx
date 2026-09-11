@@ -32,6 +32,7 @@ type PostCardProps = {
   join: JoinState;
   onToggleJoin: () => void;
   onOpenChallenge: () => void;
+  onViewJoiners: () => void;
 
   commentCount: number;
   commentsExpanded: boolean;
@@ -59,6 +60,7 @@ export function PostCard({
   join,
   onToggleJoin,
   onOpenChallenge,
+  onViewJoiners,
   commentCount,
   commentsExpanded,
   onToggleComments,
@@ -135,14 +137,26 @@ export function PostCard({
               <Text style={styles.partnerText}>{post.location}</Text>
             </View>
           )}
-          <View style={styles.partnerRow}>
-            <Ionicons name="people-outline" size={14} color="#6B7280" />
-            <Text style={styles.partnerText}>
-              {post.peopleNeeded != null
-                ? `${join.count}/${post.peopleNeeded} joined${isFull ? ' · Full' : ''}`
-                : `${join.count} joined · Open to anyone`}
-            </Text>
-          </View>
+          {isSelf && join.count > 0 ? (
+            <TouchableOpacity style={styles.partnerRow} activeOpacity={0.6} onPress={onViewJoiners}>
+              <Ionicons name="people-outline" size={14} color="#6B7280" />
+              <Text style={[styles.partnerText, styles.partnerTextLink]}>
+                {post.peopleNeeded != null
+                  ? `${join.count}/${post.peopleNeeded} joined${isFull ? ' · Full' : ''}`
+                  : `${join.count} joined · Open to anyone`}
+              </Text>
+              <Ionicons name="chevron-forward" size={13} color="#1B2B4B" />
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.partnerRow}>
+              <Ionicons name="people-outline" size={14} color="#6B7280" />
+              <Text style={styles.partnerText}>
+                {post.peopleNeeded != null
+                  ? `${join.count}/${post.peopleNeeded} joined${isFull ? ' · Full' : ''}`
+                  : `${join.count} joined · Open to anyone`}
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -285,6 +299,7 @@ const styles = StyleSheet.create({
   },
   partnerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   partnerText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  partnerTextLink: { color: '#1B2B4B', flex: 1 },
 
   linkedChallengePill: {
     flexDirection: 'row',

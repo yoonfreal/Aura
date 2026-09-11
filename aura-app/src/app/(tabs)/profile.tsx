@@ -35,6 +35,7 @@ import { getLevelTitle, xpAtLevelStart } from '@/lib/level';
 import { fetchBadges, type EarnedBadge } from '@/lib/challenges';
 import { CheckInCalendar } from '@/components/CheckInCalendar';
 import { FriendListModal } from '@/components/FriendListModal';
+import { ShareProfileModal } from '@/components/ShareProfileModal';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -299,6 +300,9 @@ export default function ProfileScreen() {
     useState(0);
 
   const [friendListVisible, setFriendListVisible] =
+    useState(false);
+
+  const [shareModalVisible, setShareModalVisible] =
     useState(false);
 
   const [badges, setBadges] =
@@ -580,6 +584,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.shareButton}
           activeOpacity={0.8}
+          onPress={() => setShareModalVisible(true)}
         >
           <Share2
             size={13}
@@ -1009,6 +1014,14 @@ export default function ProfileScreen() {
         hiddenBadges={hiddenBadges}
         onToggle={toggleBadgeVisibility}
         onClose={() => setBadgeEditVisible(false)}
+      />
+
+      {/* Share Profile */}
+      <ShareProfileModal
+        visible={shareModalVisible}
+        userId={user.id}
+        username={user.username}
+        onClose={() => setShareModalVisible(false)}
       />
     </SafeAreaView>
   );

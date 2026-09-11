@@ -515,6 +515,25 @@ export async function joinPost(userId: string, postId: string, peopleNeeded: num
   if (error) throw error;
 }
 
+export type JoinedUser = { id: string; name: string };
+
+// Who joined a Partner post — shown only to the post's author, so they can reach out to
+// whoever signed up (e.g. to start a chat) instead of just seeing a bare count.
+export async function fetchJoinedUsers(postId: string): Promise<JoinedUser[]> {
+  const { data: joinRows, error } = await supabase
+    .from('post_joins')
+    .select('user_id, created_at')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const userIds = ((joinRows ?? []) as { user_id: string }[]).map((r) => r.user_id);
+  if (userIds.length === 0) return [];
+
+  const profileById = await fetchProfilesById(userIds);
+  return userIds.map((id) => ({ id, name: displayName(profileById.get(id)) }));
+}
+
 export async function leavePost(userId: string, postId: string): Promise<void> {
   const { error } = await supabase.from('post_joins').delete().eq('post_id', postId).eq('user_id', userId);
   if (error) throw error;
