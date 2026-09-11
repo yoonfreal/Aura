@@ -15,14 +15,18 @@ import {
   fetchComments,
   addComment,
   deleteComment,
+  fetchJoinedUsers,
   type FeedPost,
   type ReactionCounts,
   type JoinState,
   type ReactionKind,
   type Comment,
+  type JoinedUser,
 } from '@/lib/posts';
 import { fetchOpen1v1Challenges, inviteOpponent, type Open1v1Challenge } from '@/lib/challenges';
+import { getOrCreateDirectConversation } from '@/lib/chat';
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
+import { JoinedUsersModal } from '@/components/JoinedUsersModal';
 import { PostCard } from '@/components/PostCard';
 
 const EMPTY_REACTION: ReactionCounts = { fire: 0, like: 0, userFire: false, userLike: false };
@@ -45,6 +49,10 @@ export default function PostDetailScreen() {
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [open1v1, setOpen1v1] = useState<Open1v1Challenge[]>([]);
   const [loadingChallenges, setLoadingChallenges] = useState(false);
+  const [joinedUsersVisible, setJoinedUsersVisible] = useState(false);
+  const [joinedUsers, setJoinedUsers] = useState<JoinedUser[]>([]);
+  const [loadingJoinedUsers, setLoadingJoinedUsers] = useState(false);
+  const [messagingUserId, setMessagingUserId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!userId || !id) return;
@@ -137,6 +145,35 @@ export default function PostDetailScreen() {
     }
   }
 
+  function handleViewJoiners() {
+    if (!post) return;
+    setJoinedUsersVisible(true);
+    setLoadingJoinedUsers(true);
+    fetchJoinedUsers(post.id)
+      .then(setJoinedUsers)
+      .catch(() => setJoinedUsers([]))
+      .finally(() => setLoadingJoinedUsers(false));
+  }
+
+  async function handleMessageJoiner(joiner: JoinedUser) {
+    if (!userId || messagingUserId) return;
+    setMessagingUserId(joiner.id);
+    try {
+      const conversationId = await getOrCreateDirectConversation(userId, joiner.id);
+      setJoinedUsersVisible(false);
+      router.push({ pathname: '/chat/[id]', params: { id: conversationId, name: joiner.name } });
+    } catch (err) {
+      Alert.alert('Could not open chat', (err as { message?: string })?.message ?? 'Please try again.');
+    } finally {
+      setMessagingUserId(null);
+    }
+  }
+
+  function handleEditPost() {
+    if (!post) return;
+    router.push({ pathname: '/create-post', params: { editPostId: post.id } });
+  }
+
   function handleDeletePost() {
     if (!userId || !post) return;
     Alert.alert('Delete post?', 'This removes it for everyone who could see it.', [
@@ -214,6 +251,7 @@ export default function PostDetailScreen() {
             post={post}
             avatarColor={AVATAR_COLORS[0]}
             currentUserId={userId}
+            onEdit={handleEditPost}
             onDelete={handleDeletePost}
             onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
             reaction={reaction}
@@ -221,6 +259,7 @@ export default function PostDetailScreen() {
             join={join}
             onToggleJoin={handleToggleJoin}
             onOpenChallenge={handleOpenChallenge}
+            onViewJoiners={handleViewJoiners}
             commentCount={comments.length}
             commentsExpanded
             onToggleComments={() => {}}
@@ -242,6 +281,15 @@ export default function PostDetailScreen() {
         loading={loadingChallenges}
         onClose={() => setChallengeOpen(false)}
         onConfirm={handleConfirmChallenge}
+      />
+
+      <JoinedUsersModal
+        visible={joinedUsersVisible}
+        loading={loadingJoinedUsers}
+        users={joinedUsers}
+        messagingUserId={messagingUserId}
+        onClose={() => setJoinedUsersVisible(false)}
+        onMessage={handleMessageJoiner}
       />
     </SafeAreaView>
   );

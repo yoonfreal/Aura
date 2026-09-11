@@ -34,10 +34,13 @@ import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 
 import { NotificationsModal } from '@/components/NotificationsModal';
+import { thailandWeekRange } from '@/lib/thailandTime';
 
 type LeaderboardEntry = {
   rank: number;
@@ -70,14 +73,7 @@ function formatXP(xp: number): string {
 }
 
 function getMondayDate(): string {
-  const d = new Date();
-  const day = d.getDay();
-  const diff =
-    d.getDate() - day + (day === 0 ? -6 : 1);
-
-  d.setDate(diff);
-
-  return d.toISOString().split('T')[0];
+  return thailandWeekRange().start;
 }
 
 const PODIUM_CONFIG = {
@@ -137,6 +133,11 @@ export default function LeaderboardScreen() {
       (s) => s.setNotificationCount
     );
 
+  const setSocialNotificationCount =
+    useUserStore(
+      (s) => s.setSocialNotificationCount
+    );
+
   const [showNotifications, setShowNotifications] =
     useState(false);
 
@@ -181,10 +182,18 @@ export default function LeaderboardScreen() {
       )
         .then(setNotificationCount)
         .catch(() => {});
+
+      countUnreadNotifications(
+        currentUserId,
+        SOCIAL_NOTIFICATION_TYPES
+      )
+        .then(setSocialNotificationCount)
+        .catch(() => {});
     }, [
       currentUserId,
       setFriendRequestCount,
       setNotificationCount,
+      setSocialNotificationCount,
     ]),
   );
 
@@ -207,6 +216,7 @@ export default function LeaderboardScreen() {
       );
 
       setNotificationCount(0);
+      setSocialNotificationCount(0);
     } catch (err) {
       console.error(
         'Failed to load notifications',
@@ -224,7 +234,7 @@ export default function LeaderboardScreen() {
   ) {
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       router.push({
         pathname: '/(tabs)/challenges',
         params: { openChallengeId: notification.challengeId },
@@ -919,6 +929,7 @@ export default function LeaderboardScreen() {
                 styles.iconBtn
               }
               activeOpacity={0.7}
+              onPress={() => router.push('/chat')}
             >
               <Ionicons
                 name="chatbubble-outline"

@@ -1,5 +1,7 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import type { Mission } from '@/types';
+import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
 
 interface Props {
   mission: Mission;
@@ -31,7 +33,11 @@ export function MissionCard({ mission, onLog }: Props) {
     <View style={styles.card}>
       <View style={styles.row}>
         <View style={styles.iconWrap}>
-          <Text style={styles.icon}>{mission.icon}</Text>
+          <Ionicons
+            name={MISSION_TYPE_ICON[mission.goalUnit].icon}
+            size={22}
+            color={MISSION_TYPE_ICON[mission.goalUnit].color}
+          />
         </View>
 
         <View style={styles.info}>
@@ -98,9 +104,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
-  },
-  icon: {
-    fontSize: 22,
   },
   info: {
     flex: 1,

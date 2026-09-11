@@ -1,14 +1,17 @@
 import "../../global.css";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { Stack, router, useRootNavigationState } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Linking from 'expo-linking';
 
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
-import { ensureActiveToday, updateLastSeen } from '@/lib/api';
+import { ensureActiveToday, updateLastSeen, checkStreakReminder } from '@/lib/api';
+import { checkChallengesEndingSoon } from '@/lib/challenges';
+import { fetchAppSettings } from '@/lib/appSettings';
 import { useUserStore } from '@/store/userStore';
 
 type ProfileRow = {
@@ -71,6 +74,8 @@ async function fetchAndSetUser(
 
   ensureActiveToday(userId);
   updateLastSeen(userId);
+  checkChallengesEndingSoon(userId);
+  checkStreakReminder(userId);
 
   setUser({
     id: profile.id,
@@ -91,9 +96,29 @@ export default function RootLayout() {
   const navigationState = useRootNavigationState();
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
 
+  // The URL the app was cold-launched with (e.g. auraapp://friend/<id> from Share > Send
+  // To, or a shared chat link) — captured in a ref so the auth listener below always reads
+  // its latest value without needing to resubscribe every time it changes.
+  const launchUrl = Linking.useURL();
+  const launchUrlRef = useRef(launchUrl);
+  useEffect(() => {
+    launchUrlRef.current = launchUrl;
+  }, [launchUrl]);
+
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        // Checked before anything else, signed in or not — maintenance mode blocks the whole
+        // app, not just posting, so there's no point fetching a profile only to redirect away
+        // from it a moment later. This only runs at launch and on sign-in/sign-out (whatever
+        // triggers onAuthStateChange) — flipping the toggle while someone's already past this
+        // check and sitting in the tabs won't kick them out mid-session.
+        const settings = await fetchAppSettings();
+        if (settings.maintenanceModeEnabled) {
+          setPendingRedirect('/maintenance');
+          return;
+        }
+
         if (
           (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') &&
           session?.user
@@ -102,8 +127,13 @@ export default function RootLayout() {
           if (result === 'suspended') {
             Alert.alert('Account Suspended', 'Your account has been suspended. Contact support for more information.');
             setPendingRedirect('/(auth)/signup');
+          } else if (result === 'onboarding') {
+            setPendingRedirect('/(onboarding)');
           } else {
-            setPendingRedirect(result === 'tabs' ? '/(tabs)' : '/(onboarding)');
+            // A cold start via a shared deep link (e.g. auraapp://friend/<id>) should land
+            // on that screen, not get overridden by the default tabs redirect below.
+            const path = launchUrlRef.current ? Linking.parse(launchUrlRef.current).path : null;
+            setPendingRedirect(path ? `/${path}` : '/(tabs)');
           }
         } else if (
           event === 'SIGNED_OUT' ||

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCheckInDatesForMonth } from '@/lib/gymCheckins';
+import { thailandDateISO } from '@/lib/thailandTime';
 
 interface Props {
   userId: string;
@@ -18,9 +19,9 @@ function pad(n: number): string {
 }
 
 export function CheckInCalendar({ userId }: Props) {
-  const now = new Date();
-  const [year, setYear] = useState(now.getFullYear());
-  const [month, setMonth] = useState(now.getMonth());
+  const [todayYear, todayMonth] = thailandDateISO().split('-').map(Number);
+  const [year, setYear] = useState(todayYear);
+  const [month, setMonth] = useState(todayMonth - 1);
   const [checkedInDates, setCheckedInDates] = useState<Set<string>>(new Set());
 
   useEffect(() => {

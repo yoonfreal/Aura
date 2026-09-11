@@ -1,10 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '@/store/userStore';
-import { countIncomingRequests, fetchFriendsLeaderboard, type FriendLeaderboardEntry } from '@/lib/friends';
+import { countIncomingRequests } from '@/lib/friends';
 import { fetchFriendStreaks, type StreakEntry } from '@/lib/social';
 import {
   fetchFriendPosts,
@@ -18,27 +18,34 @@ import {
   fetchComments,
   addComment,
   deleteComment,
+  fetchJoinedUsers,
   type FeedPost,
   type ReactionCounts,
   type ReactionKind,
   type JoinState,
   type Comment,
+  type JoinedUser,
 } from '@/lib/posts';
 import { fetchOpen1v1Challenges, inviteOpponent, type Open1v1Challenge } from '@/lib/challenges';
+import { getOrCreateDirectConversation } from '@/lib/chat';
 import {
   countUnreadNotifications,
   fetchNotifications,
   markAllNotificationsRead,
+  notificationLinksToChallenge,
+  SOCIAL_NOTIFICATION_TYPES,
   type AppNotification,
 } from '@/lib/notifications';
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
 import { NotificationsModal } from '@/components/NotificationsModal';
+import { JoinedUsersModal } from '@/components/JoinedUsersModal';
 import { PostCard } from '@/components/PostCard';
 
 const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F'];
 const EMPTY_REACTION: ReactionCounts = { fire: 0, like: 0, userFire: false, userLike: false };
 const EMPTY_JOIN: JoinState = { count: 0, joined: false };
-type FilterType = 'All' | 'Feed' | 'Leaderboard' | 'Streaks';
+type FilterType = 'All' | 'Feed' | 'Streaks';
+const FILTER_TYPES: FilterType[] = ['All', 'Feed', 'Streaks'];
 type PostFilter = 'All' | 'Mine' | 'Partner' | 'Achievement' | 'General';
 const POST_FILTERS: PostFilter[] = ['All', 'Mine', 'Partner', 'Achievement', 'General'];
 
@@ -53,12 +60,14 @@ export default function SocialScreen() {
   const setFriendRequestCount = useUserStore((state) => state.setFriendRequestCount);
   const unreadNotifications = useUserStore((state) => state.notificationCount);
   const setUnreadNotifications = useUserStore((state) => state.setNotificationCount);
+  const setSocialNotificationCount = useUserStore((state) => state.setSocialNotificationCount);
 
   const [filter, setFilter] = useState<FilterType>('All');
+  const [filterTrackWidth, setFilterTrackWidth] = useState(0);
+  const filterPillAnim = useRef(new Animated.Value(0)).current;
   const [postFilter, setPostFilter] = useState<PostFilter>('All');
   const [loading, setLoading] = useState(true);
   const [streaks, setStreaks] = useState<StreakEntry[]>([]);
-  const [leaderboard, setLeaderboard] = useState<FriendLeaderboardEntry[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [reactions, setReactions] = useState<Map<string, ReactionCounts>>(new Map());
   const [joins, setJoins] = useState<Map<string, JoinState>>(new Map());
@@ -74,21 +83,32 @@ export default function SocialScreen() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [joinedUsersVisible, setJoinedUsersVisible] = useState(false);
+  const [joinedUsers, setJoinedUsers] = useState<JoinedUser[]>([]);
+  const [loadingJoinedUsers, setLoadingJoinedUsers] = useState(false);
+  const [messagingUserId, setMessagingUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    Animated.timing(filterPillAnim, {
+      toValue: FILTER_TYPES.indexOf(filter),
+      duration: 220,
+      useNativeDriver: true,
+    }).start();
+  }, [filter]);
 
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
-    const [streaksData, leaderboardData, postsData] = await Promise.all([
+    const [streaksData, postsData] = await Promise.all([
       fetchFriendStreaks(userId),
-      fetchFriendsLeaderboard(userId),
       fetchFriendPosts(userId),
     ]);
     setStreaks(streaksData);
-    setLeaderboard(leaderboardData);
     setPosts(postsData);
     setLoading(false);
 
     countUnreadNotifications(userId).then(setUnreadNotifications).catch(() => {});
+    countUnreadNotifications(userId, SOCIAL_NOTIFICATION_TYPES).then(setSocialNotificationCount).catch(() => {});
     fetchReactions(postsData.map((p) => p.id), userId).then(setReactions).catch(() => {});
     fetchJoins(postsData.map((p) => p.id), userId).then(setJoins).catch(() => {});
     fetchCommentCounts(postsData.map((p) => p.id)).then(setCommentCounts).catch(() => {});
@@ -169,6 +189,33 @@ export default function SocialScreen() {
     }
   }
 
+  function handleViewJoiners(postId: string) {
+    setJoinedUsersVisible(true);
+    setLoadingJoinedUsers(true);
+    fetchJoinedUsers(postId)
+      .then(setJoinedUsers)
+      .catch(() => setJoinedUsers([]))
+      .finally(() => setLoadingJoinedUsers(false));
+  }
+
+  async function handleMessageJoiner(joiner: JoinedUser) {
+    if (!userId || messagingUserId) return;
+    setMessagingUserId(joiner.id);
+    try {
+      const conversationId = await getOrCreateDirectConversation(userId, joiner.id);
+      setJoinedUsersVisible(false);
+      router.push({ pathname: '/chat/[id]', params: { id: conversationId, name: joiner.name } });
+    } catch (err) {
+      Alert.alert('Could not open chat', (err as { message?: string })?.message ?? 'Please try again.');
+    } finally {
+      setMessagingUserId(null);
+    }
+  }
+
+  function handleEditPost(post: FeedPost) {
+    router.push({ pathname: '/create-post', params: { editPostId: post.id } });
+  }
+
   function handleDeletePost(post: FeedPost) {
     if (!userId) return;
     Alert.alert('Delete post?', 'This removes it for everyone who could see it.', [
@@ -229,14 +276,17 @@ export default function SocialScreen() {
       .catch(() => setNotifications([]))
       .finally(() => setLoadingNotifications(false));
     markAllNotificationsRead(userId)
-      .then(() => setUnreadNotifications(0))
+      .then(() => {
+        setUnreadNotifications(0);
+        setSocialNotificationCount(0);
+      })
       .catch(() => {});
   }
 
   function handleNotificationPress(notification: AppNotification) {
     setShowNotifications(false);
 
-    if (notification.type === 'challenge_complete' && notification.challengeId) {
+    if (notificationLinksToChallenge(notification.type) && notification.challengeId) {
       router.push({
         pathname: '/(tabs)/challenges',
         params: { openChallengeId: notification.challengeId },
@@ -288,7 +338,6 @@ export default function SocialScreen() {
   });
 
   const showStreaks = filter === 'All' || filter === 'Streaks';
-  const showLeaderboard = filter === 'All' || filter === 'Leaderboard';
   const showFeed = filter === 'All' || filter === 'Feed';
 
   return (
@@ -296,14 +345,6 @@ export default function SocialScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>Social</Text>
         <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications}>
-            <Ionicons name="notifications-outline" size={20} color="#1B2B4B" />
-            {unreadNotifications > 0 && (
-              <View style={styles.notifBadge}>
-                <Text style={styles.notifBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/create-post')}>
             <Ionicons name="add-circle-outline" size={22} color="#1B2B4B" />
           </TouchableOpacity>
@@ -315,20 +356,43 @@ export default function SocialScreen() {
               </View>
             )}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/chat')}>
             <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications}>
+            <Ionicons name="notifications-outline" size={20} color="#1B2B4B" />
+            {unreadNotifications > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadNotifications > 9 ? '9+' : unreadNotifications}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
 
-      <View style={styles.filterRow}>
-        {(['All', 'Feed', 'Leaderboard', 'Streaks'] as FilterType[]).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterPill, filter === f && styles.filterPillActive]}
-            onPress={() => setFilter(f)}
-          >
-            <Text style={[styles.filterPillText, filter === f && styles.filterPillTextActive]}>{f}</Text>
+      <View style={styles.filterTrack} onLayout={(e) => setFilterTrackWidth(e.nativeEvent.layout.width)}>
+        {filterTrackWidth > 0 && (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.filterPill,
+              {
+                width: `${100 / FILTER_TYPES.length}%`,
+                transform: [
+                  {
+                    translateX: filterPillAnim.interpolate({
+                      inputRange: [0, FILTER_TYPES.length - 1],
+                      outputRange: [0, (filterTrackWidth / FILTER_TYPES.length) * (FILTER_TYPES.length - 1)],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+        )}
+        {FILTER_TYPES.map((f) => (
+          <TouchableOpacity key={f} style={styles.filterBtn} onPress={() => setFilter(f)} activeOpacity={0.8}>
+            <Text style={[styles.filterText, filter === f && styles.filterTextActive]}>{f}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -387,6 +451,7 @@ export default function SocialScreen() {
                     post={post}
                     avatarColor={avatarColor(i)}
                     currentUserId={userId}
+                    onEdit={() => handleEditPost(post)}
                     onDelete={() => handleDeletePost(post)}
                     onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
                     reaction={reactions.get(post.id) ?? EMPTY_REACTION}
@@ -394,6 +459,7 @@ export default function SocialScreen() {
                     join={joins.get(post.id) ?? EMPTY_JOIN}
                     onToggleJoin={() => handleJoinToggle(post)}
                     onOpenChallenge={() => handleOpenChallenge(post)}
+                    onViewJoiners={() => handleViewJoiners(post.id)}
                     commentCount={commentCounts.get(post.id) ?? 0}
                     commentsExpanded={expandedPostId === post.id}
                     onToggleComments={() => handleToggleComments(post.id)}
@@ -410,7 +476,7 @@ export default function SocialScreen() {
             </View>
           )}
 
-          {streaks.length === 0 && leaderboard.length <= 1 && posts.length === 0 && (
+          {streaks.length === 0 && posts.length === 0 && (
             <View style={styles.emptyState}>
               <Ionicons name="people-outline" size={40} color="#C0C8D4" />
               <Text style={[styles.emptyText, { marginTop: 12 }]}>
@@ -436,6 +502,15 @@ export default function SocialScreen() {
         loading={loadingNotifications}
         onClose={() => setShowNotifications(false)}
         onPressNotification={handleNotificationPress}
+      />
+
+      <JoinedUsersModal
+        visible={joinedUsersVisible}
+        loading={loadingJoinedUsers}
+        users={joinedUsers}
+        messagingUserId={messagingUserId}
+        onClose={() => setJoinedUsersVisible(false)}
+        onMessage={handleMessageJoiner}
       />
     </SafeAreaView>
   );
@@ -480,18 +555,31 @@ const styles = StyleSheet.create({
   },
   notifBadgeText: { color: '#fff', fontSize: 9, fontWeight: '800' },
 
-  filterRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 20, marginBottom: 16 },
-  filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  filterTrack: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 16,
+    backgroundColor: '#E8EDF2',
+    borderRadius: 12,
+    padding: 3,
+    position: 'relative',
   },
-  filterPillActive: { backgroundColor: '#1B2B4B', borderColor: '#1B2B4B' },
-  filterPillText: { fontSize: 13, fontWeight: '700', color: '#0D1829' },
-  filterPillTextActive: { color: '#fff' },
+  filterPill: {
+    position: 'absolute',
+    top: 3,
+    left: 3,
+    bottom: 3,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  filterBtn: { flex: 1, paddingVertical: 8, alignItems: 'center', zIndex: 1 },
+  filterText: { fontSize: 13, fontWeight: '600', color: '#9CA3AF' },
+  filterTextActive: { color: '#1B2B4B', fontWeight: '700' },
 
   content: { paddingHorizontal: 20, paddingBottom: 40 },
 
@@ -534,35 +622,8 @@ const styles = StyleSheet.create({
   streakName: { fontSize: 13, fontWeight: '700', color: '#0D1829', marginTop: 8, maxWidth: 80 },
   streakDays: { fontSize: 11, color: '#F5B800', fontWeight: '700', marginTop: 2 },
 
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontSize: 15, fontWeight: '800', color: '#0D1829' },
-  seeFullLink: { fontSize: 12, fontWeight: '700', color: '#1B2B4B' },
-
-  miniRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 10 },
-  miniRowSelf: { backgroundColor: '#F0F4F8', marginHorizontal: -8, paddingHorizontal: 8, borderRadius: 10 },
-  miniRank: { width: 18, fontSize: 13, fontWeight: '700', color: '#9CA3AF', textAlign: 'center' },
-
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   avatarText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  avatarSm: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  avatarTextSm: { color: '#fff', fontWeight: '800', fontSize: 12 },
-
-  miniName: { flex: 1, fontSize: 13, fontWeight: '700', color: '#0D1829' },
-  xpPill: { backgroundColor: '#F0F4F8', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  xpPillSelf: { backgroundColor: '#1B2B4B' },
-  xpPillText: { fontSize: 12, fontWeight: '700', color: '#6B7280' },
-  xpPillTextSelf: { color: '#fff' },
 
   emptyText: { color: '#9CA3AF', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   emptyState: { alignItems: 'center', paddingVertical: 40 },

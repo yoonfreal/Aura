@@ -6,11 +6,14 @@ type TeamOption = {
   id: string;
   name: string;
   memberCount: number;
+  totalValue: number;
 };
 
 type TeamJoinModalProps = {
   visible: boolean;
   teams: TeamOption[];
+  goalValue: number;
+  goalUnit: string;
   onClose: () => void;
   onJoinTeam: (teamId: string) => void;
   onCreateTeam: (name: string) => void;
@@ -19,6 +22,8 @@ type TeamJoinModalProps = {
 export function TeamJoinModal({
   visible,
   teams,
+  goalValue,
+  goalUnit,
   onClose,
   onJoinTeam,
   onCreateTeam,
@@ -48,19 +53,34 @@ export function TeamJoinModal({
             ListEmptyComponent={
               <Text style={styles.emptyText}>No teams yet — be the first to create one</Text>
             }
-            renderItem={({ item }) => (
-              <View style={styles.teamRow}>
-                <View>
-                  <Text style={styles.teamName}>{item.name}</Text>
-                  <Text style={styles.teamMeta}>
-                    {item.memberCount} {item.memberCount === 1 ? 'member' : 'members'}
-                  </Text>
+            renderItem={({ item }) => {
+              const progressPct = goalValue > 0 ? Math.min(100, (item.totalValue / goalValue) * 100) : 0;
+              return (
+                <View style={styles.teamRow}>
+                  <View style={styles.teamRowTop}>
+                    <View>
+                      <Text style={styles.teamName}>{item.name}</Text>
+                      <Text style={styles.teamMeta}>
+                        {item.memberCount} {item.memberCount === 1 ? 'member' : 'members'}
+                      </Text>
+                    </View>
+                    <TouchableOpacity style={styles.joinBtn} onPress={() => onJoinTeam(item.id)}>
+                      <Text style={styles.joinBtnText}>Join</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.progressTrack}>
+                    <View style={[styles.progressFill, { width: `${progressPct}%` }]} />
+                  </View>
+                  <View style={styles.progressRow}>
+                    <Text style={styles.progressLabel}>
+                      {item.totalValue.toLocaleString()} / {goalValue.toLocaleString()} {goalUnit}
+                    </Text>
+                    <Text style={styles.progressPct}>{Math.round(progressPct)}%</Text>
+                  </View>
                 </View>
-                <TouchableOpacity style={styles.joinBtn} onPress={() => onJoinTeam(item.id)}>
-                  <Text style={styles.joinBtnText}>Join</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+              );
+            }}
             style={styles.list}
           />
 
@@ -106,15 +126,37 @@ const styles = StyleSheet.create({
   list: { marginBottom: 12 },
   emptyText: { color: '#9CA3AF', fontSize: 13, textAlign: 'center', paddingVertical: 20 },
   teamRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F4F8',
   },
+  teamRowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   teamName: { fontSize: 14, fontWeight: '700', color: '#0D1829' },
   teamMeta: { fontSize: 12, color: '#9CA3AF', marginTop: 2 },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#E5E9F0',
+    marginTop: 10,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+    backgroundColor: '#D97706',
+  },
+  progressRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  progressLabel: { fontSize: 11, color: '#6B7280', fontWeight: '600' },
+  progressPct: { fontSize: 11, fontWeight: '800', color: '#D97706' },
   joinBtn: {
     backgroundColor: '#1B2B4B',
     paddingHorizontal: 16,
