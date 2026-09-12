@@ -27,6 +27,7 @@ import {
   countIncomingRequests,
   fetchFriendsLeaderboard,
 } from '@/lib/friends';
+import { countUnreadMessages } from '@/lib/chat';
 
 import { useUserStore } from '@/store/userStore';
 
@@ -138,6 +139,15 @@ export default function LeaderboardScreen() {
       (s) => s.setSocialNotificationCount
     );
 
+  const unreadMessages = useUserStore(
+    (s) => s.unreadMessageCount
+  );
+
+  const setUnreadMessageCount =
+    useUserStore(
+      (s) => s.setUnreadMessageCount
+    );
+
   const [showNotifications, setShowNotifications] =
     useState(false);
 
@@ -189,11 +199,16 @@ export default function LeaderboardScreen() {
       )
         .then(setSocialNotificationCount)
         .catch(() => {});
+
+      countUnreadMessages(currentUserId)
+        .then(setUnreadMessageCount)
+        .catch(() => {});
     }, [
       currentUserId,
       setFriendRequestCount,
       setNotificationCount,
       setSocialNotificationCount,
+      setUnreadMessageCount,
     ]),
   );
 
@@ -936,6 +951,24 @@ export default function LeaderboardScreen() {
                 size={20}
                 color="#1B2B4B"
               />
+
+              {unreadMessages > 0 && (
+                <View
+                  style={
+                    styles.notifBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.notifBadgeText
+                    }
+                  >
+                    {unreadMessages > 9
+                      ? '9+'
+                      : unreadMessages}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {/* Notifications */}

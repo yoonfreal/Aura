@@ -38,6 +38,7 @@ import {
 } from '@/lib/challenges';
 
 import { countIncomingRequests } from '@/lib/friends';
+import { countUnreadMessages } from '@/lib/chat';
 
 import {
   countUnreadNotifications,
@@ -73,6 +74,7 @@ export default function HomeScreen() {
     setFriendRequestCount,
     setNotificationCount,
     setSocialNotificationCount,
+    setUnreadMessageCount,
   } = useUserStore();
 
   const pillAnim = useRef(new Animated.Value(0)).current;
@@ -86,6 +88,10 @@ export default function HomeScreen() {
 
   const unreadNotifications = useUserStore(
     (state) => state.notificationCount
+  );
+
+  const unreadMessages = useUserStore(
+    (state) => state.unreadMessageCount
   );
 
   useEffect(() => {
@@ -154,6 +160,11 @@ export default function HomeScreen() {
             await countUnreadNotifications(user!.id, SOCIAL_NOTIFICATION_TYPES);
 
           setSocialNotificationCount(unreadSocialNotifications);
+
+          const unreadMessageTotal =
+            await countUnreadMessages(user!.id);
+
+          setUnreadMessageCount(unreadMessageTotal);
         } catch (err) {
           console.error('loadData failed', err);
         }
@@ -371,6 +382,16 @@ export default function HomeScreen() {
                 size={20}
                 color="#1B2B4B"
               />
+
+              {unreadMessages > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadMessages > 9
+                      ? '9+'
+                      : unreadMessages}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {/* Notifications */}

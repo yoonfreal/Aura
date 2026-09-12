@@ -15,7 +15,15 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, CircleUserRound, Info, MessageCircle, Send } from 'lucide-react-native';
 
 import { useUserStore } from '@/store/userStore';
-import { fetchMessages, fetchOtherParticipant, sendMessage, subscribeToMessages, type ChatMessage } from '@/lib/chat';
+import {
+  countUnreadMessages,
+  fetchMessages,
+  fetchOtherParticipant,
+  markConversationRead,
+  sendMessage,
+  subscribeToMessages,
+  type ChatMessage,
+} from '@/lib/chat';
 import { splitProfileLink } from '@/lib/profileLink';
 
 const BG = '#F0F4F8';
@@ -43,6 +51,7 @@ export default function ChatThreadScreen() {
   const router = useRouter();
   const { id, name } = useLocalSearchParams<{ id: string; name?: string }>();
   const userId = useUserStore((state) => state.user?.id);
+  const setUnreadMessageCount = useUserStore((state) => state.setUnreadMessageCount);
 
   // The nav param paints the header instantly (no flash of "Chat"); the DB lookup then
   // confirms/corrects it so the name is right even if the screen was reached another way.
@@ -72,12 +81,25 @@ export default function ChatThreadScreen() {
       .catch(() => setMessages([]))
       .finally(() => setLoading(false));
 
+    // Having the thread open means these messages are read. Mark on open, and again for
+    // anything that lands while it's on screen, then refresh the header badge so it clears
+    // immediately rather than on the next tab focus.
+    function markRead() {
+      markConversationRead(id, userId!)
+        .then(() => countUnreadMessages(userId!))
+        .then(setUnreadMessageCount)
+        .catch(() => {});
+    }
+
+    markRead();
+
     const unsubscribe = subscribeToMessages(id, (message) => {
       setMessages((prev) => (prev.some((m) => m.id === message.id) ? prev : [...prev, message]));
+      if (message.senderId !== userId) markRead();
     });
 
     return unsubscribe;
-  }, [id, userId]);
+  }, [id, userId, setUnreadMessageCount]);
 
   async function handleSend() {
     if (!id || !userId || !draft.trim() || sending) return;

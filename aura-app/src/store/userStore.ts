@@ -15,6 +15,10 @@ interface UserStore {
   // friend_request) — separate from notificationCount (all types), which the bell icons
   // on every tab need to keep showing everything. Only the Social tab's badge dot uses this.
   socialNotificationCount: number;
+  // Unread chat messages across every conversation — badges the Messages icon in each
+  // tab's header. Deliberately separate from notificationCount: chat has its own button
+  // and its own read state, and never appears in the notifications bell.
+  unreadMessageCount: number;
 
   setUser: (user: User) => void;
   clearUser: () => void;
@@ -27,6 +31,7 @@ interface UserStore {
   setFriendRequestCount: (count: number) => void;
   setNotificationCount: (count: number) => void;
   setSocialNotificationCount: (count: number) => void;
+  setUnreadMessageCount: (count: number) => void;
 }
 
 export const useUserStore = create<UserStore>((set) => ({
@@ -48,6 +53,7 @@ export const useUserStore = create<UserStore>((set) => ({
   friendRequestCount: 0,
   notificationCount: 0,
   socialNotificationCount: 0,
+  unreadMessageCount: 0,
 
   setUser: (user) => set({ user }),
   clearUser: () => set({ user: null }),
@@ -60,4 +66,5 @@ export const useUserStore = create<UserStore>((set) => ({
   setFriendRequestCount: (friendRequestCount) => set({ friendRequestCount }),
   setNotificationCount: (notificationCount) => set({ notificationCount }),
   setSocialNotificationCount: (socialNotificationCount) => set({ socialNotificationCount }),
+  setUnreadMessageCount: (unreadMessageCount) => set({ unreadMessageCount }),
 }));

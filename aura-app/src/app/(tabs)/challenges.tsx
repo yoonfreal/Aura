@@ -37,6 +37,7 @@ import {
 
 import { xpForLevel } from '@/lib/level';
 import { countIncomingRequests } from '@/lib/friends';
+import { countUnreadMessages } from '@/lib/chat';
 
 import {
   countUnreadNotifications,
@@ -840,6 +841,16 @@ function UserChallengesView({
       (s) => s.setSocialNotificationCount
     );
 
+  const unreadMessages =
+    useUserStore(
+      (s) => s.unreadMessageCount
+    );
+
+  const setUnreadMessageCount =
+    useUserStore(
+      (s) => s.setUnreadMessageCount
+    );
+
 
   const [
     showNotifications,
@@ -961,10 +972,15 @@ function UserChallengesView({
       countUnreadNotifications(userId, SOCIAL_NOTIFICATION_TYPES)
         .then(setSocialNotificationCount)
         .catch(() => {});
+
+      countUnreadMessages(userId)
+        .then(setUnreadMessageCount)
+        .catch(() => {});
     }, [
       userId,
       setNotificationCount,
       setSocialNotificationCount,
+      setUnreadMessageCount,
     ])
   );
 
@@ -1507,6 +1523,16 @@ function UserChallengesView({
               size={20}
               color="#1B2B4B"
             />
+
+            {unreadMessages > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>
+                  {unreadMessages > 9
+                    ? '9+'
+                    : unreadMessages}
+                </Text>
+              </View>
+            )}
 
           </TouchableOpacity>
 
