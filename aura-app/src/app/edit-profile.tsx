@@ -8,7 +8,10 @@ import {
   StyleSheet,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native';
+
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -27,7 +30,9 @@ export default function EditProfileScreen() {
 
   const [username, setUsername] = useState('');
   const [age, setAge] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState<Date | null>(null);
   const [gender, setGender] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -70,11 +75,27 @@ export default function EditProfileScreen() {
       }
 
       setUsername(data?.username ?? '');
+
       setAge(
         data?.age != null
           ? String(data.age)
           : ''
       );
+
+      // If only age is stored in the database,
+      // create an approximate date of birth using the age.
+      if (data?.age != null) {
+        const today = new Date();
+
+        const estimatedBirthDate = new Date(
+          today.getFullYear() - Number(data.age),
+          today.getMonth(),
+          today.getDate()
+        );
+
+        setDateOfBirth(estimatedBirthDate);
+      }
+
       setGender(data?.gender ?? '');
 
     } catch (error: any) {
@@ -106,19 +127,37 @@ export default function EditProfileScreen() {
       return;
     }
 
+    // Calculate age from date of birth
+    let calculatedAge: number | null = null;
 
-    // Check age
-    if (age.trim()) {
-      const ageNumber = Number(age.trim());
+    if (dateOfBirth) {
+      const today = new Date();
+
+      calculatedAge =
+        today.getFullYear() -
+        dateOfBirth.getFullYear();
+
+      const monthDifference =
+        today.getMonth() -
+        dateOfBirth.getMonth();
 
       if (
-        !Number.isInteger(ageNumber) ||
-        ageNumber < 1 ||
-        ageNumber > 120
+        monthDifference < 0 ||
+        (monthDifference === 0 &&
+          today.getDate() <
+            dateOfBirth.getDate())
+      ) {
+        calculatedAge--;
+      }
+
+      // Age must be between 15 and 100
+      if (
+        calculatedAge < 15 ||
+        calculatedAge > 100
       ) {
         Alert.alert(
           'Invalid Age',
-          'Please enter a valid age.'
+          'Users must be between 15 and 100 years old.'
         );
         return;
       }
@@ -143,11 +182,7 @@ export default function EditProfileScreen() {
         .from('profiles')
         .update({
           username: username.trim(),
-
-          age: age.trim()
-            ? Number(age.trim())
-            : null,
-
+          age: calculatedAge,
           gender: gender || null,
         })
         .eq('id', authUser.id);
@@ -291,24 +326,79 @@ export default function EditProfileScreen() {
             style={styles.input}
           />
 
-
-          {/* AGE */}
+          {/* DATE OF BIRTH */}
 
           <Text
             style={styles.label}
           >
-            Age
+            Date of Birth
           </Text>
 
-          <TextInput
-            value={age}
-            onChangeText={setAge}
-            placeholder="Enter your age"
-            placeholderTextColor="#A6ADBB"
-            keyboardType="number-pad"
-            maxLength={3}
+          <TouchableOpacity
             style={styles.input}
-          />
+            onPress={() => setShowDatePicker(true)}
+            activeOpacity={0.8}
+          >
+            <Text
+              style={[
+                styles.dateText,
+                !dateOfBirth &&
+                  styles.datePlaceholder,
+              ]}
+            >
+              {dateOfBirth
+                ? dateOfBirth.toLocaleDateString(
+                    'en-GB',
+                    {
+                      day: '2-digit',
+                      month: 'long',
+                      year: 'numeric',
+                    }
+                  )
+                : 'Select date of birth'}
+            </Text>
+          </TouchableOpacity>
+
+          {showDatePicker && (
+            <DateTimePicker
+              value={
+                dateOfBirth ||
+                new Date(2000, 0, 1)
+              }
+              mode="date"
+              display={
+                Platform.OS === 'ios'
+                  ? 'spinner'
+                  : 'calendar'
+              }
+              minimumDate={
+                new Date(
+                  new Date().getFullYear() - 100,
+                  new Date().getMonth(),
+                  new Date().getDate()
+                )
+              }
+              maximumDate={
+                new Date(
+                  new Date().getFullYear() - 15,
+                  new Date().getMonth(),
+                  new Date().getDate()
+                )
+              }
+              onChange={(
+                event,
+                selectedDate
+              ) => {
+                setShowDatePicker(false);
+
+                if (selectedDate) {
+                  setDateOfBirth(
+                    selectedDate
+                  );
+                }
+              }}
+            />
+          )}
 
           {/* GENDER */}
 
@@ -491,6 +581,17 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 15,
     color: '#1E2430',
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+
+  dateText: {
+    fontSize: 15,
+    color: '#1E2430',
+  },
+
+  datePlaceholder: {
+    color: '#A6ADBB',
   },
 
   genderRow: {
