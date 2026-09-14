@@ -5,17 +5,20 @@ import { fetchFlagHistory, xpForLevel, type AdminUser, type FlagHistoryEntry } f
 import { avatarColorFor, TITLE_STYLES } from '@/lib/userDisplay';
 import { MedalIcon } from '@/components/icons';
 import {
+  fetchAllUsersAverageDailyStats,
   fetchUserAverageDailyStats,
   fetchUserBadges,
   fetchUserFriends,
   fetchUserPosts,
   fetchUserWeeklyProgress,
+  type AllUsersAverageDailyStats,
   type AverageDailyStats,
   type DailyProgressPoint,
   type EarnedBadge,
   type FriendSummary,
   type UserPost,
 } from '@/lib/userProfile';
+import { percentChange } from '@/lib/stats';
 
 const FRIENDS_PREVIEW_COUNT = 6;
 
@@ -31,6 +34,19 @@ const ACTIVITY_TYPES: { value: string; label: string; icon: string }[] = [
   { value: 'cycling', label: 'Cycling', icon: '🚴' },
   { value: 'other', label: 'Other', icon: '⚡' },
 ];
+
+// Same convention as AnalyticsOverview's TrendCaption — emerald for above, red for below —
+// applied here to a user's average vs. the all-user average instead of vs. last month.
+function VsAverageCaption({ changePercent }: { changePercent: number | null }) {
+  if (changePercent === null) return null;
+  const positive = changePercent >= 0;
+  return (
+    <p className={`mt-0.5 text-[11px] font-bold ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
+      {positive ? '+' : ''}
+      {changePercent}% vs avg
+    </p>
+  );
+}
 
 function formatPartnerDate(iso: string): string {
   const d = new Date(iso);
@@ -54,6 +70,7 @@ export function ViewUserModal({
   const [flagHistory, setFlagHistory] = useState<FlagHistoryEntry[] | null>(null);
   const [weeklyProgress, setWeeklyProgress] = useState<DailyProgressPoint[] | null>(null);
   const [averageStats, setAverageStats] = useState<AverageDailyStats | null>(null);
+  const [allUsersAverage, setAllUsersAverage] = useState<AllUsersAverageDailyStats | null>(null);
   const [selectedDay, setSelectedDay] = useState<DailyProgressPoint | null>(null);
   const [detailError, setDetailError] = useState(false);
   const [friendsExpanded, setFriendsExpanded] = useState(false);
@@ -67,8 +84,9 @@ export function ViewUserModal({
       fetchFlagHistory(user.id),
       fetchUserWeeklyProgress(user.id),
       fetchUserAverageDailyStats(user.id),
+      fetchAllUsersAverageDailyStats(),
     ])
-      .then(([f, b, p, h, w, a]) => {
+      .then(([f, b, p, h, w, a, allAvg]) => {
         if (cancelled) return;
         setFriends(f);
         setBadges(b);
@@ -76,6 +94,7 @@ export function ViewUserModal({
         setFlagHistory(h);
         setWeeklyProgress(w);
         setAverageStats(a);
+        setAllUsersAverage(allAvg);
       })
       .catch(() => {
         if (!cancelled) setDetailError(true);
@@ -224,7 +243,7 @@ export function ViewUserModal({
         <div className="mb-6">
           <p className="mb-2 text-xs font-bold tracking-wide text-gray-500">PERSONAL DAILY AVERAGE (LAST 28 DAYS)</p>
           <div className="rounded-xl bg-gray-50 p-3">
-            {!averageStats ? (
+            {!averageStats || !allUsersAverage ? (
               <p className="text-xs text-gray-400">Loading…</p>
             ) : (
               <>
@@ -232,13 +251,19 @@ export function ViewUserModal({
                   <div>
                     <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgSteps.toLocaleString()}</p>
                     <p className="text-[11px] text-gray-500">Avg steps/day</p>
+                    <VsAverageCaption changePercent={percentChange(averageStats.avgSteps, allUsersAverage.avgSteps)} />
                   </div>
                   <div>
                     <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgCalories.toLocaleString()}</p>
                     <p className="text-[11px] text-gray-500">Avg calories/day</p>
+                    <VsAverageCaption changePercent={percentChange(averageStats.avgCalories, allUsersAverage.avgCalories)} />
                   </div>
                 </div>
                 <p className="mt-2 text-[11px] text-gray-400">
+                  vs. all-user average of {allUsersAverage.avgSteps.toLocaleString()} steps and{' '}
+                  {allUsersAverage.avgCalories.toLocaleString()} cal/day
+                </p>
+                <p className="mt-1 text-[11px] text-gray-400">
                   {averageStats.personalized
                     ? `Based on ${averageStats.historyDays} logged days — this is the baseline unusual-activity flags compare against.`
                     : `Only ${averageStats.historyDays} logged day${averageStats.historyDays === 1 ? '' : 's'} so far — flags use the standard limits until 7+ days are logged.`}

@@ -12,6 +12,7 @@ import {
   LayoutAnimation,
   Platform,
   UIManager,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -118,10 +119,21 @@ export default function FriendsScreen() {
 
     setSearching(true);
 
-    const found = await searchUsersToAdd(text, userId);
+    try {
+      const found = await searchUsersToAdd(text, userId);
+      setResults(found);
+    } catch (error) {
+      reportFriendActionError(error);
+    } finally {
+      setSearching(false);
+    }
+  }
 
-    setResults(found);
-    setSearching(false);
+  function reportFriendActionError(error: unknown) {
+    Alert.alert(
+      'Something went wrong',
+      (error as { message?: string })?.message ?? 'Please try again.'
+    );
   }
 
   async function handleAdd(targetId: string) {
@@ -129,28 +141,42 @@ export default function FriendsScreen() {
 
     setPendingIds((prev) => new Set(prev).add(targetId));
 
-    await sendFriendRequest(userId, targetId);
+    try {
+      await sendFriendRequest(userId, targetId);
 
-    setResults((prev) =>
-      prev.map((r) =>
-        r.id === targetId
-          ? { ...r, relation: 'sent' }
-          : r
-      )
-    );
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === targetId
+            ? { ...r, relation: 'sent' }
+            : r
+        )
+      );
 
-    loadRequests();
+      loadRequests();
+    } catch (error) {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetId);
+        return next;
+      });
+
+      reportFriendActionError(error);
+    }
   }
 
   async function handleAccept(requestId: string) {
     setSuppressIncomingAnim(true);
 
-    await acceptFriendRequest(requestId);
-    await loadRequests();
-
-    requestAnimationFrame(() =>
-      setSuppressIncomingAnim(false)
-    );
+    try {
+      await acceptFriendRequest(requestId);
+      await loadRequests();
+    } catch (error) {
+      reportFriendActionError(error);
+    } finally {
+      requestAnimationFrame(() =>
+        setSuppressIncomingAnim(false)
+      );
+    }
   }
 
   async function handleAcceptFromSearch(
@@ -158,22 +184,30 @@ export default function FriendsScreen() {
   ) {
     if (!item.requestId) return;
 
-    await acceptFriendRequest(item.requestId);
+    try {
+      await acceptFriendRequest(item.requestId);
 
-    setResults((prev) =>
-      prev.map((r) =>
-        r.id === item.id
-          ? { ...r, relation: 'friends' }
-          : r
-      )
-    );
+      setResults((prev) =>
+        prev.map((r) =>
+          r.id === item.id
+            ? { ...r, relation: 'friends' }
+            : r
+        )
+      );
 
-    loadRequests();
+      loadRequests();
+    } catch (error) {
+      reportFriendActionError(error);
+    }
   }
 
   async function handleCancel(requestId: string) {
-    await cancelFriendRequest(requestId);
-    loadRequests();
+    try {
+      await cancelFriendRequest(requestId);
+      loadRequests();
+    } catch (error) {
+      reportFriendActionError(error);
+    }
   }
 
   async function handleAddSuggestion(targetId: string) {
@@ -181,19 +215,29 @@ export default function FriendsScreen() {
 
     setPendingIds((prev) => new Set(prev).add(targetId));
 
-    await sendFriendRequest(userId, targetId);
+    try {
+      await sendFriendRequest(userId, targetId);
 
-    loadRequests();
+      loadRequests();
 
-    setTimeout(() => {
-      LayoutAnimation.configureNext(
-        LayoutAnimation.Presets.easeInEaseOut
-      );
+      setTimeout(() => {
+        LayoutAnimation.configureNext(
+          LayoutAnimation.Presets.easeInEaseOut
+        );
 
-      setSuggestions((prev) =>
-        prev.filter((s) => s.id !== targetId)
-      );
-    }, 500);
+        setSuggestions((prev) =>
+          prev.filter((s) => s.id !== targetId)
+        );
+      }, 500);
+    } catch (error) {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(targetId);
+        return next;
+      });
+
+      reportFriendActionError(error);
+    }
   }
 
   // NEW:

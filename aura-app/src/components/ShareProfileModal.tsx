@@ -34,15 +34,24 @@ export function ShareProfileModal({
   visible,
   userId,
   username,
+  viewerId,
   onClose,
 }: {
   visible: boolean;
+  // The profile being shared — whose link/QR this is. May be the current user's own
+  // profile or a friend's, e.g. from the friend profile screen's Share button.
   userId: string;
   username: string;
+  // Who's doing the sharing — used to pick which of *their* friends to send to, and as
+  // the sender of the chat message. Defaults to `userId` for the own-profile case.
+  viewerId?: string;
   onClose: () => void;
 }) {
   const router = useRouter();
   const qrRef = useRef<{ toDataURL: (callback: (data: string) => void) => void } | null>(null);
+
+  const senderId = viewerId ?? userId;
+  const isOwnProfile = senderId === userId;
 
   const [step, setStep] = useState<Step>('share');
   const [downloading, setDownloading] = useState(false);
@@ -51,6 +60,7 @@ export function ShareProfileModal({
   const [sendingTo, setSendingTo] = useState<string | null>(null);
 
   const link = buildProfileLink(userId);
+  const shareMessage = isOwnProfile ? `Add me on AUra! ${link}` : `Check out ${username} on AUra! ${link}`;
 
   function handleClose() {
     setStep('share');
@@ -59,7 +69,7 @@ export function ShareProfileModal({
 
   async function handleCopyLink() {
     await Clipboard.setStringAsync(link);
-    Alert.alert('Copied', 'Your profile link was copied to the clipboard.');
+    Alert.alert('Copied', isOwnProfile ? 'Your profile link was copied to the clipboard.' : 'Profile link was copied to the clipboard.');
   }
 
   async function handleDownload() {
@@ -89,7 +99,7 @@ export function ShareProfileModal({
 
   async function handleSendTo() {
     try {
-      await Share.share({ message: `Add me on AUra! ${link}` });
+      await Share.share({ message: shareMessage });
     } catch {
       // User dismissed the native share sheet — nothing to do.
     }
@@ -98,7 +108,7 @@ export function ShareProfileModal({
   function openFriendPicker() {
     setStep('pickFriend');
     setLoadingFriends(true);
-    fetchAcceptedFriends(userId)
+    fetchAcceptedFriends(senderId)
       .then(setFriends)
       .catch(() => setFriends([]))
       .finally(() => setLoadingFriends(false));
@@ -108,8 +118,8 @@ export function ShareProfileModal({
     if (sendingTo) return;
     setSendingTo(friend.id);
     try {
-      const conversationId = await getOrCreateDirectConversation(userId, friend.id);
-      await sendMessage(conversationId, userId, `Add me on AUra! ${link}`);
+      const conversationId = await getOrCreateDirectConversation(senderId, friend.id);
+      await sendMessage(conversationId, senderId, shareMessage);
       handleClose();
       router.push({ pathname: '/chat/[id]', params: { id: conversationId, name: friend.name } });
     } catch (err) {
@@ -182,7 +192,9 @@ export function ShareProfileModal({
           <ActivityIndicator style={{ marginTop: 40 }} color={GOLD} />
         ) : friends.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={styles.emptyText}>Add friends first to send them your profile.</Text>
+            <Text style={styles.emptyText}>
+              {isOwnProfile ? 'Add friends first to send them your profile.' : 'Add friends first to share this profile.'}
+            </Text>
           </View>
         ) : (
           <FlatList

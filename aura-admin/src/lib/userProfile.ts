@@ -184,6 +184,30 @@ export async function fetchUserAverageDailyStats(userId: string): Promise<Averag
   };
 }
 
+export type AllUsersAverageDailyStats = { avgSteps: number; avgCalories: number };
+
+// Same trailing 28-day window as fetchUserAverageDailyStats, but across every user's
+// daily_stats rows instead of one — the baseline a user's own average gets compared
+// against so an admin can see how far above/below the population they sit.
+export async function fetchAllUsersAverageDailyStats(): Promise<AllUsersAverageDailyStats> {
+  const today = thailandDateISO();
+  const lookbackStart = addDaysToISO(today, -AVERAGE_LOOKBACK_DAYS);
+
+  const { data, error } = await supabase
+    .from('daily_stats')
+    .select('steps, calories')
+    .gte('date', lookbackStart)
+    .lt('date', today);
+  if (error) throw error;
+
+  const rows = (data ?? []) as { steps: number; calories: number }[];
+  const count = rows.length;
+  const avgSteps = count > 0 ? rows.reduce((sum, r) => sum + r.steps, 0) / count : 0;
+  const avgCalories = count > 0 ? rows.reduce((sum, r) => sum + r.calories, 0) / count : 0;
+
+  return { avgSteps: Math.round(avgSteps), avgCalories: Math.round(avgCalories) };
+}
+
 export async function fetchUserWeeklyProgress(userId: string): Promise<DailyProgressPoint[]> {
   const days = getCurrentWeekDates();
 
