@@ -60,7 +60,6 @@ import { PostCard } from '@/components/PostCard';
 
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
 import { FriendListModal } from '@/components/FriendListModal';
-import { ShareProfileModal } from '@/components/ShareProfileModal';
 
 import {
   fetchFriendRelation,
@@ -233,9 +232,6 @@ export default function FriendProfileScreen() {
     useState(0);
 
   const [friendListVisible, setFriendListVisible] =
-    useState(false);
-
-  const [shareModalVisible, setShareModalVisible] =
     useState(false);
 
   // =========================================================
@@ -1259,21 +1255,7 @@ setPosts(friendPosts);
             Profile
           </Text>
 
-          <TouchableOpacity
-            style={
-              styles.backButton
-            }
-            onPress={() =>
-              setShareModalVisible(true)
-            }
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="share-social-outline"
-              size={22}
-              color={TEXT_DARK}
-            />
-          </TouchableOpacity>
+          <View style={styles.backButton} />
         </View>
 
         {/* =================================================
@@ -1828,20 +1810,6 @@ setPosts(friendPosts);
           setFriendListVisible(false);
           router.push(`/friend/${friend.id}`);
         }}
-      />
-
-      {/* =====================================================
-          SHARE PROFILE
-          ===================================================== */}
-
-      <ShareProfileModal
-        visible={shareModalVisible}
-        userId={profile.id}
-        username={displayName}
-        viewerId={userId}
-        onClose={() =>
-          setShareModalVisible(false)
-        }
       />
 
     </SafeAreaView>

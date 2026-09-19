@@ -1,10 +1,13 @@
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { useUserStore } from '@/store/userStore';
 import { xpAtLevelStart } from '@/lib/level';
 import { thailandWeekRange } from '@/lib/thailandTime';
+import { fetchWeeklyStats } from '@/lib/api';
+import { fetchReportInsight, type ReportInsight } from '@/lib/claude';
 import type { WeeklyStats, User } from '@/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -118,53 +121,112 @@ function buildReport(stats: WeeklyStats | null, user: User | null): ReportData {
   };
 }
 
-// ─── Mini bar chart ───────────────────────────────────────────────────────────
+// ─── Recap renderer ─────────────────────────────────────────────────────────
+// Renders the AI's freeform recap text (plain paragraphs, "- " bullet lines, and
+// **bold** spans) without forcing it into a fixed layout — its shape follows
+// whatever structure Claude chose for that particular week.
 
-const BAR_H = 36;
+function renderInline(text: string, boldStyle: object) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) =>
+    part.startsWith('**') && part.endsWith('**') ? (
+      <Text key={i} style={boldStyle}>{part.slice(2, -2)}</Text>
+    ) : (
+      part
+    ),
+  );
+}
 
-function MiniBarChart({ barData }: { barData: { day: string; xp: number }[] }) {
-  const maxXp = Math.max(...barData.map(b => b.xp), 1);
+function RecapText({ text }: { text: string }) {
+  const blocks = text.split(/\n\n+/).filter(Boolean);
   return (
-    <View style={bar.wrap}>
-      {barData.map((b) => {
-        const isTop = b.xp === maxXp && b.xp > 0;
-        const isEmpty = b.xp === 0;
-        return (
-          <View key={b.day} style={bar.col}>
-            <View style={bar.track}>
-              <View style={[
-                bar.fill,
-                { height: BAR_H * (b.xp / maxXp) || 3 },
-                isTop && bar.fillTop,
-                isEmpty && bar.fillEmpty,
-              ]} />
+    <View style={{ gap: 12 }}>
+      {blocks.map((block, i) => {
+        const lines = block.split('\n').filter(Boolean);
+        const isBulletBlock = lines.length > 0 && lines.every((l) => l.trim().startsWith('- '));
+
+        if (isBulletBlock) {
+          return (
+            <View key={i} style={{ gap: 7 }}>
+              {lines.map((line, j) => (
+                <View key={j} style={styles.recapBulletRow}>
+                  <Text style={styles.recapBulletDot}>•</Text>
+                  <Text style={styles.recapText}>
+                    {renderInline(line.replace(/^- /, ''), styles.recapBold)}
+                  </Text>
+                </View>
+              ))}
             </View>
-            <Text style={[bar.label, isEmpty && bar.labelDim]}>{b.day}</Text>
-          </View>
+          );
+        }
+
+        return (
+          <Text key={i} style={styles.recapText}>
+            {renderInline(block, styles.recapBold)}
+          </Text>
         );
       })}
     </View>
   );
 }
 
-const bar = StyleSheet.create({
-  wrap: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 16 },
-  col: { flex: 1, alignItems: 'center' },
-  track: { height: BAR_H, justifyContent: 'flex-end' },
-  fill: { width: 18, borderRadius: 5, backgroundColor: '#C7D4E3' },
-  fillTop: { backgroundColor: '#1B2B4B' },
-  fillEmpty: { backgroundColor: '#EEF0F3', height: 3 },
-  label: { fontSize: 9, color: '#8A9BB0', fontWeight: '600', marginTop: 5 },
-  labelDim: { color: '#C4CBD5' },
-});
-
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 export default function AIReportCardScreen() {
   const insets = useSafeAreaInsets();
-  const { user, weeklyStats } = useUserStore();
+  const { user, weeklyStats, setWeeklyStats } = useUserStore();
   const d = buildReport(weeklyStats, user);
   const weekLabel = getWeekLabel();
+
+  const [aiReport, setAiReport] = useState<ReportInsight | null>(null);
+  const [insightLoading, setInsightLoading] = useState(true);
+
+  // Weekly stats may not be loaded yet if the user opened this screen without first
+  // visiting Home's Weekly tab — fetch it here so the AI recap always has real data.
+  useEffect(() => {
+    if (!user || weeklyStats) return;
+    fetchWeeklyStats(user.id).then(setWeeklyStats).catch(() => {});
+  }, [user?.id, weeklyStats, setWeeklyStats]);
+
+  useEffect(() => {
+    if (!user || !weeklyStats) return;
+    let cancelled = false;
+    setInsightLoading(true);
+
+    const days = weeklyStats.barData.map((b) => ({
+      day: b.day,
+      steps: b.steps,
+      calories: b.calories,
+      xp: b.xp,
+    }));
+
+    fetchReportInsight({
+      days,
+      totalSteps: days.reduce((sum, day) => sum + day.steps, 0),
+      totalCalories: weeklyStats.totalCalories,
+      totalXpThisWeek: weeklyStats.totalXp,
+      avgStepsVsLastWeek: weeklyStats.avgStepsVsLastWeek,
+      caloriesVsLastWeek: weeklyStats.caloriesVsLastWeek,
+      streakDays: user.streak,
+      level: user.level,
+      xpNeeded: Math.max(0, user.xpForNextLevel - user.xp),
+      nextLevel: user.level + 1,
+    }).then((result) => {
+      if (!cancelled) {
+        setAiReport(result);
+        setInsightLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, weeklyStats]);
+
+  // Prefer Claude's real, data-grounded recommendations; fall back to the local
+  // algorithmic ones only if the Edge Function call failed.
+  const focusItems = aiReport
+    ? aiReport.recommendations.map((r) => ({ text: r.title, sub: r.detail }))
+    : d.focusItems;
 
   return (
     <View style={[styles.safe, { paddingTop: insets.top }]}>
@@ -195,45 +257,26 @@ export default function AIReportCardScreen() {
         bounces
       >
 
-        {/* ── Card 1: Featured summary ── */}
-        <View style={styles.card}>
+        {/* ── AI Recap — shape follows the week, not a fixed template ── */}
+        <View style={[styles.card, styles.cardDark]}>
           <View style={styles.cardRow}>
-            <View style={styles.iconBubble}>
-              <Ionicons name="stats-chart" size={17} color="#16A34A" />
+            <View style={[styles.iconBubble, { backgroundColor: 'rgba(255,255,255,0.1)' }]}>
+              <Ionicons name="sparkles" size={16} color="#F5B800" />
             </View>
-            <Text style={styles.cardLabel}>Weekly Summary</Text>
+            <Text style={[styles.cardLabel, styles.cardLabelLight]}>Your Week</Text>
           </View>
-
-          <View style={styles.featuredStat}>
-            <View>
-              <Text style={styles.bigNum}>{d.avgSteps.toLocaleString()}</Text>
-              <Text style={styles.bigNumLabel}>avg steps / day</Text>
-            </View>
-            <View style={[styles.trendBubble, { backgroundColor: d.stepsUp ? '#DCFCE7' : '#FEE2E2' }]}>
-              <Ionicons
-                name={d.stepsUp ? 'arrow-up' : 'arrow-down'}
-                size={11}
-                color={d.stepsUp ? '#16A34A' : '#DC2626'}
-              />
-              <Text style={[styles.trendText, { color: d.stepsUp ? '#16A34A' : '#DC2626' }]}>
-                {d.stepsChangeAbs}%
-              </Text>
-            </View>
-          </View>
-
-          <MiniBarChart barData={d.barData} />
-
-          <View style={styles.summaryFooter}>
-            <Text style={styles.summaryNote}>
-              <Text style={styles.summaryNoteBold}>{d.strongestDay}</Text>
-              {' was your best day  ·  '}
-              <Text style={styles.summaryNoteBold}>{d.activeDays} of 7</Text>
-              {' days active'}
+          {insightLoading ? (
+            <ActivityIndicator color="#F5B800" style={{ marginVertical: 8 }} />
+          ) : aiReport ? (
+            <RecapText text={aiReport.recap} />
+          ) : (
+            <Text style={styles.recapText}>
+              Couldn't generate your recap right now — your stats below are still accurate.
             </Text>
-          </View>
+          )}
         </View>
 
-        {/* ── Card 2: What improved ── */}
+        {/* ── What improved ── */}
         <View style={styles.card}>
           <View style={styles.cardRow}>
             <View style={[styles.iconBubble, { backgroundColor: '#CCFBF1' }]}>
@@ -256,30 +299,6 @@ export default function AIReportCardScreen() {
           </View>
         </View>
 
-        {/* ── Card 3: Needs work ── */}
-        <View style={[styles.card, styles.cardWarm]}>
-          <View style={styles.cardRow}>
-            <View style={[styles.iconBubble, { backgroundColor: '#FEF3C7' }]}>
-              <Ionicons name="warning" size={17} color="#D97706" />
-            </View>
-            <Text style={styles.cardLabel}>Needs Work</Text>
-          </View>
-          <Text style={styles.bodyText}>
-            {d.weakDayText ? (
-              <>
-                <Text style={styles.bodyBold}>{d.weakDayText}</Text>
-                {' had only one recorded activity. Try a light walk on rest days to keep your goal alive.'}
-              </>
-            ) : (
-              <>
-                {'Great consistency! Aim to '}
-                <Text style={styles.bodyBold}>stay active every day</Text>
-                {' to build an unbreakable streak next week.'}
-              </>
-            )}
-          </Text>
-        </View>
-
         {/* ── Card 4: Focus ── */}
         <View style={[styles.card, styles.cardDark]}>
           <View style={styles.cardRow}>
@@ -289,8 +308,8 @@ export default function AIReportCardScreen() {
             <Text style={[styles.cardLabel, styles.cardLabelLight]}>This Week's Focus</Text>
           </View>
 
-          {d.focusItems.map((item, i) => (
-            <View key={i} style={[styles.focusItem, i < d.focusItems.length - 1 && styles.focusItemBorder]}>
+          {focusItems.map((item, i) => (
+            <View key={i} style={[styles.focusItem, i < focusItems.length - 1 && styles.focusItemBorder]}>
               <View style={styles.focusDotWrap}>
                 <View style={styles.focusDot} />
               </View>
@@ -370,7 +389,6 @@ const styles = StyleSheet.create({
     padding: 18,
     ...SHADOW,
   },
-  cardWarm: { backgroundColor: '#FFFBEB' },
   cardDark: { backgroundColor: '#1B2B4B' },
 
   // Card inner reuse
@@ -384,32 +402,11 @@ const styles = StyleSheet.create({
   },
   emojiIcon: { fontSize: 16, lineHeight: 20 },
 
-  // Featured stat
-  featuredStat: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  bigNum: {
-    fontSize: 48, fontWeight: '800', color: '#1B2B4B',
-    letterSpacing: -1.5, lineHeight: 52,
-  },
-  bigNumLabel: { fontSize: 12, color: '#8A9BB0', fontWeight: '500', marginTop: 3 },
-  trendBubble: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    paddingHorizontal: 9, paddingVertical: 5, borderRadius: 20,
-    marginBottom: 4,
-  },
-  trendText: { fontSize: 13, fontWeight: '700' },
-
-  summaryFooter: {
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F4F8',
-    paddingTop: 10,
-  },
-  summaryNote: { fontSize: 12, color: '#8A9BB0', fontWeight: '500', lineHeight: 18 },
-  summaryNoteBold: { fontWeight: '700', color: '#1B2B4B' },
+  // Recap text (freeform, shape follows content)
+  recapText: { fontSize: 14, color: '#E2E8F0', lineHeight: 22, fontWeight: '400' },
+  recapBold: { fontWeight: '700', color: '#FFFFFF' },
+  recapBulletRow: { flexDirection: 'row', gap: 8 },
+  recapBulletDot: { fontSize: 14, color: '#F5B800', lineHeight: 22 },
 
   // Metrics trio
   metricsRow: { flexDirection: 'row' },
@@ -421,10 +418,6 @@ const styles = StyleSheet.create({
   },
   metricVal: { fontSize: 26, fontWeight: '800', letterSpacing: -0.5 },
   metricLabel: { fontSize: 11, color: '#8A9BB0', fontWeight: '600', marginTop: 3 },
-
-  // Body text (warm card)
-  bodyText: { fontSize: 14, color: '#78350F', lineHeight: 22, fontWeight: '400' },
-  bodyBold: { fontWeight: '700', color: '#92400E' },
 
   // Focus card (dark)
   focusItem: {
