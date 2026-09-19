@@ -5,6 +5,7 @@
   "dependencies": {
     "@expo/ui": "~56.0.18",
     "@expo/vector-icons": "^15.1.1",
+    "@kingstinct/react-native-healthkit": "^16.0.0",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.1.0",
     "@supabase/supabase-js": "^2.108.2",
@@ -33,6 +34,7 @@
     "react-native": "0.85.3",
     "react-native-calendars": "^1.1314.0",
     "react-native-gesture-handler": "~2.31.1",
+    "react-native-nitro-modules": "^0.37.1",
     "react-native-qrcode-svg": "^6.3.24",
     "react-native-reanimated": "4.3.1",
     "react-native-safe-area-context": "~5.7.0",
