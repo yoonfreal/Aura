@@ -50,6 +50,18 @@ export function startOfThailandDay(dateISO: string = thailandDateISO()): Date {
   return new Date(`${dateISO}T00:00:00+07:00`);
 }
 
+// A streak's stored streak_days only ever changes when updateStreak() runs, which only
+// happens when the user completes a mission — nothing proactively decays it to 0 on an
+// inactive day. So a streak from 3 days ago still reads "2 days" today even though the
+// user has done nothing since. Use this wherever streak_days is displayed or filtered on,
+// not the raw column, so a stale streak reads as broken (0) instead of still alive.
+export function isStreakStillAlive(lastActiveDate: string | null): boolean {
+  if (!lastActiveDate) return false;
+  const today = thailandDateISO();
+  const yesterday = addDaysToISO(today, -1);
+  return lastActiveDate === today || lastActiveDate === yesterday;
+}
+
 // This week's Monday–Sunday range in Thailand, anchored to "today" there.
 export function thailandWeekRange(offsetWeeks = 0): { start: string; end: string } {
   const today = thailandDateISO();
