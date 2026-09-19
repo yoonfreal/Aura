@@ -22,7 +22,7 @@ import { GymCheckInIcon } from '@/components/GymCheckInIcon';
 import { WeeklyView } from '@/components/WeeklyView';
 import { NotificationsModal } from '@/components/NotificationsModal';
 
-import { fetchWatchSyncStatus } from '@/lib/healthkit';
+import { fetchTodayStats, fetchWatchSyncStatus, requestHealthKitPermissions } from '@/lib/healthkit';
 
 import {
   fetchTodayMissions,
@@ -30,6 +30,7 @@ import {
   logMissionComplete,
   fetchWeeklyStats,
   incrementDailyStat,
+  syncHealthKitStats,
 } from '@/lib/api';
 
 import {
@@ -120,6 +121,13 @@ export default function HomeScreen() {
 
       async function loadData() {
         try {
+          const hasHealthKitAccess = await requestHealthKitPermissions();
+
+          if (hasHealthKitAccess) {
+            const healthStats = await fetchTodayStats();
+            await syncHealthKitStats(user!.id, healthStats.steps, healthStats.calories);
+          }
+
           const [
             activityStats,
             sync,
@@ -526,7 +534,7 @@ export default function HomeScreen() {
                   iconColor="#0D9488"
                   iconBg="#CCFBF1"
                   value={dailyStats.steps.toLocaleString()}
-                  label="Avg daily steps"
+                  label="Today's steps"
                 />
 
                 <StatCard

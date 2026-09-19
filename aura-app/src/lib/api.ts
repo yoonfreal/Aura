@@ -198,6 +198,33 @@ export async function incrementDailyStat(
   return { steps, calories, xp_earned };
 }
 
+// Overwrites today's steps/calories with HealthKit's current totals (absolute values, not
+// deltas — HealthKit already reports the day's running total, so adding would double-count
+// on every refetch). Leaves xp_earned untouched since that's driven by missions/challenges,
+// not HealthKit.
+export async function syncHealthKitStats(
+  userId: string,
+  steps: number,
+  calories: number,
+): Promise<void> {
+  const today = todayISO();
+
+  const { data: existing, error: selectError } = await supabase
+    .from('daily_stats')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('date', today)
+    .maybeSingle();
+  if (selectError) throw selectError;
+
+  const row = existing as { id: string } | null;
+
+  const { error: writeError } = row
+    ? await supabase.from('daily_stats').update({ steps, calories }).eq('id', row.id)
+    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps, calories, xp_earned: 0 });
+  if (writeError) throw writeError;
+}
+
 type StatRow = { date: string; steps: number; calories: number; xp_earned: number };
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 

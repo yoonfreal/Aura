@@ -1,27 +1,71 @@
+import { Platform } from 'react-native';
+import {
+  isHealthDataAvailable,
+  requestAuthorization,
+  queryStatisticsForQuantity,
+  type QuantityTypeIdentifier,
+} from '@kingstinct/react-native-healthkit';
 import type { DailyStats, WatchSyncStatus } from '@/types';
 
-// Stub — returns mock data until react-native-health + EAS Build is configured.
-// Real flow: Apple Watch → HealthKit → react-native-health → Express backend → Supabase
+const READ_TYPES: readonly QuantityTypeIdentifier[] = [
+  'HKQuantityTypeIdentifierStepCount',
+  'HKQuantityTypeIdentifierActiveEnergyBurned',
+];
+
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 
 export async function requestHealthKitPermissions(): Promise<boolean> {
-  // TODO: replace with AppleHealthKit.initHealthKit() after EAS Build setup
-  return false;
+  if (Platform.OS !== 'ios' || !isHealthDataAvailable()) return false;
+  return requestAuthorization({ toRead: READ_TYPES });
+}
+
+async function sumSince(
+  identifier: 'HKQuantityTypeIdentifierStepCount' | 'HKQuantityTypeIdentifierActiveEnergyBurned',
+  unit: 'count' | 'kcal',
+  startDate: Date,
+): Promise<number> {
+  const result = await queryStatisticsForQuantity(identifier, ['cumulativeSum'], {
+    unit,
+    filter: { date: { startDate, endDate: new Date() } },
+  });
+  return result.sumQuantity?.quantity ?? 0;
 }
 
 export async function fetchTodayStats(): Promise<DailyStats> {
-  // TODO: replace with real AppleHealthKit reads
+  if (Platform.OS !== 'ios') {
+    return { steps: 0, calories: 0, streakDays: 0, xpEarned: 0 };
+  }
+
+  const today = startOfToday();
+  const [steps, calories] = await Promise.all([
+    sumSince('HKQuantityTypeIdentifierStepCount', 'count', today),
+    sumSince('HKQuantityTypeIdentifierActiveEnergyBurned', 'kcal', today),
+  ]);
+
   return {
-    steps: 5120,
-    calories: 153,
-    streakDays: 12,
-    xpEarned: 50,
+    steps: Math.round(steps),
+    calories: Math.round(calories),
+    streakDays: 0,
+    xpEarned: 0,
   };
 }
 
+// Approximates "watch sync" from whether HealthKit has recorded any steps in the last
+// hour — this library has no direct "last synced at" API, so this is a proxy: recent
+// step data means a watch/phone is actively reporting to HealthKit right now.
 export async function fetchWatchSyncStatus(): Promise<WatchSyncStatus> {
-  // TODO: derive from latest HealthKit sample timestamp
-  return {
-    connected: true,
-    lastSyncMinutesAgo: 2,
-  };
+  if (Platform.OS !== 'ios') {
+    return { connected: false, lastSyncMinutesAgo: 0 };
+  }
+
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  const recentSteps = await sumSince('HKQuantityTypeIdentifierStepCount', 'count', hourAgo);
+
+  return recentSteps > 0
+    ? { connected: true, lastSyncMinutesAgo: 0 }
+    : { connected: false, lastSyncMinutesAgo: 60 };
 }
