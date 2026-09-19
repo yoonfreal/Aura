@@ -8,79 +8,26 @@ function todayISO(): string {
   return thailandDateISO();
 }
 
-type UserMissionRow = {
-  id: string;
-  current_value: number;
-  completed: boolean;
-  missions: {
-    title: string;
-    xp_reward: number;
-    goal_value: number;
-    goal_unit: string;
-    icon: string;
-  } | null;
-};
-
-type MissionTemplate = { id: string };
 type DailyStatRow = { steps: number; calories: number; xp_earned: number } | null;
 
-const FALLBACK_ICON: Record<string, string> = {
-  steps: '🦶',
-  calories: '🏋️',
-  minutes: '⏱️',
-  photo: '📸',
-};
-
+// Today's missions come from the generate-daily-missions Edge Function, which
+// personalizes them from the user's real recent activity instead of assigning the same
+// fixed global template set to everyone — see supabase/functions/generate-daily-missions.
+// The function is idempotent (checks for today's rows before generating), so calling it
+// every time the Home tab loads is safe and avoids a duplicate round trip here.
 export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
   const today = todayISO();
 
-  // Check if today's user_missions already exist
-  const { data: existing } = await supabase
-    .from('user_missions')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('date', today);
-
-  if (!existing || existing.length === 0) {
-    const { data: templates } = await supabase
-      .from('missions')
-      .select('id');
-
-    if (templates && templates.length > 0) {
-      await supabase.from('user_missions').insert(
-        (templates as MissionTemplate[]).map((t) => ({
-          user_id: userId,
-          mission_id: t.id,
-          date: today,
-          current_value: 0,
-          completed: false,
-        })),
-      );
-    }
+  const { data, error } = await supabase.functions.invoke<{ missions: Mission[] }>(
+    'generate-daily-missions',
+    { body: { date: today } },
+  );
+  if (error || !data?.missions) {
+    console.error('fetchTodayMissions failed', error);
+    return [];
   }
 
-  const { data } = await supabase
-    .from('user_missions')
-    .select(
-      'id, current_value, completed, missions(title, xp_reward, goal_value, goal_unit, icon)',
-    )
-    .eq('user_id', userId)
-    .eq('date', today);
-
-  const rows = (data ?? []) as unknown as UserMissionRow[];
-
-  return rows
-    .filter((row) => row.missions !== null)
-    .map((row) => ({
-      id: row.id,
-      title: row.missions!.title,
-      xpReward: row.missions!.xp_reward,
-      goalValue: row.missions!.goal_value,
-      goalUnit: row.missions!.goal_unit as Mission['goalUnit'],
-      icon: row.missions!.icon || FALLBACK_ICON[row.missions!.goal_unit] || '🏅',
-      currentValue: row.current_value,
-      completed: row.completed,
-    }));
+  return data.missions;
 }
 
 // Guarantees a daily_stats row exists for today the moment the app opens, even if the
@@ -307,6 +254,17 @@ async function updateStreak(userId: string): Promise<number> {
   if (updateError) throw updateError;
 
   return newStreak;
+}
+
+// Updates a mission's progress without completing it — used for steps/calories missions,
+// which are auto-tracked from real HealthKit-synced daily_stats rather than manually
+// logged (see syncAutoTrackedMissions in the Home screen).
+export async function updateMissionProgress(userMissionId: string, currentValue: number): Promise<void> {
+  const { error } = await supabase
+    .from('user_missions')
+    .update({ current_value: currentValue })
+    .eq('id', userMissionId);
+  if (error) throw error;
 }
 
 export async function logMissionComplete(

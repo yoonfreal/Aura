@@ -25,6 +25,7 @@ import {
 import { ArrowLeft } from 'lucide-react-native';
 
 import { supabase } from '@/lib/supabase';
+import { isStreakStillAlive } from '@/lib/thailandTime';
 
 import { useUserStore } from '@/store/userStore';
 
@@ -111,6 +112,7 @@ type FriendProfile = {
   level: number | null;
   xp: number | null;
   streak_days: number | null;
+  last_active_date: string | null;
 };
 
 type Friend = {
@@ -402,7 +404,8 @@ export default function FriendProfileScreen() {
           last_name,
           level,
           xp,
-          streak_days
+          streak_days,
+          last_active_date
         `)
         .eq('id', id)
         .single();
@@ -1181,7 +1184,9 @@ setPosts(friendPosts);
     profile.xp ?? 0;
 
   const streak =
-    profile.streak_days ?? 0;
+    isStreakStillAlive(profile.last_active_date)
+      ? profile.streak_days ?? 0
+      : 0;
 
   const earnedBadges =
     badges.filter(

@@ -34,6 +34,18 @@ export function thailandWeekdayIndex(dateISO: string): number {
   return (jsDay + 6) % 7; // 0=Mon..6=Sun
 }
 
+// Mirrors aura-app's src/lib/thailandTime.ts isStreakStillAlive(). profiles.streak_days
+// only updates when a user completes a mission — nothing decays it to 0 on an inactive
+// day — so a stale streak still reads as its old value until the user is active again.
+// Use this wherever streak_days is displayed or filtered on, not the raw column, so the
+// admin dashboard shows a stale streak as broken (0) instead of still alive.
+export function isStreakStillAlive(lastActiveDate: string | null): boolean {
+  if (!lastActiveDate) return false;
+  const today = thailandDateISO();
+  const yesterday = addDaysToISO(today, -1);
+  return lastActiveDate === today || lastActiveDate === yesterday;
+}
+
 // This week's Monday–Sunday range in Thailand, anchored to "today" there.
 export function thailandWeekRange(offsetWeeks = 0): { start: string; end: string } {
   const today = thailandDateISO();

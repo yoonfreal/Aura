@@ -16,12 +16,16 @@ interface ReportData {
   avgSteps: number;
   stepsUp: boolean;
   stepsChangeAbs: number;
+  // null = no prior week to compare against (new/inactive account) — distinct from a
+  // real 0% flat week, and shown honestly rather than folded into a fake "+0%".
+  stepsChange: number | null;
   strongestDay: string;
   xpNeeded: number;
   nextLevel: number;
   activeDays: number;
   calChangeAbs: number;
   calUp: boolean;
+  calChange: number | null;
   weakDayText: string | null;
   calPerDay: number;
   xpProgress: number;
@@ -47,18 +51,18 @@ function getWeekLabel(): string {
     : `Week of ${months[startMonth - 1]} ${startDay} – ${months[endMonth - 1]} ${endDay}, ${endYear}`;
 }
 
-function buildReport(stats: WeeklyStats | null, user: User | null): ReportData {
-  const avgSteps = stats?.avgSteps ?? 8500;
-  const totalCalories = stats?.totalCalories ?? 2100;
-  const stepsChange = stats?.avgStepsVsLastWeek ?? 12;
-  const calChange = stats?.caloriesVsLastWeek ?? 8;
-  const xpNeeded = user ? Math.max(0, user.xpForNextLevel - user.xp) : 55;
+// Called only once weeklyStats has actually loaded (see the loading gate in the screen
+// below) — every number here is real, computed from the caller's own weekly activity.
+function buildReport(stats: WeeklyStats, user: User | null): ReportData {
+  const avgSteps = stats.avgSteps;
+  const totalCalories = stats.totalCalories;
+  // null means "no prior week to compare against" (e.g. a brand-new account) — kept as
+  // null through to the UI rather than collapsed into a misleading "+0%".
+  const stepsChange = stats.avgStepsVsLastWeek;
+  const calChange = stats.caloriesVsLastWeek;
+  const xpNeeded = user ? Math.max(0, user.xpForNextLevel - user.xp) : 0;
   const nextLevel = (user?.level ?? 1) + 1;
-  const defaultBars = [
-    { day: 'Mon', xp: 30 }, { day: 'Tue', xp: 55 }, { day: 'Wed', xp: 80 },
-    { day: 'Thu', xp: 45 }, { day: 'Fri', xp: 60 }, { day: 'Sat', xp: 0 }, { day: 'Sun', xp: 0 },
-  ];
-  const barData = stats?.barData?.length ? stats.barData : defaultBars;
+  const barData = stats.barData;
   const strongestDay = barData.reduce((best, d) => d.xp > best.xp ? d : best, barData[0]).day;
   const weakDays = barData.filter(d => d.xp === 0).map(d => d.day);
   const activeDays = barData.filter(d => d.xp > 0).length;
@@ -110,12 +114,19 @@ function buildReport(stats: WeeklyStats | null, user: User | null): ReportData {
     sub: `About ${missionsNeeded} mission${missionsNeeded !== 1 ? 's' : ''} away — finish your dailies`,
   });
 
+  // No prior week to compare against: treat "went from nothing to something" as +100%
+  // (the standard convention — Strava/Fitbit do the same), rather than a fake "+0%" or an
+  // undefined percentage. If this week is also still at zero, there's genuinely nothing to
+  // report either way, so 0% there is accurate, not a placeholder.
+  const stepsUp = stepsChange !== null ? stepsChange >= 0 : avgSteps > 0;
+  const stepsChangeAbs = stepsChange !== null ? Math.abs(stepsChange) : (avgSteps > 0 ? 100 : 0);
+  const calUp = calChange !== null ? calChange >= 0 : totalCalories > 0;
+  const calChangeAbs = calChange !== null ? Math.abs(calChange) : (totalCalories > 0 ? 100 : 0);
+
   return {
-    avgSteps, stepsUp: (stepsChange ?? 12) >= 0,
-    stepsChangeAbs: Math.abs(stepsChange ?? 12),
+    avgSteps, stepsUp, stepsChangeAbs, stepsChange,
     strongestDay, xpNeeded, nextLevel, activeDays,
-    calChangeAbs: Math.abs(calChange ?? 8),
-    calUp: (calChange ?? 8) >= 0,
+    calChangeAbs, calUp, calChange,
     weakDayText, calPerDay: Math.round(totalCalories / 7),
     xpProgress, barData, stepGoal, missionsNeeded, focusItems,
   };
@@ -175,7 +186,6 @@ function RecapText({ text }: { text: string }) {
 export default function AIReportCardScreen() {
   const insets = useSafeAreaInsets();
   const { user, weeklyStats, setWeeklyStats } = useUserStore();
-  const d = buildReport(weeklyStats, user);
   const weekLabel = getWeekLabel();
 
   const [aiReport, setAiReport] = useState<ReportInsight | null>(null);
@@ -222,6 +232,32 @@ export default function AIReportCardScreen() {
     };
   }, [user, weeklyStats]);
 
+  // Wait for real weekly stats AND the AI recap/recommendations before showing anything —
+  // otherwise "What Improved" and "This Week's Focus" would render immediately off local
+  // fallback data while only the recap card waited, so the page would visibly flash from
+  // template content to AI content instead of appearing all at once.
+  if (!weeklyStats || insightLoading) {
+    return (
+      <View style={[styles.safe, { paddingTop: insets.top }]}>
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={20} color="#1B2B4B" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>AI report Card</Text>
+            <Text style={styles.headerSub}>{weekLabel}</Text>
+          </View>
+          <View style={{ width: 80 }} />
+        </View>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color="#1B2B4B" />
+        </View>
+      </View>
+    );
+  }
+
+  const d = buildReport(weeklyStats, user);
+
   // Prefer Claude's real, data-grounded recommendations; fall back to the local
   // algorithmic ones only if the Edge Function call failed.
   const focusItems = aiReport
@@ -265,9 +301,7 @@ export default function AIReportCardScreen() {
             </View>
             <Text style={[styles.cardLabel, styles.cardLabelLight]}>Your Week</Text>
           </View>
-          {insightLoading ? (
-            <ActivityIndicator color="#F5B800" style={{ marginVertical: 8 }} />
-          ) : aiReport ? (
+          {aiReport ? (
             <RecapText text={aiReport.recap} />
           ) : (
             <Text style={styles.recapText}>
@@ -287,9 +321,17 @@ export default function AIReportCardScreen() {
 
           <View style={styles.metricsRow}>
             {[
-              { value: `+${d.stepsChangeAbs}%`, label: 'Steps', color: '#16A34A' },
+              {
+                value: `${d.stepsUp ? '+' : '-'}${d.stepsChangeAbs}%`,
+                label: 'Steps',
+                color: d.stepsUp ? '#16A34A' : '#DC2626',
+              },
               { value: `${d.activeDays}/7`, label: 'Active days', color: '#1B2B4B' },
-              { value: `+${d.calChangeAbs}%`, label: 'Calories', color: '#D97706' },
+              {
+                value: `${d.calUp ? '+' : '-'}${d.calChangeAbs}%`,
+                label: 'Calories',
+                color: d.calUp ? '#16A34A' : '#DC2626',
+              },
             ].map((m, i) => (
               <View key={i} style={[styles.metricCol, i === 1 && styles.metricColMid]}>
                 <Text style={[styles.metricVal, { color: m.color }]}>{m.value}</Text>

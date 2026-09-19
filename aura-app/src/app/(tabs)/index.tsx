@@ -28,8 +28,8 @@ import {
   fetchTodayMissions,
   fetchDailyStats,
   logMissionComplete,
+  updateMissionProgress,
   fetchWeeklyStats,
-  incrementDailyStat,
   syncHealthKitStats,
 } from '@/lib/api';
 
@@ -51,6 +51,51 @@ import {
 } from '@/lib/notifications';
 
 import { getLevelTitle, xpAtLevelStart, xpForLevel } from '@/lib/level';
+import type { Mission } from '@/types';
+
+// Steps/calories missions are auto-tracked from real HealthKit-synced daily_stats rather
+// than manually logged — the whole point is that a mission can't be faked by tapping a
+// button. Minutes missions stay manual (logMissionComplete via the Log button) since
+// there's no automatic signal for "which activity" without further validation. Threads
+// xp/level forward across missions completed in the same pass so a second completion in
+// the same load doesn't overwrite the first's XP gain.
+async function syncAutoTrackedMissions(
+  missionsToSync: Mission[],
+  userId: string,
+  steps: number,
+  calories: number,
+  startXp: number,
+  startLevel: number,
+): Promise<{ missions: Mission[]; xp: number; level: number; streak: number | null }> {
+  let xp = startXp;
+  let level = startLevel;
+  let streak: number | null = null;
+  const updated: Mission[] = [];
+
+  for (const m of missionsToSync) {
+    if (m.completed || (m.goalUnit !== 'steps' && m.goalUnit !== 'calories')) {
+      updated.push(m);
+      continue;
+    }
+
+    const real = m.goalUnit === 'steps' ? steps : calories;
+
+    if (real >= m.goalValue) {
+      const result = await logMissionComplete(m.id, userId, m.goalValue, m.xpReward, xp, level);
+      xp = result.newXp;
+      level = result.newLevel;
+      streak = result.newStreak;
+      updated.push({ ...m, currentValue: m.goalValue, completed: true });
+    } else if (real !== m.currentValue) {
+      await updateMissionProgress(m.id, real);
+      updated.push({ ...m, currentValue: real });
+    } else {
+      updated.push(m);
+    }
+  }
+
+  return { missions: updated, xp, level, streak };
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -138,15 +183,34 @@ export default function HomeScreen() {
             fetchTodayMissions(user!.id),
           ]);
 
+          const synced = await syncAutoTrackedMissions(
+            todayMissions,
+            user!.id,
+            activityStats.steps,
+            activityStats.calories,
+            user!.xp,
+            user!.level,
+          );
+
+          setMissions(synced.missions);
+          setWatchSync(sync);
+
           setDailyStats({
             steps: activityStats.steps,
             calories: activityStats.calories,
-            streakDays: user!.streak,
-            xpEarned: activityStats.xpEarned,
+            streakDays: synced.streak ?? user!.streak,
+            xpEarned: activityStats.xpEarned + (synced.xp - user!.xp),
           });
 
-          setMissions(todayMissions);
-          setWatchSync(sync);
+          if (synced.xp !== user!.xp || synced.level !== user!.level) {
+            setUser({
+              ...user!,
+              xp: synced.xp,
+              level: synced.level,
+              xpForNextLevel: xpForLevel(synced.level + 1),
+              streak: synced.streak ?? user!.streak,
+            });
+          }
 
           const claimable = await refreshClaimableCount(
             user!.id
@@ -278,37 +342,13 @@ export default function HomeScreen() {
         streak: newStreak,
       });
 
-      if (
-        mission.goalUnit === 'steps' ||
-        mission.goalUnit === 'calories'
-      ) {
-        const {
-          steps,
-          calories,
-        } = await incrementDailyStat(
-          user.id,
-          mission.goalUnit,
-          mission.goalValue
-        );
-
-        setDailyStats({
-          ...dailyStats,
-          steps,
-          calories,
-          streakDays: newStreak,
-          xpEarned:
-            dailyStats.xpEarned +
-            mission.xpReward,
-        });
-      } else {
-        setDailyStats({
-          ...dailyStats,
-          streakDays: newStreak,
-          xpEarned:
-            dailyStats.xpEarned +
-            mission.xpReward,
-        });
-      }
+      setDailyStats({
+        ...dailyStats,
+        streakDays: newStreak,
+        xpEarned:
+          dailyStats.xpEarned +
+          mission.xpReward,
+      });
 
       const claimable =
         await refreshClaimableCount(user.id);

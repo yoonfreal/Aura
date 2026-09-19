@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { logAdminActivity } from './activityLog';
+import { isStreakStillAlive } from './thailandTime';
 
 export type AdminUser = {
   id: string;
@@ -46,6 +47,7 @@ type ProfileRow = {
   level: number;
   xp: number;
   streak_days: number;
+  last_active_date: string | null;
   last_seen_at: string | null;
   created_at: string;
   suspended: boolean;
@@ -53,13 +55,16 @@ type ProfileRow = {
   flag_reason: string | null;
 };
 
+const PROFILE_COLUMNS =
+  'id, username, level, xp, streak_days, last_active_date, last_seen_at, created_at, suspended, flagged, flag_reason';
+
 function toAdminUser(row: ProfileRow): AdminUser {
   return {
     id: row.id,
     username: row.username,
     level: row.level ?? 1,
     xp: row.xp ?? 0,
-    streak: row.streak_days ?? 0,
+    streak: isStreakStillAlive(row.last_active_date) ? row.streak_days ?? 0 : 0,
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,
     suspended: row.suspended ?? false,
@@ -71,7 +76,7 @@ function toAdminUser(row: ProfileRow): AdminUser {
 export async function fetchAllUsers(): Promise<AdminUser[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended, flagged, flag_reason')
+    .select(PROFILE_COLUMNS)
     .order('username', { ascending: true });
   if (error) throw error;
 
@@ -83,7 +88,7 @@ export async function fetchAllUsers(): Promise<AdminUser[]> {
 export async function fetchFlaggedUsers(): Promise<AdminUser[]> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended, flagged, flag_reason')
+    .select(PROFILE_COLUMNS)
     .eq('flagged', true)
     .order('username', { ascending: true });
   if (error) throw error;
@@ -97,7 +102,7 @@ export async function fetchFlaggedUsers(): Promise<AdminUser[]> {
 export async function fetchUserById(userId: string): Promise<AdminUser | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, level, xp, streak_days, last_seen_at, created_at, suspended, flagged, flag_reason')
+    .select(PROFILE_COLUMNS)
     .eq('id', userId)
     .maybeSingle();
   if (error) throw error;
