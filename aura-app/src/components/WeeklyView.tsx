@@ -25,6 +25,13 @@ function fmtChange(value: number | null, unit: 'percent' | 'absolute'): string |
   return unit === 'percent' ? `${sign}${value}% vs last week` : `${sign}${value} vs last week`;
 }
 
+// Red for a decline, green for an improvement — the fixed teal StatCard.sub previously used
+// made every "-X% vs last week" read as good news regardless of direction.
+function changeColor(value: number | null): string | undefined {
+  if (value === null) return undefined;
+  return value >= 0 ? '#16A34A' : '#DC2626';
+}
+
 interface Props {
   stats: WeeklyStats | null;
 }
@@ -54,6 +61,7 @@ export function WeeklyView({ stats }: Props) {
             value={stats.avgSteps.toLocaleString()}
             label="Avg daily steps"
             sub={fmtChange(stats.avgStepsVsLastWeek, 'percent')}
+            subColor={changeColor(stats.avgStepsVsLastWeek)}
           />
           <StatCard
             icon="barbell"
@@ -62,6 +70,7 @@ export function WeeklyView({ stats }: Props) {
             value={stats.totalCalories.toLocaleString()}
             label="Calories"
             sub={fmtChange(stats.caloriesVsLastWeek, 'percent')}
+            subColor={changeColor(stats.caloriesVsLastWeek)}
           />
         </View>
         <View style={styles.statsRow}>
@@ -79,6 +88,7 @@ export function WeeklyView({ stats }: Props) {
             value={stats.totalXp.toString()}
             label="XP earned"
             sub={fmtChange(stats.xpVsLastWeek, 'absolute')}
+            subColor={changeColor(stats.xpVsLastWeek)}
           />
         </View>
       </View>

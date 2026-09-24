@@ -213,15 +213,23 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const lastCalories = lastRows.reduce((s, r) => s + r.calories, 0);
   const lastXp = lastRows.reduce((s, r) => s + r.xp_earned, 0);
 
+  // ensureActiveToday() inserts a steps:0/calories:0 row just from opening the app, before
+  // any HealthKit sync happens — so a plain "does a row exist" check is always true and
+  // useless here. What actually distinguishes "nothing synced" from "genuinely inactive" is
+  // whether every tracked number this week is still zero: steps, calories, AND xp (xp can be
+  // nonzero from manually-logged minutes missions even with no HealthKit data at all).
+  const noDataThisWeek = totalSteps === 0 && totalCalories === 0 && totalXp === 0;
+
   return {
     avgSteps,
     totalCalories,
     estimatedKm,
     totalXp,
     barData,
-    avgStepsVsLastWeek: lastAvgSteps > 0 ? Math.round(((avgSteps - lastAvgSteps) / lastAvgSteps) * 100) : null,
-    caloriesVsLastWeek: lastCalories > 0 ? Math.round(((totalCalories - lastCalories) / lastCalories) * 100) : null,
-    xpVsLastWeek: lastXp > 0 ? totalXp - lastXp : null,
+    avgStepsVsLastWeek: !noDataThisWeek && lastAvgSteps > 0 ? Math.round(((avgSteps - lastAvgSteps) / lastAvgSteps) * 100) : null,
+    caloriesVsLastWeek: !noDataThisWeek && lastCalories > 0 ? Math.round(((totalCalories - lastCalories) / lastCalories) * 100) : null,
+    xpVsLastWeek: !noDataThisWeek && lastXp > 0 ? totalXp - lastXp : null,
+    noDataThisWeek,
   };
 }
 

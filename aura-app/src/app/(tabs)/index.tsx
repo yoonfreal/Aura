@@ -17,7 +17,6 @@ import { useUserStore } from '@/store/userStore';
 import { StatCard } from '@/components/StatCard';
 import { MissionCard } from '@/components/MissionCard';
 import { XPBar } from '@/components/XPBar';
-import { WatchSyncCard } from '@/components/WatchSyncCard';
 import { GymCheckInIcon } from '@/components/GymCheckInIcon';
 import { WeeklyView } from '@/components/WeeklyView';
 import { NotificationsModal } from '@/components/NotificationsModal';
@@ -105,7 +104,6 @@ export default function HomeScreen() {
     user,
     dailyStats,
     missions,
-    watchSync,
     activeTab,
     weeklyStats,
     friendRequestCount,
@@ -604,11 +602,6 @@ export default function HomeScreen() {
                 />
               </View>
             </View>
-
-            {/* Watch Sync */}
-            <WatchSyncCard
-              status={watchSync}
-            />
 
             {/* Missions */}
             <Text style={styles.sectionTitle}>

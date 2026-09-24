@@ -322,15 +322,17 @@ export default function AIReportCardScreen() {
           <View style={styles.metricsRow}>
             {[
               {
-                value: `${d.stepsUp ? '+' : '-'}${d.stepsChangeAbs}%`,
+                // A flat 0% (no data either week — never a real decline) reads as "-0%" with
+                // a sign, which looks like a measured drop. Show a plain, neutral "0%" instead.
+                value: d.stepsChangeAbs === 0 ? '0%' : `${d.stepsUp ? '+' : '-'}${d.stepsChangeAbs}%`,
                 label: 'Steps',
-                color: d.stepsUp ? '#16A34A' : '#DC2626',
+                color: d.stepsChangeAbs === 0 ? '#6B7280' : d.stepsUp ? '#16A34A' : '#DC2626',
               },
               { value: `${d.activeDays}/7`, label: 'Active days', color: '#1B2B4B' },
               {
-                value: `${d.calUp ? '+' : '-'}${d.calChangeAbs}%`,
+                value: d.calChangeAbs === 0 ? '0%' : `${d.calUp ? '+' : '-'}${d.calChangeAbs}%`,
                 label: 'Calories',
-                color: d.calUp ? '#16A34A' : '#DC2626',
+                color: d.calChangeAbs === 0 ? '#6B7280' : d.calUp ? '#16A34A' : '#DC2626',
               },
             ].map((m, i) => (
               <View key={i} style={[styles.metricCol, i === 1 && styles.metricColMid]}>
