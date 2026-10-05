@@ -45,11 +45,13 @@ type ChatListRow = {
   conversationId: string | null;
   lastMessage: string | null;
   lastMessageAt: string | null;
+  unreadCount: number;
 };
 
 export default function ChatListScreen() {
   const router = useRouter();
   const userId = useUserStore((state) => state.user?.id);
+  const setUnreadMessageCount = useUserStore((state) => state.setUnreadMessageCount);
 
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<ChatListRow[]>([]);
@@ -71,8 +73,13 @@ export default function ChatListScreen() {
             conversationId: conversation?.id ?? null,
             lastMessage: conversation?.lastMessage ?? null,
             lastMessageAt: conversation?.lastMessageAt ?? null,
+            unreadCount: conversation?.unreadCount ?? 0,
           };
         });
+
+        // The conversations query already counted every unread message, so reuse that
+        // total for the tab headers' badge instead of asking the server again.
+        setUnreadMessageCount(conversations.reduce((total, c) => total + c.unreadCount, 0));
 
         merged.sort((a, b) => {
           if (a.lastMessageAt && b.lastMessageAt) return b.lastMessageAt.localeCompare(a.lastMessageAt);
@@ -85,7 +92,7 @@ export default function ChatListScreen() {
       })
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [userId]);
+  }, [userId, setUnreadMessageCount]);
 
   useFocusEffect(load);
 
@@ -183,13 +190,24 @@ export default function ChatListScreen() {
                         <Text style={styles.rowName} numberOfLines={1}>
                           {item.friendName}
                         </Text>
-                        <Text style={styles.rowPreview} numberOfLines={1}>
+                        <Text
+                          style={[styles.rowPreview, item.unreadCount > 0 && styles.rowPreviewUnread]}
+                          numberOfLines={1}
+                        >
                           {item.lastMessage}
                         </Text>
                       </View>
                       <View style={styles.rowTrailing}>
                         <Text style={styles.rowTime}>{timeAgo(item.lastMessageAt)}</Text>
-                        <ChevronRight size={16} color="#C7CFDC" />
+                        {item.unreadCount > 0 ? (
+                          <View style={styles.unreadPill}>
+                            <Text style={styles.unreadPillText}>
+                              {item.unreadCount > 9 ? '9+' : item.unreadCount}
+                            </Text>
+                          </View>
+                        ) : (
+                          <ChevronRight size={16} color="#C7CFDC" />
+                        )}
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -302,8 +320,19 @@ const styles = StyleSheet.create({
   rowInfo: { flex: 1, gap: 2 },
   rowName: { fontSize: 15, fontWeight: '700', color: TEXT_DARK },
   rowPreview: { fontSize: 13, color: TEXT_MUTED },
+  rowPreviewUnread: { color: TEXT_DARK, fontWeight: '700' },
   rowTrailing: { alignItems: 'flex-end', gap: 6 },
   rowTime: { fontSize: 11, color: TEXT_MUTED, fontWeight: '600' },
+  unreadPill: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadPillText: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
   contactGroup: {
     backgroundColor: CARD,

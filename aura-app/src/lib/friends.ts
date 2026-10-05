@@ -128,6 +128,30 @@ export async function searchUsersToAdd(query: string, userId: string): Promise<F
   return withRelation.sort((a, b) => (a.relation === 'incoming' ? 0 : 1) - (b.relation === 'incoming' ? 0 : 1));
 }
 
+export type FriendRelationInfo = { relation: FriendRelation; requestId?: string };
+
+// Looks up the relationship between the current user and one specific other user —
+// used by the friend profile screen (opened via friends list, shared link, or QR scan)
+// to decide whether to show Add / Pending / Accept / Friends.
+export async function fetchFriendRelation(userId: string, otherId: string): Promise<FriendRelationInfo> {
+  if (userId === otherId) return { relation: 'friends' };
+
+  const { data, error } = await supabase
+    .from('friendships')
+    .select('id, requester_id, addressee_id, status')
+    .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`);
+  if (error) throw error;
+
+  const match = ((data ?? []) as FriendshipRow[]).find(
+    (f) => f.requester_id === otherId || f.addressee_id === otherId,
+  );
+  if (!match) return { relation: 'none' };
+
+  const relation: FriendRelation =
+    match.status === 'accepted' ? 'friends' : match.requester_id === userId ? 'sent' : 'incoming';
+  return { relation, requestId: match.id };
+}
+
 export async function sendFriendRequest(requesterId: string, addresseeId: string): Promise<void> {
   const { error } = await supabase
     .from('friendships')

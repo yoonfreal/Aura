@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { Colors } from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
@@ -28,6 +29,7 @@ import type {
 
 type Answers = {
   age: string;
+  dateOfBirth: Date | null;
   gender: Gender | null;
   fitnessGoal: FitnessGoal | null;
   activityLevel: ActivityLevel | null;
@@ -39,6 +41,7 @@ type Answers = {
 
 const initialAnswers: Answers = {
   age: '',
+  dateOfBirth: null,
   gender: null,
   fitnessGoal: null,
   activityLevel: null,
@@ -51,7 +54,7 @@ const initialAnswers: Answers = {
 type Option<T extends string> = { label: string; value: T };
 
 type Question =
-  | { id: 'age'; kind: 'number'; title: string; placeholder: string }
+  | { id: 'age'; kind: 'date'; title: string; placeholder: string }
   | { id: 'gender'; kind: 'single'; title: string; options: Option<Gender>[] }
   | { id: 'fitnessGoal'; kind: 'single'; title: string; options: Option<FitnessGoal>[] }
   | { id: 'activityLevel'; kind: 'single'; title: string; options: Option<ActivityLevel>[] }
@@ -61,7 +64,12 @@ type Question =
   | { id: 'preferredTime'; kind: 'single'; title: string; options: Option<PreferredTime>[] };
 
 const questions: Question[] = [
-  { id: 'age', kind: 'number', title: 'How old are you?', placeholder: 'Age' },
+  {
+    id: 'age',
+    kind: 'date',
+    title: 'What is your date of birth?',
+    placeholder: 'Date of Birth',
+  },
   {
     id: 'gender',
     kind: 'single',
@@ -150,12 +158,13 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Answers>(initialAnswers);
   const [submitting, setSubmitting] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const question = questions[step];
   const isLastStep = step === questions.length - 1;
 
   function isAnswered(): boolean {
-    if (question.kind === 'number') return answers.age.trim().length > 0;
+    if (question.kind === 'date') return answers.dateOfBirth !== null;
     if (question.kind === 'multi') return answers.preferredActivities.length > 0;
     return answers[question.id] !== null;
   }
@@ -183,21 +192,58 @@ export default function OnboardingScreen() {
 
   async function handleNext() {
     if (!isAnswered()) return;
+
     if (!isLastStep) {
       setStep((s) => s + 1);
       return;
     }
+
     await handleFinish();
   }
 
   async function handleFinish() {
     if (!user) return;
+
     setSubmitting(true);
+
+    let calculatedAge: number | null = null;
+
+    if (answers.dateOfBirth) {
+      const today = new Date();
+
+      calculatedAge =
+        today.getFullYear() -
+        answers.dateOfBirth.getFullYear();
+
+      const monthDifference =
+        today.getMonth() -
+        answers.dateOfBirth.getMonth();
+
+      if (
+        monthDifference < 0 ||
+        (monthDifference === 0 &&
+          today.getDate() < answers.dateOfBirth.getDate())
+      ) {
+        calculatedAge--;
+      }
+
+      // Age must be between 15 and 100
+      if (calculatedAge < 15 || calculatedAge > 100) {
+        setSubmitting(false);
+
+        Alert.alert(
+          'Invalid Age',
+          'Users must be between 15 and 100 years old.'
+        );
+
+        return;
+      }
+    }
 
     const { error } = await supabase
       .from('profiles')
       .update({
-        age: Number(answers.age),
+        age: calculatedAge,
         gender: answers.gender,
         fitness_goal: answers.fitnessGoal,
         activity_level: answers.activityLevel,
@@ -242,40 +288,123 @@ export default function OnboardingScreen() {
           <Text style={styles.stepLabel}>
             Question {step + 1} of {questions.length}
           </Text>
+
           <Text style={styles.title}>{question.title}</Text>
 
-          {question.kind === 'number' ? (
-            <TextInput
-              style={styles.input}
-              placeholder={question.placeholder}
-              placeholderTextColor="#999"
-              keyboardType="number-pad"
-              value={answers.age}
-              onChangeText={(t) => setAnswers((prev) => ({ ...prev, age: t.replace(/[^0-9]/g, '') }))}
-            />
+          {question.kind === 'date' ? (
+            <View>
+              <TouchableOpacity
+                style={styles.input}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text
+                  style={[
+                    styles.dateText,
+                    !answers.dateOfBirth &&
+                      styles.datePlaceholder,
+                  ]}
+                >
+                  {answers.dateOfBirth
+                    ? answers.dateOfBirth.toLocaleDateString(
+                        'en-GB',
+                        {
+                          day: '2-digit',
+                          month: 'long',
+                          year: 'numeric',
+                        }
+                      )
+                    : question.placeholder}
+                </Text>
+              </TouchableOpacity>
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={
+                    answers.dateOfBirth ||
+                    new Date(2000, 0, 1)
+                  }
+                  mode="date"
+                  display={
+                    Platform.OS === 'ios'
+                      ? 'spinner'
+                      : 'calendar'
+                  }
+                  minimumDate={
+                    new Date(
+                      new Date().getFullYear() - 100,
+                      new Date().getMonth(),
+                      new Date().getDate()
+                    )
+                  }
+                  maximumDate={
+                    new Date(
+                      new Date().getFullYear() - 15,
+                      new Date().getMonth(),
+                      new Date().getDate()
+                    )
+                  }
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+
+                    if (selectedDate) {
+                      setAnswers((prev) => ({
+                        ...prev,
+                        dateOfBirth: selectedDate,
+                      }));
+                    }
+                  }}
+                />
+              )}
+            </View>
           ) : (
             <View style={styles.options}>
               {question.options.map((opt, i) => {
                 const selected =
                   question.kind === 'multi'
-                    ? answers.preferredActivities.includes(opt.value as PreferredActivity)
+                    ? answers.preferredActivities.includes(
+                        opt.value as PreferredActivity
+                      )
                     : answers[question.id] === opt.value;
+
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    style={[styles.option, selected && styles.optionSelected]}
+                    style={[
+                      styles.option,
+                      selected && styles.optionSelected,
+                    ]}
                     onPress={() =>
                       question.kind === 'multi'
-                        ? toggleMulti(opt.value as PreferredActivity)
+                        ? toggleMulti(
+                            opt.value as PreferredActivity
+                          )
                         : selectSingle(opt.value)
                     }
                   >
-                    <View style={[styles.badge, selected && styles.badgeSelected]}>
-                      <Text style={[styles.badgeText, selected && styles.badgeTextSelected]}>
+                    <View
+                      style={[
+                        styles.badge,
+                        selected && styles.badgeSelected,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.badgeText,
+                          selected &&
+                            styles.badgeTextSelected,
+                        ]}
+                      >
                         {LETTERS[i]}
                       </Text>
                     </View>
-                    <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selected &&
+                          styles.optionTextSelected,
+                      ]}
+                    >
                       {opt.label}
                     </Text>
                   </TouchableOpacity>
@@ -287,17 +416,31 @@ export default function OnboardingScreen() {
 
         <View style={styles.footer}>
           {step > 0 && (
-            <TouchableOpacity style={styles.backButton} onPress={handleBack}>
-              <Text style={styles.backButtonText}>Back</Text>
+            <TouchableOpacity
+              style={styles.backButton}
+              onPress={handleBack}
+            >
+              <Text style={styles.backButtonText}>
+                Back
+              </Text>
             </TouchableOpacity>
           )}
+
           <TouchableOpacity
-            style={[styles.nextButton, !isAnswered() && styles.nextButtonDisabled]}
+            style={[
+              styles.nextButton,
+              !isAnswered() &&
+                styles.nextButtonDisabled,
+            ]}
             onPress={handleNext}
             disabled={!isAnswered() || submitting}
           >
             <Text style={styles.nextButtonText}>
-              {submitting ? 'Saving...' : isLastStep ? 'Finish' : 'Next'}
+              {submitting
+                ? 'Saving...'
+                : isLastStep
+                ? 'Finish'
+                : 'Next'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -311,9 +454,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.skyBackground,
   },
+
   flex: {
     flex: 1,
   },
+
   progressTrack: {
     height: 6,
     backgroundColor: '#D6E8F5',
@@ -322,38 +467,54 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
   },
+
   progressFill: {
     height: '100%',
     backgroundColor: Colors.gold,
     borderRadius: 3,
   },
+
   content: {
     paddingHorizontal: 28,
     paddingTop: 24,
     paddingBottom: 24,
   },
+
   stepLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: '#7A92AA',
     marginBottom: 8,
   },
+
   title: {
     fontSize: 26,
     fontWeight: '700',
     color: Colors.navy,
     marginBottom: 24,
   },
+
   input: {
     backgroundColor: '#FFF',
     borderRadius: 12,
     height: 54,
     paddingHorizontal: 16,
-    fontSize: 18,
+    justifyContent: 'center',
   },
+
+  dateText: {
+    fontSize: 18,
+    color: '#333',
+  },
+
+  datePlaceholder: {
+    color: '#999',
+  },
+
   options: {
     gap: 12,
   },
+
   option: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -363,9 +524,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     gap: 12,
   },
+
   optionSelected: {
     backgroundColor: Colors.navy,
   },
+
   badge: {
     width: 28,
     height: 28,
@@ -374,26 +537,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   badgeSelected: {
     backgroundColor: Colors.gold,
   },
+
   badgeText: {
     fontSize: 14,
     fontWeight: '700',
     color: Colors.navy,
   },
+
   badgeTextSelected: {
     color: Colors.navy,
   },
+
   optionText: {
     fontSize: 16,
     color: '#333',
     flexShrink: 1,
   },
+
   optionTextSelected: {
     color: '#FFF',
     fontWeight: '600',
   },
+
   footer: {
     flexDirection: 'row',
     gap: 12,
@@ -401,6 +570,7 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     paddingTop: 12,
   },
+
   backButton: {
     flex: 1,
     height: 54,
@@ -410,11 +580,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   backButtonText: {
     color: Colors.navy,
     fontSize: 16,
     fontWeight: '700',
   },
+
   nextButton: {
     flex: 2,
     height: 54,
@@ -423,9 +595,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
   nextButtonDisabled: {
     opacity: 0.4,
   },
+
   nextButtonText: {
     color: '#FFF',
     fontSize: 18,

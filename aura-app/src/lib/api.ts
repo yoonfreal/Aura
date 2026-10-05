@@ -1,86 +1,34 @@
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
 import { notifyStreakReminder } from '@/lib/notifications';
-import { addDaysToISO, thailandDateISO, thailandHour, thailandWeekRange } from '@/lib/thailandTime';
+import { addDaysToISO, thailandDateISO, thailandHour, thailandRollingWeekRange, thailandWeekdayIndex } from '@/lib/thailandTime';
+import { fetchDailyHealthTotals } from '@/lib/healthkit';
 import type { Mission, DailyStats, WeeklyStats, WeeklyBarDay } from '@/types';
 
 function todayISO(): string {
   return thailandDateISO();
 }
 
-type UserMissionRow = {
-  id: string;
-  current_value: number;
-  completed: boolean;
-  missions: {
-    title: string;
-    xp_reward: number;
-    goal_value: number;
-    goal_unit: string;
-    icon: string;
-  } | null;
-};
-
-type MissionTemplate = { id: string };
 type DailyStatRow = { steps: number; calories: number; xp_earned: number } | null;
 
-const FALLBACK_ICON: Record<string, string> = {
-  steps: '🦶',
-  calories: '🏋️',
-  minutes: '⏱️',
-  photo: '📸',
-};
-
+// Today's missions come from the generate-daily-missions Edge Function, which
+// personalizes them from the user's real recent activity instead of assigning the same
+// fixed global template set to everyone — see supabase/functions/generate-daily-missions.
+// The function is idempotent (checks for today's rows before generating), so calling it
+// every time the Home tab loads is safe and avoids a duplicate round trip here.
 export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
   const today = todayISO();
 
-  // Check if today's user_missions already exist
-  const { data: existing } = await supabase
-    .from('user_missions')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('date', today);
-
-  if (!existing || existing.length === 0) {
-    const { data: templates } = await supabase
-      .from('missions')
-      .select('id');
-
-    if (templates && templates.length > 0) {
-      await supabase.from('user_missions').insert(
-        (templates as MissionTemplate[]).map((t) => ({
-          user_id: userId,
-          mission_id: t.id,
-          date: today,
-          current_value: 0,
-          completed: false,
-        })),
-      );
-    }
+  const { data, error } = await supabase.functions.invoke<{ missions: Mission[] }>(
+    'generate-daily-missions',
+    { body: { date: today } },
+  );
+  if (error || !data?.missions) {
+    console.error('fetchTodayMissions failed', error);
+    return [];
   }
 
-  const { data } = await supabase
-    .from('user_missions')
-    .select(
-      'id, current_value, completed, missions(title, xp_reward, goal_value, goal_unit, icon)',
-    )
-    .eq('user_id', userId)
-    .eq('date', today);
-
-  const rows = (data ?? []) as unknown as UserMissionRow[];
-
-  return rows
-    .filter((row) => row.missions !== null)
-    .map((row) => ({
-      id: row.id,
-      title: row.missions!.title,
-      xpReward: row.missions!.xp_reward,
-      goalValue: row.missions!.goal_value,
-      goalUnit: row.missions!.goal_unit as Mission['goalUnit'],
-      icon: row.missions!.icon || FALLBACK_ICON[row.missions!.goal_unit] || '🏅',
-      currentValue: row.current_value,
-      completed: row.completed,
-    }));
+  return data.missions;
 }
 
 // Guarantees a daily_stats row exists for today the moment the app opens, even if the
@@ -198,46 +146,96 @@ export async function incrementDailyStat(
   return { steps, calories, xp_earned };
 }
 
+// Overwrites today's steps/calories with HealthKit's current totals (absolute values, not
+// deltas — HealthKit already reports the day's running total, so adding would double-count
+// on every refetch). Leaves xp_earned untouched since that's driven by missions/challenges,
+// not HealthKit.
+export async function syncHealthKitStats(
+  userId: string,
+  steps: number,
+  calories: number,
+): Promise<void> {
+  const today = todayISO();
+
+  const { data: existing, error: selectError } = await supabase
+    .from('daily_stats')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('date', today)
+    .maybeSingle();
+  if (selectError) throw selectError;
+
+  const row = existing as { id: string } | null;
+
+  const { error: writeError } = row
+    ? await supabase.from('daily_stats').update({ steps, calories }).eq('id', row.id)
+    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps, calories, xp_earned: 0 });
+  if (writeError) throw writeError;
+}
+
 type StatRow = { date: string; steps: number; calories: number; xp_earned: number };
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+// Weekly stats cover a rolling 7-day window ending today (not a Mon–Sun calendar week) and
+// average over all 7 days, matching Apple Health's "W" daily average. Steps/calories come
+// from HealthKit per day when available — daily_stats misses days the app wasn't opened —
+// while XP only exists in daily_stats.
 export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
-  const thisWeek = thailandWeekRange(0);
-  const lastWeek = thailandWeekRange(-1);
+  const thisWeek = thailandRollingWeekRange(0);
+  const lastWeek = thailandRollingWeekRange(-1);
 
-  const [{ data: thisStatsRaw, error: thisError }, { data: lastStatsRaw, error: lastError }] = await Promise.all([
-    supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', thisWeek.start).lte('date', thisWeek.end),
-    supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', lastWeek.start).lte('date', lastWeek.end),
+  const [{ data: statsRaw, error }, health] = await Promise.all([
+    supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', lastWeek.start).lte('date', thisWeek.end),
+    fetchDailyHealthTotals(lastWeek.start).catch((err) => {
+      console.error('fetchDailyHealthTotals failed', err);
+      return null;
+    }),
   ]);
-  if (thisError) throw thisError;
-  if (lastError) throw lastError;
+  if (error) throw error;
 
-  const thisRows = (thisStatsRaw ?? []) as StatRow[];
-  const lastRows = (lastStatsRaw ?? []) as StatRow[];
-
-  // Build bar data: Mon–Sun mapped to each day's totals — carries steps/calories alongside
-  // xp (not just xp) so tapping a bar in the UI can show that day's full breakdown.
-  const statsByDate = new Map(thisRows.map((r) => [r.date, r]));
-  const barData: WeeklyBarDay[] = WEEK_DAYS.map((day, i) => {
-    const date = addDaysToISO(thisWeek.start, i);
+  const statsByDate = new Map(((statsRaw ?? []) as StatRow[]).map((r) => [r.date, r]));
+  const dayRow = (date: string): StatRow => {
     const stat = statsByDate.get(date);
-    return { day, date, xp: stat?.xp_earned ?? 0, steps: stat?.steps ?? 0, calories: stat?.calories ?? 0 };
-  });
+    const hk = health?.get(date);
+    return {
+      date,
+      steps: health ? (hk?.steps ?? 0) : (stat?.steps ?? 0),
+      calories: health ? (hk?.calories ?? 0) : (stat?.calories ?? 0),
+      xp_earned: stat?.xp_earned ?? 0,
+    };
+  };
+  const rowsFor = (range: { start: string }) => Array.from({ length: 7 }, (_, i) => dayRow(addDaysToISO(range.start, i)));
+  const thisRows = rowsFor(thisWeek);
+  const lastRows = rowsFor(lastWeek);
+
+  // Bars run oldest → today; carries steps/calories alongside xp (not just xp) so tapping a
+  // bar in the UI can show that day's full breakdown.
+  const barData: WeeklyBarDay[] = thisRows.map((r) => ({
+    day: WEEK_DAYS[thailandWeekdayIndex(r.date)],
+    date: r.date,
+    xp: r.xp_earned,
+    steps: r.steps,
+    calories: r.calories,
+  }));
 
   // This week aggregates
   const totalSteps = thisRows.reduce((s, r) => s + r.steps, 0);
-  const activeDays = thisRows.filter((r) => r.steps > 0).length;
-  const avgSteps = activeDays > 0 ? Math.round(totalSteps / activeDays) : 0;
+  const avgSteps = Math.round(totalSteps / 7);
   const totalCalories = thisRows.reduce((s, r) => s + r.calories, 0);
   const estimatedKm = Math.round(totalSteps * 0.000762 * 10) / 10;
   const totalXp = thisRows.reduce((s, r) => s + r.xp_earned, 0);
 
   // Last week aggregates for comparison
-  const lastTotalSteps = lastRows.reduce((s, r) => s + r.steps, 0);
-  const lastActiveDays = lastRows.filter((r) => r.steps > 0).length;
-  const lastAvgSteps = lastActiveDays > 0 ? Math.round(lastTotalSteps / lastActiveDays) : 0;
+  const lastAvgSteps = Math.round(lastRows.reduce((s, r) => s + r.steps, 0) / 7);
   const lastCalories = lastRows.reduce((s, r) => s + r.calories, 0);
   const lastXp = lastRows.reduce((s, r) => s + r.xp_earned, 0);
+
+  // ensureActiveToday() inserts a steps:0/calories:0 row just from opening the app, before
+  // any HealthKit sync happens — so a plain "does a row exist" check is always true and
+  // useless here. What actually distinguishes "nothing synced" from "genuinely inactive" is
+  // whether every tracked number this week is still zero: steps, calories, AND xp (xp can be
+  // nonzero from manually-logged minutes missions even with no HealthKit data at all).
+  const noDataThisWeek = totalSteps === 0 && totalCalories === 0 && totalXp === 0;
 
   return {
     avgSteps,
@@ -245,9 +243,10 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
     estimatedKm,
     totalXp,
     barData,
-    avgStepsVsLastWeek: lastAvgSteps > 0 ? Math.round(((avgSteps - lastAvgSteps) / lastAvgSteps) * 100) : null,
-    caloriesVsLastWeek: lastCalories > 0 ? Math.round(((totalCalories - lastCalories) / lastCalories) * 100) : null,
-    xpVsLastWeek: lastXp > 0 ? totalXp - lastXp : null,
+    avgStepsVsLastWeek: !noDataThisWeek && lastAvgSteps > 0 ? Math.round(((avgSteps - lastAvgSteps) / lastAvgSteps) * 100) : null,
+    caloriesVsLastWeek: !noDataThisWeek && lastCalories > 0 ? Math.round(((totalCalories - lastCalories) / lastCalories) * 100) : null,
+    xpVsLastWeek: !noDataThisWeek && lastXp > 0 ? totalXp - lastXp : null,
+    noDataThisWeek,
   };
 }
 
@@ -280,6 +279,17 @@ async function updateStreak(userId: string): Promise<number> {
   if (updateError) throw updateError;
 
   return newStreak;
+}
+
+// Updates a mission's progress without completing it — used for steps/calories missions,
+// which are auto-tracked from real HealthKit-synced daily_stats rather than manually
+// logged (see syncAutoTrackedMissions in the Home screen).
+export async function updateMissionProgress(userMissionId: string, currentValue: number): Promise<void> {
+  const { error } = await supabase
+    .from('user_missions')
+    .update({ current_value: currentValue })
+    .eq('id', userMissionId);
+  if (error) throw error;
 }
 
 export async function logMissionComplete(

@@ -25,6 +25,7 @@ import {
 import { ArrowLeft } from 'lucide-react-native';
 
 import { supabase } from '@/lib/supabase';
+import { isStreakStillAlive } from '@/lib/thailandTime';
 
 import { useUserStore } from '@/store/userStore';
 
@@ -60,6 +61,13 @@ import { PostCard } from '@/components/PostCard';
 
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
 import { FriendListModal } from '@/components/FriendListModal';
+
+import {
+  fetchFriendRelation,
+  sendFriendRequest,
+  acceptFriendRequest,
+  type FriendRelation,
+} from '@/lib/friends';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -104,6 +112,7 @@ type FriendProfile = {
   level: number | null;
   xp: number | null;
   streak_days: number | null;
+  last_active_date: string | null;
 };
 
 type Friend = {
@@ -228,6 +237,19 @@ export default function FriendProfileScreen() {
     useState(false);
 
   // =========================================================
+  // FRIEND RELATION (Add / Pending / Accept / Friends)
+  // =========================================================
+
+  const [relation, setRelation] =
+    useState<FriendRelation | null>(null);
+
+  const [relationRequestId, setRelationRequestId] =
+    useState<string | undefined>(undefined);
+
+  const [relationActionLoading, setRelationActionLoading] =
+    useState(false);
+
+  // =========================================================
   // POSTS
   // =========================================================
 
@@ -301,7 +323,64 @@ export default function FriendProfileScreen() {
     loadFriendBadges();
     loadFriendFriends();
     loadFriendPosts();
+    loadFriendRelation();
   }, [id, userId]);
+
+  // =========================================================
+  // LOAD FRIEND RELATION
+  // =========================================================
+
+  const loadFriendRelation = async () => {
+    if (!id || !userId || userId === id) return;
+
+    try {
+      const info = await fetchFriendRelation(userId, id);
+      setRelation(info.relation);
+      setRelationRequestId(info.requestId);
+    } catch (error) {
+      console.error('Error loading friend relation:', error);
+    }
+  };
+
+  // =========================================================
+  // FRIEND ACTIONS
+  // =========================================================
+
+  const handleAddFriend = async () => {
+    if (!userId || !id || relationActionLoading) return;
+
+    setRelationActionLoading(true);
+
+    try {
+      await sendFriendRequest(userId, id);
+      setRelation('sent');
+    } catch (error) {
+      Alert.alert(
+        'Could not send request',
+        (error as { message?: string })?.message ?? 'Please try again.',
+      );
+    } finally {
+      setRelationActionLoading(false);
+    }
+  };
+
+  const handleAcceptFriend = async () => {
+    if (!relationRequestId || relationActionLoading) return;
+
+    setRelationActionLoading(true);
+
+    try {
+      await acceptFriendRequest(relationRequestId);
+      setRelation('friends');
+    } catch (error) {
+      Alert.alert(
+        'Could not accept request',
+        (error as { message?: string })?.message ?? 'Please try again.',
+      );
+    } finally {
+      setRelationActionLoading(false);
+    }
+  };
 
   // =========================================================
   // LOAD PROFILE
@@ -325,7 +404,8 @@ export default function FriendProfileScreen() {
           last_name,
           level,
           xp,
-          streak_days
+          streak_days,
+          last_active_date
         `)
         .eq('id', id)
         .single();
@@ -1104,7 +1184,9 @@ setPosts(friendPosts);
     profile.xp ?? 0;
 
   const streak =
-    profile.streak_days ?? 0;
+    isStreakStillAlive(profile.last_active_date)
+      ? profile.streak_days ?? 0
+      : 0;
 
   const earnedBadges =
     badges.filter(
@@ -1178,11 +1260,7 @@ setPosts(friendPosts);
             Profile
           </Text>
 
-          <View
-            style={{
-              width: 40,
-            }}
-          />
+          <View style={styles.backButton} />
         </View>
 
         {/* =================================================
@@ -1259,6 +1337,49 @@ setPosts(friendPosts);
                 XP
               </Text>
             </View>
+
+            {relation === 'none' && (
+              <TouchableOpacity
+                style={[
+                  styles.addFriendBtn,
+                  relationActionLoading && styles.addFriendBtnDisabled,
+                ]}
+                disabled={relationActionLoading}
+                onPress={handleAddFriend}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="person-add" size={16} color="#1B2B4B" />
+                <Text style={styles.addFriendBtnText}>Add Friend</Text>
+              </TouchableOpacity>
+            )}
+
+            {relation === 'sent' && (
+              <View style={styles.relationStatusPill}>
+                <Text style={styles.relationStatusText}>Request Pending</Text>
+              </View>
+            )}
+
+            {relation === 'incoming' && (
+              <TouchableOpacity
+                style={[
+                  styles.addFriendBtn,
+                  relationActionLoading && styles.addFriendBtnDisabled,
+                ]}
+                disabled={relationActionLoading}
+                onPress={handleAcceptFriend}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="checkmark" size={16} color="#1B2B4B" />
+                <Text style={styles.addFriendBtnText}>Accept Request</Text>
+              </TouchableOpacity>
+            )}
+
+            {relation === 'friends' && (
+              <View style={styles.relationStatusPill}>
+                <Ionicons name="checkmark-circle" size={14} color="#2F5D4E" />
+                <Text style={styles.relationStatusText}>Friends</Text>
+              </View>
+            )}
           </View>
 
           <View
@@ -1819,6 +1940,49 @@ const styles = StyleSheet.create({
   xpLabel: {
     fontSize: 11,
     color: TEXT_MUTED,
+  },
+
+  // =======================================================
+  // FRIEND RELATION
+  // =======================================================
+
+  addFriendBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: GOLD,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    marginTop: 16,
+  },
+
+  addFriendBtnDisabled: {
+    opacity: 0.6,
+  },
+
+  addFriendBtnText: {
+    color: '#1B2B4B',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+
+  relationStatusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0F4F8',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    marginTop: 16,
+  },
+
+  relationStatusText: {
+    color: TEXT_MUTED,
+    fontWeight: '600',
+    fontSize: 13,
   },
 
   // =======================================================

@@ -19,7 +19,11 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.yoonfreal.auraapp"
+      "package": "com.yoonfreal.auraapp",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "web": {
       "output": "single",
@@ -46,11 +50,24 @@
           "locationWhenInUsePermission": "AUra uses your location to confirm you're at the gym when you check in."
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "@kingstinct/react-native-healthkit",
+        {
+          "NSHealthShareUsageDescription": "AUra reads your steps, calories, and workouts to track your fitness progress."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b3eb2cb6-a149-4374-b220-14f521495880"
+      }
+    },
+    "owner": "yhhfr"
   }
 }

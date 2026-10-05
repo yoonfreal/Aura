@@ -10,6 +10,7 @@ import * as Linking from 'expo-linking';
 import { supabase } from '@/lib/supabase';
 import { xpForLevel } from '@/lib/level';
 import { ensureActiveToday, updateLastSeen, checkStreakReminder } from '@/lib/api';
+import { isStreakStillAlive } from '@/lib/thailandTime';
 import { checkChallengesEndingSoon } from '@/lib/challenges';
 import { fetchAppSettings } from '@/lib/appSettings';
 import { useUserStore } from '@/store/userStore';
@@ -22,6 +23,7 @@ type ProfileRow = {
   level: number;
   xp: number;
   streak_days: number;
+  last_active_date: string | null;
   role: 'user' | 'admin';
   onboarding_completed: boolean;
   suspended: boolean;
@@ -38,7 +40,7 @@ async function fetchAndSetUser(
 
   let { data, error } = await supabase
     .from('profiles')
-    .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed, suspended')
+    .select('id, username, first_name, last_name, level, xp, streak_days, last_active_date, role, onboarding_completed, suspended')
     .eq('id', userId)
     .single();
 
@@ -54,7 +56,7 @@ async function fetchAndSetUser(
 
     ({ data, error } = await supabase
       .from('profiles')
-      .select('id, username, first_name, last_name, level, xp, streak_days, role, onboarding_completed, suspended')
+      .select('id, username, first_name, last_name, level, xp, streak_days, last_active_date, role, onboarding_completed, suspended')
       .eq('id', userId)
       .single());
   }
@@ -83,7 +85,7 @@ async function fetchAndSetUser(
     username: profile.username,
     xp: profile.xp ?? 0,
     level: profile.level ?? 1,
-    streak: profile.streak_days ?? 0,
+    streak: isStreakStillAlive(profile.last_active_date) ? (profile.streak_days ?? 0) : 0,
     xpForNextLevel: xpForLevel((profile.level ?? 1) + 1),
     role: profile.role ?? 'user',
   });

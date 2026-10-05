@@ -118,7 +118,7 @@ export async function fetchDailyActiveCounts(): Promise<DailyActiveCount[]> {
 // baseline to compare against (division by zero), rather than a misleading 0%.
 export type TrendStat = { value: number; changePercent: number | null };
 
-function percentChange(current: number, previous: number): number | null {
+export function percentChange(current: number, previous: number): number | null {
   if (previous === 0) return current === 0 ? 0 : null;
   return Math.round(((current - previous) / previous) * 100);
 }
