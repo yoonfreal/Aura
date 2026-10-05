@@ -40,15 +40,11 @@ const GENDER_COLORS: Record<string, string> = { Male: '#1F6D46', Female: '#F5B80
 const AGE_COLOR = '#1F6D46';
 const FEATURE_COLORS = ['#1F6D46', '#2E8B5C', '#3FA873', '#6FC79A', '#A8DFC0'];
 
+// Only increases are shown — a decline reads as "+0%" (no progress) rather than a negative
+// percentage, so every tile reports the same way gym check-ins and challenges do.
 function TrendCaption({ changePercent }: { changePercent: number | null }) {
   if (changePercent === null) return <p className="mt-1 text-xs font-bold text-gray-400">No data last month</p>;
-  const positive = changePercent >= 0;
-  return (
-    <p className={`mt-1 text-xs font-bold ${positive ? 'text-emerald-600' : 'text-red-500'}`}>
-      {positive ? '+' : ''}
-      {changePercent}% vs last month
-    </p>
-  );
+  return <p className="mt-1 text-xs font-bold text-emerald-600">+{Math.max(0, changePercent)}% vs last month</p>;
 }
 
 function StatTile({
