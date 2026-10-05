@@ -27,7 +27,7 @@ import {
   type JoinedUser,
 } from '@/lib/posts';
 import { fetchOpen1v1Challenges, inviteOpponent, type Open1v1Challenge } from '@/lib/challenges';
-import { getOrCreateDirectConversation } from '@/lib/chat';
+import { countUnreadMessages, getOrCreateDirectConversation } from '@/lib/chat';
 import {
   countUnreadNotifications,
   fetchNotifications,
@@ -61,6 +61,8 @@ export default function SocialScreen() {
   const unreadNotifications = useUserStore((state) => state.notificationCount);
   const setUnreadNotifications = useUserStore((state) => state.setNotificationCount);
   const setSocialNotificationCount = useUserStore((state) => state.setSocialNotificationCount);
+  const unreadMessages = useUserStore((state) => state.unreadMessageCount);
+  const setUnreadMessageCount = useUserStore((state) => state.setUnreadMessageCount);
 
   const [filter, setFilter] = useState<FilterType>('All');
   const [filterTrackWidth, setFilterTrackWidth] = useState(0);
@@ -113,7 +115,8 @@ export default function SocialScreen() {
     fetchJoins(postsData.map((p) => p.id), userId).then(setJoins).catch(() => {});
     fetchCommentCounts(postsData.map((p) => p.id)).then(setCommentCounts).catch(() => {});
     countIncomingRequests(userId).then(setFriendRequestCount).catch(() => {});
-  }, [userId]);
+    countUnreadMessages(userId).then(setUnreadMessageCount).catch(() => {});
+  }, [userId, setUnreadMessageCount]);
 
   useFocusEffect(
     useCallback(() => {
@@ -358,6 +361,11 @@ export default function SocialScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/chat')}>
             <Ionicons name="chatbubble-outline" size={20} color="#1B2B4B" />
+            {unreadMessages > 0 && (
+              <View style={styles.notifBadge}>
+                <Text style={styles.notifBadgeText}>{unreadMessages > 9 ? '9+' : unreadMessages}</Text>
+              </View>
+            )}
           </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={handleOpenNotifications}>
             <Ionicons name="notifications-outline" size={20} color="#1B2B4B" />

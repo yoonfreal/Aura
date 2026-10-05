@@ -67,17 +67,18 @@ export function ChallengeCard({
   const accent = typeColor(challenge.type);
   const showCategoryTag = challenge.category && challenge.category.toLowerCase() !== challenge.type;
 
-  const earnedBadge =
-    isClaimed && challenge.badgeName ? (
-      <View style={styles.badgePill}>
-        <Text style={styles.badgePillText}>
-          {challenge.badgeIcon ? `${challenge.badgeIcon} ` : ''}
-          {challenge.badgeName}
-        </Text>
-      </View>
-    ) : (
-      <Text style={styles.linkText}>Completed</Text>
-    );
+  // One badge pill style used everywhere a badge shows up — same position (in the body,
+  // not the footer) and same look whether it's still up for grabs or already earned, so
+  // individual/team/1v1 cards and ongoing/completed states all read the same way.
+  const badgePill = challenge.badgeName ? (
+    <View style={styles.badgePreviewPill}>
+      <MaterialCommunityIcons name="medal-outline" size={12} color="#6D28D9" />
+      <Text style={styles.badgePreviewText}>
+        {challenge.badgeIcon ? `${challenge.badgeIcon} ` : ''}
+        {challenge.badgeName}
+      </Text>
+    </View>
+  ) : null;
 
   return (
     <View style={[styles.card, highlighted && styles.cardHighlighted]}>
@@ -106,33 +107,42 @@ export function ChallengeCard({
         </View>
       </View>
 
-      {challenge.description && <Text style={styles.description}>{challenge.description}</Text>}
+      {/* Individual challenges collapse to a brief summary once completed — the progress
+          bar/description/badge-preview block is only useful while there's still progress
+          left to show, and kept it visible at 100% green read as visually cluttered. */}
+      {!isTeam && isCompleted ? (
+        <>
+          <View style={styles.completedRow}>
+            <MaterialCommunityIcons name="check-circle" size={14} color={accent} />
+            <Text style={styles.completedRowText}>
+              Completed · {challenge.goalValue.toLocaleString()} {challenge.goalUnit}
+            </Text>
+          </View>
+          {badgePill}
+        </>
+      ) : (
+        <>
+          {challenge.description && <Text style={styles.description}>{challenge.description}</Text>}
 
-      {challenge.badgeName && (
-        <View style={styles.badgePreviewPill}>
-          <MaterialCommunityIcons name="medal-outline" size={12} color="#6D28D9" />
-          <Text style={styles.badgePreviewText}>
-            {challenge.badgeIcon ? `${challenge.badgeIcon} ` : ''}
-            {challenge.badgeName}
-          </Text>
-        </View>
-      )}
+          {badgePill}
 
-      <View style={styles.progressTrack}>
-        <View style={[styles.progressFill, { width: `${progressPct}%`, backgroundColor: accent }]} />
-      </View>
-      <View style={styles.progressRow}>
-        <Text style={styles.progressLabel}>
-          {currentValue.toLocaleString()} / {challenge.goalValue.toLocaleString()} {challenge.goalUnit}
-        </Text>
-        <Text style={[styles.progressPct, { color: accent }]}>{Math.round(progressPct)}%</Text>
-      </View>
-      {hasJoined && !isCompleted && expiresAt && !isNoLimit && (
-        <View style={styles.metaRow}>
-          <Text style={isExpired ? styles.expiredText : styles.progressHint}>
-            {isExpired ? 'Expired — no XP for this attempt' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left to finish`}
-          </Text>
-        </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progressPct}%`, backgroundColor: accent }]} />
+          </View>
+          <View style={styles.progressRow}>
+            <Text style={styles.progressLabel}>
+              {currentValue.toLocaleString()} / {challenge.goalValue.toLocaleString()} {challenge.goalUnit}
+            </Text>
+            <Text style={[styles.progressPct, { color: accent }]}>{Math.round(progressPct)}%</Text>
+          </View>
+          {hasJoined && expiresAt && !isNoLimit && (
+            <View style={styles.metaRow}>
+              <Text style={isExpired ? styles.expiredText : styles.progressHint}>
+                {isExpired ? 'Expired — no XP for this attempt' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left to finish`}
+              </Text>
+            </View>
+          )}
+        </>
       )}
 
       {isPendingTeamInvite && (
@@ -171,8 +181,6 @@ export function ChallengeCard({
               <TouchableOpacity onPress={onInviteFriend}>
                 <Text style={styles.linkText}>Invite friend</Text>
               </TouchableOpacity>
-            ) : isClaimed ? (
-              earnedBadge
             ) : (
               <View />
             )}
@@ -211,7 +219,7 @@ export function ChallengeCard({
           </>
         ) : (
           <>
-            {isClaimed ? earnedBadge : <View />}
+            <View />
             {canClaim ? (
               <TouchableOpacity style={styles.claimBtn} onPress={onClaim}>
                 <Text style={styles.claimBtnText}>Claim Reward</Text>
@@ -302,6 +310,13 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   rewardPillText: { fontSize: 10.5, fontWeight: '800', color: '#8A6D00' },
+  completedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginTop: 9,
+  },
+  completedRowText: { fontSize: 11.5, fontWeight: '700', color: '#6B7280' },
   progressTrack: {
     height: 7,
     borderRadius: 4,
@@ -329,17 +344,6 @@ const styles = StyleSheet.create({
   },
   footerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   linkText: { fontSize: 12, fontWeight: '700', color: '#2563EB' },
-  badgePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF8E1',
-    borderWidth: 1,
-    borderColor: '#F5D77A',
-    borderRadius: 20,
-    paddingHorizontal: 9,
-    paddingVertical: 3,
-  },
-  badgePillText: { fontSize: 11, fontWeight: '800', color: '#8A6D00' },
   outlineBtn: {
     borderWidth: 1.5,
     borderColor: '#1B2B4B',

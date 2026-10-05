@@ -13,6 +13,8 @@ function displayName(p: ProfileNameRow | undefined): string {
 }
 
 type ParticipantRow = { conversation_id: string; user_id: string };
+type ReadCursorRow = { conversation_id: string; last_read_at: string | null };
+type UnreadMessageRow = { sender_id: string; created_at: string };
 type MessageRow = { id: string; conversation_id: string; sender_id: string; body: string; created_at: string };
 
 export type ChatMessage = {
@@ -29,6 +31,7 @@ export type ConversationSummary = {
   otherUserName: string;
   lastMessage: string | null;
   lastMessageAt: string | null;
+  unreadCount: number;
 };
 
 function toChatMessage(row: MessageRow): ChatMessage {
@@ -82,14 +85,62 @@ export async function getOrCreateDirectConversation(userId: string, friendId: st
   return conversationId;
 }
 
+// A message counts as unread when someone else sent it after the last time this user
+// opened the thread. `last_read_at` is null for a participant who has never opened it, in
+// which case everything in the thread is unread.
+function isUnreadFor(userId: string, message: UnreadMessageRow, lastReadAt: string | null): boolean {
+  if (message.sender_id === userId) return false;
+  if (!lastReadAt) return true;
+  return new Date(message.created_at).getTime() > new Date(lastReadAt).getTime();
+}
+
+// Total unread messages across every conversation — what the Messages icon badges on each
+// tab. The unread test is per-conversation (each thread has its own read cursor), which
+// PostgREST can't express as a single filter, so the rows are compared here instead.
+export async function countUnreadMessages(userId: string): Promise<number> {
+  const { data: myConvos } = await supabase
+    .from('conversation_participants')
+    .select('conversation_id, last_read_at')
+    .eq('user_id', userId);
+
+  const cursors = (myConvos ?? []) as ReadCursorRow[];
+  if (cursors.length === 0) return 0;
+
+  const lastReadByConvo = new Map(cursors.map((c) => [c.conversation_id, c.last_read_at]));
+
+  const { data: messages } = await supabase
+    .from('messages')
+    .select('conversation_id, sender_id, created_at')
+    .in('conversation_id', [...lastReadByConvo.keys()])
+    .neq('sender_id', userId);
+
+  return ((messages ?? []) as (UnreadMessageRow & { conversation_id: string })[]).filter((m) =>
+    isUnreadFor(userId, m, lastReadByConvo.get(m.conversation_id) ?? null),
+  ).length;
+}
+
+// Moves this user's read cursor on one thread to now, clearing its unread count. Called
+// when the thread is opened and again for anything that arrives while it's on screen.
+export async function markConversationRead(conversationId: string, userId: string): Promise<void> {
+  const { error } = await supabase
+    .from('conversation_participants')
+    .update({ last_read_at: new Date().toISOString() })
+    .eq('conversation_id', conversationId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
 export async function fetchConversations(userId: string): Promise<ConversationSummary[]> {
   const { data: myConvos } = await supabase
     .from('conversation_participants')
-    .select('conversation_id')
+    .select('conversation_id, last_read_at')
     .eq('user_id', userId);
 
-  const conversationIds = ((myConvos ?? []) as ParticipantRow[]).map((r) => r.conversation_id);
+  const cursors = (myConvos ?? []) as ReadCursorRow[];
+  const conversationIds = cursors.map((r) => r.conversation_id);
   if (conversationIds.length === 0) return [];
+
+  const lastReadByConvo = new Map(cursors.map((c) => [c.conversation_id, c.last_read_at]));
 
   const { data: participants } = await supabase
     .from('conversation_participants')
@@ -109,13 +160,19 @@ export async function fetchConversations(userId: string): Promise<ConversationSu
 
   const { data: messages } = await supabase
     .from('messages')
-    .select('conversation_id, body, created_at')
+    .select('conversation_id, sender_id, body, created_at')
     .in('conversation_id', conversationIds)
     .order('created_at', { ascending: false });
 
+  // One pass over the newest-first rows gives both the preview line and the unread count,
+  // so the list doesn't need a second trip through countUnreadMessages.
   const lastMessageByConvo = new Map<string, { body: string; created_at: string }>();
-  for (const m of (messages ?? []) as { conversation_id: string; body: string; created_at: string }[]) {
+  const unreadByConvo = new Map<string, number>();
+  for (const m of (messages ?? []) as (UnreadMessageRow & { conversation_id: string; body: string })[]) {
     if (!lastMessageByConvo.has(m.conversation_id)) lastMessageByConvo.set(m.conversation_id, m);
+    if (isUnreadFor(userId, m, lastReadByConvo.get(m.conversation_id) ?? null)) {
+      unreadByConvo.set(m.conversation_id, (unreadByConvo.get(m.conversation_id) ?? 0) + 1);
+    }
   }
 
   return conversationIds
@@ -128,6 +185,7 @@ export async function fetchConversations(userId: string): Promise<ConversationSu
         otherUserName: displayName(profileById.get(otherUserId)),
         lastMessage: last?.body ?? null,
         lastMessageAt: last?.created_at ?? null,
+        unreadCount: unreadByConvo.get(id) ?? 0,
       };
     })
     .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));

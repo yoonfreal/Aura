@@ -27,6 +27,7 @@ import {
   countIncomingRequests,
   fetchFriendsLeaderboard,
 } from '@/lib/friends';
+import { countUnreadMessages } from '@/lib/chat';
 
 import { useUserStore } from '@/store/userStore';
 
@@ -79,18 +80,18 @@ function getMondayDate(): string {
 const PODIUM_CONFIG = {
   1: {
     ringColor: '#F5B800',
-    avatarSize: 66,
-    barHeight: 96,
+    avatarSize: 54,
+    barHeight: 76,
   },
   2: {
     ringColor: '#9BA4B4',
-    avatarSize: 54,
-    barHeight: 68,
+    avatarSize: 44,
+    barHeight: 54,
   },
   3: {
     ringColor: '#CD7F32',
-    avatarSize: 50,
-    barHeight: 52,
+    avatarSize: 40,
+    barHeight: 42,
   },
 } as const;
 
@@ -136,6 +137,15 @@ export default function LeaderboardScreen() {
   const setSocialNotificationCount =
     useUserStore(
       (s) => s.setSocialNotificationCount
+    );
+
+  const unreadMessages = useUserStore(
+    (s) => s.unreadMessageCount
+  );
+
+  const setUnreadMessageCount =
+    useUserStore(
+      (s) => s.setUnreadMessageCount
     );
 
   const [showNotifications, setShowNotifications] =
@@ -189,11 +199,16 @@ export default function LeaderboardScreen() {
       )
         .then(setSocialNotificationCount)
         .catch(() => {});
+
+      countUnreadMessages(currentUserId)
+        .then(setUnreadMessageCount)
+        .catch(() => {});
     }, [
       currentUserId,
       setFriendRequestCount,
       setNotificationCount,
       setSocialNotificationCount,
+      setUnreadMessageCount,
     ]),
   );
 
@@ -718,72 +733,6 @@ export default function LeaderboardScreen() {
 
   const listHeader = (
     <>
-      {/* Podium section */}
-      <View
-        style={styles.podiumSection}
-      >
-        {/* Segmented tabs */}
-        <View
-          style={styles.tabBar}
-        >
-          {(
-            [
-              'Overall',
-              'Weekly',
-              'Friends',
-            ] as TabType[]
-          ).map((tab) => (
-            <TouchableOpacity
-              key={tab}
-              style={[
-                styles.tab,
-                activeTab === tab &&
-                  styles.activeTab,
-              ]}
-              onPress={() =>
-                setActiveTab(tab)
-              }
-            >
-              <Text
-                style={
-                  activeTab === tab
-                    ? styles.activeTabText
-                    : styles.tabText
-                }
-              >
-                {tab}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        {showPodium && (
-          <View
-            style={
-              styles.podiumContainer
-            }
-          >
-            {topThree[1] &&
-              renderPodiumUser(
-                topThree[1],
-                2
-              )}
-
-            {topThree[0] &&
-              renderPodiumUser(
-                topThree[0],
-                1
-              )}
-
-            {topThree[2] &&
-              renderPodiumUser(
-                topThree[2],
-                3
-              )}
-          </View>
-        )}
-      </View>
-
       {/* State messages */}
       {loading && (
         <View
@@ -936,6 +885,24 @@ export default function LeaderboardScreen() {
                 size={20}
                 color="#1B2B4B"
               />
+
+              {unreadMessages > 0 && (
+                <View
+                  style={
+                    styles.notifBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.notifBadgeText
+                    }
+                  >
+                    {unreadMessages > 9
+                      ? '9+'
+                      : unreadMessages}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {/* Notifications */}
@@ -975,6 +942,32 @@ export default function LeaderboardScreen() {
               )}
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Segmented tabs — fixed, does not scroll with the list */}
+        <View style={styles.tabBar}>
+          {(['Overall', 'Weekly', 'Friends'] as TabType[]).map((tab) => (
+            <TouchableOpacity
+              key={tab}
+              style={[styles.tab, activeTab === tab && styles.activeTab]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text style={activeTab === tab ? styles.activeTabText : styles.tabText}>
+                {tab}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Podium — fixed, does not scroll with the list */}
+        <View style={styles.podiumSection}>
+          {showPodium && (
+            <View style={styles.podiumContainer}>
+              {topThree[1] && renderPodiumUser(topThree[1], 2)}
+              {topThree[0] && renderPodiumUser(topThree[0], 1)}
+              {topThree[2] && renderPodiumUser(topThree[2], 3)}
+            </View>
+          )}
         </View>
       </View>
 
@@ -1219,7 +1212,7 @@ const styles = StyleSheet.create({
   tabBar: {
     flexDirection: 'row',
     backgroundColor:
-      '#F0F4F8',
+      '#E8EDF2',
     borderRadius: 12,
     marginHorizontal: 20,
     marginTop: 16,
@@ -1329,7 +1322,7 @@ const styles = StyleSheet.create({
   },
 
   podiumBar: {
-    width: 84,
+    width: 68,
     borderTopLeftRadius: 10,
     borderTopRightRadius: 10,
     borderTopWidth: 2,

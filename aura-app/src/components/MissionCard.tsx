@@ -13,6 +13,9 @@ export function MissionCard({ mission, onLog }: Props) {
   const percentage = Math.round(progress * 100);
   const hasStarted = mission.currentValue > 0;
   const needsPhoto = mission.goalUnit === 'photo';
+  // Steps/calories track automatically from real HealthKit-synced activity — no manual
+  // log button, since the whole point is that these can't be tapped without doing them.
+  const isAutoTracked = mission.goalUnit === 'steps' || mission.goalUnit === 'calories';
 
   function formatProgress() {
     if (mission.goalUnit === 'steps') {
@@ -48,13 +51,13 @@ export function MissionCard({ mission, onLog }: Props) {
           <Text style={styles.progressText}>{formatProgress()}</Text>
         </View>
 
-        {!mission.completed && !hasStarted && (
+        {!mission.completed && !hasStarted && !isAutoTracked && (
           <TouchableOpacity style={styles.logBtn} onPress={() => onLog?.(mission.id)}>
             <Text style={styles.logBtnText}>Log</Text>
           </TouchableOpacity>
         )}
 
-        {(mission.completed || hasStarted) && !mission.completed && (
+        {(mission.completed || hasStarted || isAutoTracked) && !mission.completed && (
           <Text style={styles.percentage}>{percentage}%</Text>
         )}
 
@@ -63,7 +66,7 @@ export function MissionCard({ mission, onLog }: Props) {
         )}
       </View>
 
-      {(mission.completed || hasStarted) && (
+      {(mission.completed || hasStarted || isAutoTracked) && (
         <View style={styles.barTrack}>
           <View style={[styles.barFill, { width: `${percentage}%` as `${number}%` }]} />
         </View>

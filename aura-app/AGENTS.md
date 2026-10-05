@@ -16,7 +16,8 @@ Assumption University students.
  
 The app includes:
 - AU student login via Google OAuth (AU email domain only)
-- Activity tracking via HealthKit
+- Activity tracking via HealthKit, with GPS as a fallback data source for students
+  without a paired watch (see Activity Data Sources below)
 - Gamification (XP, levels, badges, streaks)
 - AI daily missions and AI report card via Claude API
 - 1v1 and team challenges
@@ -38,11 +39,13 @@ Keep the implementation simple and readable.
 - NativeWind
 - Zustand
 - Supabase (auth, database, storage, realtime)
-- Node.js + Express (backend REST API)
-- Redis / Upstash (caching, sessions)
+- Supabase Edge Functions (backend logic that needs a secret key — Claude calls, photo
+  validation, AU email domain enforcement — no separate Node.js/Express server)
 - Claude API (AI missions, report card, photo validation)
-- HealthKit via react-native-health (fitness data)
-- Railway (backend hosting)
+- HealthKit via @kingstinct/react-native-healthkit (fitness data — built for the New
+  Architecture; react-native-health is incompatible with this project's RN version)
+- expo-location (GPS — already used for gym check-in; extended to track distance/pace
+  for students without a paired watch, see Activity Data Sources below)
 - EAS Build + TestFlight (iOS distribution)
  
 Do not introduce new major libraries unless there is a strong reason.
@@ -111,8 +114,8 @@ Persist with AsyncStorage when needed.
  
 **lib/** holds external service helpers.
 - supabase.ts → Supabase client (anon key only, never service key)
-- api.ts → Express backend calls
-- claude.ts → Claude API calls (via backend only, never direct from client)
+- api.ts → Direct Supabase calls (missions, XP, challenges, social, etc.)
+- claude.ts → Calls a Supabase Edge Function, never the Claude API directly
 - healthkit.ts → HealthKit permissions and data reads
 - cn.ts → NativeWind utility
  
@@ -206,17 +209,18 @@ Key types to define:
  
 ## Authentication
  
-Use Supabase Auth with Google OAuth.
+Use Supabase Auth. Currently email/password; Google OAuth is planned
+(Supabase Auth supports it natively — no separate backend needed to add it).
 Restrict login to @student.au.edu email domain only.
-Check email domain in Express backend middleware after Supabase
-verifies the token.
+Enforce the domain check in a Postgres trigger or Supabase Edge Function,
+not just client-side, so it can't be bypassed.
 Admin users have a separate role stored in the users table.
 Do not build custom auth from scratch.
  
 ```typescript
-// In Express middleware
+// In a Supabase Edge Function or Postgres trigger
 if (!user.email?.endsWith('@student.au.edu')) {
-  return res.status(403).json({ error: 'AU students only' })
+  throw new Error('AU students only')
 }
 ```
  
@@ -225,31 +229,64 @@ if (!user.email?.endsWith('@student.au.edu')) {
 ## Supabase Rules
  
 - Use anon key in frontend only.
-- Use service key in Express backend only — never in client code.
-- All AI calls (Claude API) go through Express backend only.
-- All HealthKit data is read on device and sent to backend via API.
+- Use service key in a Supabase Edge Function only — never in client code.
+- All AI calls (Claude API) go through a Supabase Edge Function only.
+- HealthKit data is read on device and synced directly to Supabase (steps/calories today);
+  route it through an Edge Function instead if/when trust-worthiness of the data matters
+  (e.g. for anti-cheat cross-referencing).
 - Never call Claude API directly from the React Native app.
  
 ---
  
-## HealthKit Rules
+## Activity Data Sources
  
+Modeled on how Strava handles this: trust the device that recorded the
+activity, since a GPS trace or watch sensor reading is much harder to
+fake convincingly than a number a user types in. Not every student has
+an Apple Watch, so HealthKit and GPS are two independent, trusted
+inputs — use whichever the student has, don't require both.
+ 
+**HealthKit** (steps, calories — the primary source when available):
 - Request permissions on first launch.
-- Read: steps, calories, heart rate, distance, workout sessions.
-- Data flows: Apple Watch → HealthKit → react-native-health →
-  Express backend → Supabase.
-- Requires Expo Bare Workflow and EAS Build.
+- Read: steps, calories, heart rate, distance, workout sessions
+  (steps/calories implemented; heart rate/distance/workouts not yet).
+- Data flows: Apple Watch or iPhone → HealthKit →
+  @kingstinct/react-native-healthkit → Supabase (direct sync, no
+  backend hop).
+- Requires Expo Bare Workflow and EAS Build (or a local dev client build).
 - Does not work in Expo Go.
+ 
+**GPS** (fallback for students without a paired watch, or for
+distance/pace HealthKit doesn't give us):
+- Track an active session with expo-location while a workout is in
+  progress (foreground only — no background location without a
+  stronger reason and explicit ask, since that's a bigger permission
+  and battery ask than gym check-in's one-shot location read).
+- Derive distance and pace from the recorded GPS trace, the same
+  underlying signal Strava's running/cycling tracking uses.
+- Like Strava, treat GPS data as trusted-but-not-infallible: apply the
+  same anomaly checks Strava does (reject speeds/paces outside human
+  limits for the activity type, flag sparse or gapped traces) rather
+  than accepting any reported distance at face value.
+- Swimming is HealthKit-only, not GPS — GPS doesn't work underwater.
+  Skip GPS-based swim tracking; revisit only if a specific need for it
+  comes up.
  
 ---
  
 ## Anti-Cheat Rules
  
-When validating manual workouts:
+Layered the way Strava layers device trust, anomaly detection, and
+review — no single layer has to catch everything on its own:
 - Live photo only (gallery disabled).
-- Photo sent to Express backend.
-- Backend calls Claude API to analyze image.
-- Cross-reference with HealthKit sensor data.
+- Photo sent to a Supabase Edge Function.
+- Edge Function calls Claude API to analyze image.
+- Cross-reference against whichever real signal exists for that
+  workout — HealthKit sensor data, or the GPS trace's distance/pace —
+  not just the number the student entered.
+- Apply the same statistical sanity checks Strava applies to GPS
+  data: reject values that exceed realistic human speed/pace/output
+  for the activity type, not just a flat cooldown.
 - Apply cooldown: no duplicate logs within 30 minutes.
 - Block unrealistic values based on duration.
  
@@ -258,10 +295,10 @@ When validating manual workouts:
 ## Secrets
  
 - Never expose secret keys in client code.
-- Claude API key → Express backend only.
-- Supabase service key → Express backend only.
+- Claude API key → Supabase Edge Function only.
+- Supabase service key → Supabase Edge Function only.
 - Supabase anon key → frontend only.
-- All sensitive API calls go through Express backend.
+- All sensitive API calls go through a Supabase Edge Function.
  
 ---
  

@@ -17,19 +17,19 @@ import { useUserStore } from '@/store/userStore';
 import { StatCard } from '@/components/StatCard';
 import { MissionCard } from '@/components/MissionCard';
 import { XPBar } from '@/components/XPBar';
-import { WatchSyncCard } from '@/components/WatchSyncCard';
 import { GymCheckInIcon } from '@/components/GymCheckInIcon';
 import { WeeklyView } from '@/components/WeeklyView';
 import { NotificationsModal } from '@/components/NotificationsModal';
 
-import { fetchWatchSyncStatus } from '@/lib/healthkit';
+import { fetchTodayStats, fetchWatchSyncStatus, requestHealthKitPermissions } from '@/lib/healthkit';
 
 import {
   fetchTodayMissions,
   fetchDailyStats,
   logMissionComplete,
+  updateMissionProgress,
   fetchWeeklyStats,
-  incrementDailyStat,
+  syncHealthKitStats,
 } from '@/lib/api';
 
 import {
@@ -38,6 +38,7 @@ import {
 } from '@/lib/challenges';
 
 import { countIncomingRequests } from '@/lib/friends';
+import { countUnreadMessages } from '@/lib/chat';
 
 import {
   countUnreadNotifications,
@@ -49,6 +50,51 @@ import {
 } from '@/lib/notifications';
 
 import { getLevelTitle, xpAtLevelStart, xpForLevel } from '@/lib/level';
+import type { Mission } from '@/types';
+
+// Steps/calories missions are auto-tracked from real HealthKit-synced daily_stats rather
+// than manually logged — the whole point is that a mission can't be faked by tapping a
+// button. Minutes missions stay manual (logMissionComplete via the Log button) since
+// there's no automatic signal for "which activity" without further validation. Threads
+// xp/level forward across missions completed in the same pass so a second completion in
+// the same load doesn't overwrite the first's XP gain.
+async function syncAutoTrackedMissions(
+  missionsToSync: Mission[],
+  userId: string,
+  steps: number,
+  calories: number,
+  startXp: number,
+  startLevel: number,
+): Promise<{ missions: Mission[]; xp: number; level: number; streak: number | null }> {
+  let xp = startXp;
+  let level = startLevel;
+  let streak: number | null = null;
+  const updated: Mission[] = [];
+
+  for (const m of missionsToSync) {
+    if (m.completed || (m.goalUnit !== 'steps' && m.goalUnit !== 'calories')) {
+      updated.push(m);
+      continue;
+    }
+
+    const real = m.goalUnit === 'steps' ? steps : calories;
+
+    if (real >= m.goalValue) {
+      const result = await logMissionComplete(m.id, userId, m.goalValue, m.xpReward, xp, level);
+      xp = result.newXp;
+      level = result.newLevel;
+      streak = result.newStreak;
+      updated.push({ ...m, currentValue: m.goalValue, completed: true });
+    } else if (real !== m.currentValue) {
+      await updateMissionProgress(m.id, real);
+      updated.push({ ...m, currentValue: real });
+    } else {
+      updated.push(m);
+    }
+  }
+
+  return { missions: updated, xp, level, streak };
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -58,7 +104,6 @@ export default function HomeScreen() {
     user,
     dailyStats,
     missions,
-    watchSync,
     activeTab,
     weeklyStats,
     friendRequestCount,
@@ -73,6 +118,7 @@ export default function HomeScreen() {
     setFriendRequestCount,
     setNotificationCount,
     setSocialNotificationCount,
+    setUnreadMessageCount,
   } = useUserStore();
 
   const pillAnim = useRef(new Animated.Value(0)).current;
@@ -86,6 +132,10 @@ export default function HomeScreen() {
 
   const unreadNotifications = useUserStore(
     (state) => state.notificationCount
+  );
+
+  const unreadMessages = useUserStore(
+    (state) => state.unreadMessageCount
   );
 
   useEffect(() => {
@@ -114,6 +164,13 @@ export default function HomeScreen() {
 
       async function loadData() {
         try {
+          const hasHealthKitAccess = await requestHealthKitPermissions();
+
+          if (hasHealthKitAccess) {
+            const healthStats = await fetchTodayStats();
+            await syncHealthKitStats(user!.id, healthStats.steps, healthStats.calories);
+          }
+
           const [
             activityStats,
             sync,
@@ -124,15 +181,34 @@ export default function HomeScreen() {
             fetchTodayMissions(user!.id),
           ]);
 
+          const synced = await syncAutoTrackedMissions(
+            todayMissions,
+            user!.id,
+            activityStats.steps,
+            activityStats.calories,
+            user!.xp,
+            user!.level,
+          );
+
+          setMissions(synced.missions);
+          setWatchSync(sync);
+
           setDailyStats({
             steps: activityStats.steps,
             calories: activityStats.calories,
-            streakDays: user!.streak,
-            xpEarned: activityStats.xpEarned,
+            streakDays: synced.streak ?? user!.streak,
+            xpEarned: activityStats.xpEarned + (synced.xp - user!.xp),
           });
 
-          setMissions(todayMissions);
-          setWatchSync(sync);
+          if (synced.xp !== user!.xp || synced.level !== user!.level) {
+            setUser({
+              ...user!,
+              xp: synced.xp,
+              level: synced.level,
+              xpForNextLevel: xpForLevel(synced.level + 1),
+              streak: synced.streak ?? user!.streak,
+            });
+          }
 
           const claimable = await refreshClaimableCount(
             user!.id
@@ -154,6 +230,11 @@ export default function HomeScreen() {
             await countUnreadNotifications(user!.id, SOCIAL_NOTIFICATION_TYPES);
 
           setSocialNotificationCount(unreadSocialNotifications);
+
+          const unreadMessageTotal =
+            await countUnreadMessages(user!.id);
+
+          setUnreadMessageCount(unreadMessageTotal);
         } catch (err) {
           console.error('loadData failed', err);
         }
@@ -259,37 +340,13 @@ export default function HomeScreen() {
         streak: newStreak,
       });
 
-      if (
-        mission.goalUnit === 'steps' ||
-        mission.goalUnit === 'calories'
-      ) {
-        const {
-          steps,
-          calories,
-        } = await incrementDailyStat(
-          user.id,
-          mission.goalUnit,
-          mission.goalValue
-        );
-
-        setDailyStats({
-          ...dailyStats,
-          steps,
-          calories,
-          streakDays: newStreak,
-          xpEarned:
-            dailyStats.xpEarned +
-            mission.xpReward,
-        });
-      } else {
-        setDailyStats({
-          ...dailyStats,
-          streakDays: newStreak,
-          xpEarned:
-            dailyStats.xpEarned +
-            mission.xpReward,
-        });
-      }
+      setDailyStats({
+        ...dailyStats,
+        streakDays: newStreak,
+        xpEarned:
+          dailyStats.xpEarned +
+          mission.xpReward,
+      });
 
       const claimable =
         await refreshClaimableCount(user.id);
@@ -371,6 +428,16 @@ export default function HomeScreen() {
                 size={20}
                 color="#1B2B4B"
               />
+
+              {unreadMessages > 0 && (
+                <View style={styles.notifBadge}>
+                  <Text style={styles.notifBadgeText}>
+                    {unreadMessages > 9
+                      ? '9+'
+                      : unreadMessages}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {/* Notifications */}
@@ -505,7 +572,7 @@ export default function HomeScreen() {
                   iconColor="#0D9488"
                   iconBg="#CCFBF1"
                   value={dailyStats.steps.toLocaleString()}
-                  label="Avg daily steps"
+                  label="Today's steps"
                 />
 
                 <StatCard
@@ -535,11 +602,6 @@ export default function HomeScreen() {
                 />
               </View>
             </View>
-
-            {/* Watch Sync */}
-            <WatchSyncCard
-              status={watchSync}
-            />
 
             {/* Missions */}
             <Text style={styles.sectionTitle}>

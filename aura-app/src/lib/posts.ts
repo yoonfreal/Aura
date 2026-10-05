@@ -4,7 +4,7 @@ import {
   notifyFriendsOfPost,
   notifyReaction,
 } from '@/lib/notifications';
-import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
+import { addDaysToISO, thailandDateISO, isStreakStillAlive } from '@/lib/thailandTime';
 import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
 import { fetchAppSettings } from '@/lib/appSettings';
 import { fetchBannedKeywords, containsBannedKeyword } from '@/lib/bannedWords';
@@ -71,11 +71,11 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
 
   const [{ data: statsData }, { data: profileData }] = await Promise.all([
     supabase.from('daily_stats').select('steps, calories').eq('user_id', userId).eq('date', today).maybeSingle(),
-    supabase.from('profiles').select('streak_days, level').eq('id', userId).single(),
+    supabase.from('profiles').select('streak_days, level, last_active_date').eq('id', userId).single(),
   ]);
 
   const stats = statsData as TodayStatsRow | null;
-  const profile = profileData as ProfileStatRow | null;
+  const profile = profileData as (ProfileStatRow & { last_active_date: string | null }) | null;
   const candidates: AchievementCandidate[] = [];
 
   if (stats?.steps) {
@@ -100,7 +100,7 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
       sortKey: todayStart,
     });
   }
-  if (profile?.streak_days) {
+  if (profile?.streak_days && isStreakStillAlive(profile.last_active_date)) {
     candidates.push({
       kind: 'stat',
       title: `On a ${profile.streak_days}-day streak`,
