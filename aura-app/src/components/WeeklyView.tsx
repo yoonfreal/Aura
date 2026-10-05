@@ -174,7 +174,7 @@ export function WeeklyView({ stats }: Props) {
           <Text style={styles.aiTitle}>AI weekly summary</Text>
         </View>
         <Text style={styles.aiBody}>
-          {`"This week you walked ${stats.avgSteps.toLocaleString()} steps on average per day${stats.avgStepsVsLastWeek !== null ? ` – ${stats.avgStepsVsLastWeek >= 0 ? 'up' : 'down'} ${Math.abs(stats.avgStepsVsLastWeek)}% from last week` : ''}. You earned ${stats.totalXp} XP this week. Keep pushing to level up!"`}
+          {`"Over the last 7 days you walked ${stats.avgSteps.toLocaleString()} steps on average per day${stats.avgStepsVsLastWeek !== null ? ` – ${stats.avgStepsVsLastWeek >= 0 ? 'up' : 'down'} ${Math.abs(stats.avgStepsVsLastWeek)}% from the 7 days before` : ''}. You earned ${stats.totalXp} XP in that time. Keep pushing to level up!"`}
         </Text>
         <View style={styles.aiArrow}>
           <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />

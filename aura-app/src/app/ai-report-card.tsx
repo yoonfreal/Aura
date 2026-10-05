@@ -5,7 +5,7 @@ import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { useUserStore } from '@/store/userStore';
 import { xpAtLevelStart } from '@/lib/level';
-import { thailandWeekRange } from '@/lib/thailandTime';
+import { thailandRollingWeekRange } from '@/lib/thailandTime';
 import { fetchWeeklyStats } from '@/lib/api';
 import { fetchReportInsight, type ReportInsight } from '@/lib/claude';
 import type { WeeklyStats, User } from '@/types';
@@ -37,11 +37,11 @@ interface ReportData {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Labels the same Thailand-local Mon–Sun window that fetchWeeklyStats(-1) actually queries
+// Labels the same Thailand-local rolling 7-day window that fetchWeeklyStats actually queries
 // — computed from that same window rather than the device's own local calendar, so the
 // label always matches the data shown regardless of what timezone the device is set to.
 function getWeekLabel(): string {
-  const { start, end } = thailandWeekRange(-1);
+  const { start, end } = thailandRollingWeekRange(0);
   const [startYear, startMonth, startDay] = start.split('-').map(Number);
   const [endYear, endMonth, endDay] = end.split('-').map(Number);
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

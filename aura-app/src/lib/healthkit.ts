@@ -3,8 +3,10 @@ import {
   isHealthDataAvailable,
   requestAuthorization,
   queryStatisticsForQuantity,
+  queryStatisticsCollectionForQuantity,
   type QuantityTypeIdentifier,
 } from '@kingstinct/react-native-healthkit';
+import { startOfThailandDay, thailandDateISO } from '@/lib/thailandTime';
 import type { DailyStats, WatchSyncStatus } from '@/types';
 
 const READ_TYPES: readonly QuantityTypeIdentifier[] = [
@@ -52,6 +54,44 @@ export async function fetchTodayStats(): Promise<DailyStats> {
     streakDays: 0,
     xpEarned: 0,
   };
+}
+
+export type DailyHealthTotals = Map<string, { steps: number; calories: number }>;
+
+async function dailySums(
+  identifier: 'HKQuantityTypeIdentifierStepCount' | 'HKQuantityTypeIdentifierActiveEnergyBurned',
+  unit: 'count' | 'kcal',
+  startDate: Date,
+): Promise<Map<string, number>> {
+  const buckets = await queryStatisticsCollectionForQuantity(identifier, ['cumulativeSum'], startDate, { day: 1 }, {
+    unit,
+    filter: { date: { startDate, endDate: new Date() } },
+  });
+  const sums = new Map<string, number>();
+  for (const b of buckets) {
+    if (b.startDate) sums.set(thailandDateISO(b.startDate), Math.round(b.sumQuantity?.quantity ?? 0));
+  }
+  return sums;
+}
+
+// Per-day step/calorie totals for every Thailand-local day from `startISO` through today,
+// read straight from HealthKit. daily_stats only has a row for days the app was opened (and
+// only the count as of that last sync), so weekly averages built from it undercount — this
+// is the source Apple Health itself uses. Returns null where HealthKit isn't available.
+export async function fetchDailyHealthTotals(startISO: string): Promise<DailyHealthTotals | null> {
+  if (Platform.OS !== 'ios' || !isHealthDataAvailable()) return null;
+
+  const start = startOfThailandDay(startISO);
+  const [steps, calories] = await Promise.all([
+    dailySums('HKQuantityTypeIdentifierStepCount', 'count', start),
+    dailySums('HKQuantityTypeIdentifierActiveEnergyBurned', 'kcal', start),
+  ]);
+
+  const totals: DailyHealthTotals = new Map();
+  for (const date of new Set([...steps.keys(), ...calories.keys()])) {
+    totals.set(date, { steps: steps.get(date) ?? 0, calories: calories.get(date) ?? 0 });
+  }
+  return totals;
 }
 
 // Approximates "watch sync" from whether HealthKit has recorded any steps in the last

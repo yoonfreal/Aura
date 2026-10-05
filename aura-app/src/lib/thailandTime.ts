@@ -62,6 +62,14 @@ export function isStreakStillAlive(lastActiveDate: string | null): boolean {
   return lastActiveDate === today || lastActiveDate === yesterday;
 }
 
+// The rolling 7-day range ending today in Thailand (today included) — the same window
+// Apple Health's "W" view averages over, so weekly step averages match what users see
+// there. offsetWeeks = -1 is the 7 days immediately before that, for "vs last week".
+export function thailandRollingWeekRange(offsetWeeks = 0): { start: string; end: string } {
+  const end = addDaysToISO(thailandDateISO(), offsetWeeks * 7);
+  return { start: addDaysToISO(end, -6), end };
+}
+
 // This week's Monday–Sunday range in Thailand, anchored to "today" there.
 export function thailandWeekRange(offsetWeeks = 0): { start: string; end: string } {
   const today = thailandDateISO();
