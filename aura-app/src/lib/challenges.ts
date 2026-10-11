@@ -28,6 +28,7 @@ type ChallengeRow = {
   duration_days: number | null;
   badge_name: string | null;
   badge_icon: string | null;
+  sport: string | null;
 };
 
 type ParticipantRow = {
@@ -115,6 +116,7 @@ function toChallenge(row: ChallengeRow): Challenge {
     durationDays: row.duration_days,
     badgeName: row.badge_name,
     badgeIcon: row.badge_icon,
+    sport: row.sport,
   };
 }
 
@@ -362,6 +364,7 @@ export type NewChallenge = {
   durationDays: number | null;
   badgeName: string | null;
   badgeIcon: string | null;
+  sport: string | null;
 };
 
 export async function createChallenge(
@@ -385,6 +388,7 @@ export async function createChallenge(
       duration_days: input.durationDays,
       badge_name: input.badgeName,
       badge_icon: input.badgeIcon,
+      sport: input.sport,
     })
     .select()
     .single();
@@ -431,6 +435,7 @@ export async function updateChallenge(
       duration_days: input.durationDays,
       badge_name: input.badgeName,
       badge_icon: input.badgeIcon,
+      sport: input.sport,
     })
     .eq('id', challengeId)
     .select()
@@ -964,6 +969,7 @@ type ChallengeJoinFields = {
   type: ChallengeType;
   start_date: string;
   end_date: string;
+  sport: string | null;
 };
 
 type ParticipantWithChallengeRow = {
@@ -1055,13 +1061,14 @@ export async function syncChallengeProgressForUser(
   userId: string,
   goalUnit: string,
   value: number,
+  sport?: string,
 ): Promise<void> {
   const normalizedUnit = goalUnit.trim().toLowerCase();
   if (normalizedUnit === 'steps' || normalizedUnit === 'calories') return;
 
   const { data } = await supabase
     .from('challenge_participants')
-    .select('id, challenge_id, team_id, current_value, opponent_id, expires_at, challenge_teams(expires_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date)')
+    .select('id, challenge_id, team_id, current_value, opponent_id, expires_at, challenge_teams(expires_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date, sport)')
     .eq('user_id', userId)
     .eq('completed', false)
     .eq('status', 'accepted');
@@ -1072,6 +1079,8 @@ export async function syncChallengeProgressForUser(
     const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
     if (!challenge) continue;
     if (challenge.goal_unit.trim().toLowerCase() !== normalizedUnit) continue;
+    // Sport-session challenges only count sessions of their own sport.
+    if (sport !== undefined && challenge.sport !== sport) continue;
 
     // Individual challenges are shared: everyone races against the same admin-set end
     // date, no personal deadline. Team keeps its own shared deadline; 1v1 has none (it
@@ -1120,7 +1129,7 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
   const { data } = await supabase
     .from('challenge_participants')
     .select(
-      'id, challenge_id, team_id, opponent_id, joined_at, current_value, expires_at, challenge_teams(expires_at, created_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date)',
+      'id, challenge_id, team_id, opponent_id, joined_at, current_value, expires_at, challenge_teams(expires_at, created_at), challenges!inner(goal_value, goal_unit, xp_reward, type, start_date, end_date, sport)',
     )
     .eq('user_id', userId)
     .eq('completed', false)
@@ -1129,15 +1138,15 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
   const rows = ((data ?? []) as StatsParticipantRow[]).filter((row) => {
     const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
     const unit = challenge?.goal_unit.trim().toLowerCase();
-    return unit === 'steps' || unit === 'calories';
+    return unit === 'steps' || unit === 'calories' || unit === 'km';
   });
   if (rows.length === 0) return;
 
   const { data: statsData } = await supabase
     .from('daily_stats')
-    .select('date, steps, calories')
+    .select('date, steps, calories, distance_km')
     .eq('user_id', userId);
-  const stats = (statsData ?? []) as { date: string; steps: number; calories: number }[];
+  const stats = (statsData ?? []) as { date: string; steps: number; calories: number; distance_km: number }[];
 
   for (const row of rows) {
     const challenge = Array.isArray(row.challenges) ? row.challenges[0] : row.challenges;
@@ -1157,10 +1166,13 @@ export async function refreshStatsBasedProgress(userId: string): Promise<void> {
     // which is always Thailand-local — otherwise a join in the early Thailand morning
     // resolves to the UTC "yesterday" and pulls in a day of unrelated activity.
     const startDate = challenge.type === 'individual' ? challenge.start_date : thailandDateISO(new Date(row.joined_at));
-    const unit = challenge.goal_unit.trim().toLowerCase() as 'steps' | 'calories';
-    const sum = stats
+    const unit = challenge.goal_unit.trim().toLowerCase();
+    const column = unit === 'km' ? 'distance_km' : (unit as 'steps' | 'calories');
+    const total = stats
       .filter((s) => s.date >= startDate)
-      .reduce((acc, s) => acc + s[unit], 0);
+      .reduce((acc, s) => acc + Number(s[column]), 0);
+    // Distance is tracked to one decimal place; steps/calories are whole numbers.
+    const sum = unit === 'km' ? Math.round(total * 10) / 10 : total;
 
     if (row.team_id) {
       // No single member's row is ever marked "completed" off their own number alone —

@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { supabase } from '@/lib/supabase';
-import { GYM_LOCATION, CHECK_IN_RADIUS_METERS } from '@/constants/gym';
+import { GYMS, CHECK_IN_RADIUS_METERS, type Gym } from '@/constants/gym';
 import { thailandDateISO } from '@/lib/thailandTime';
 
 function todayISO(): string {
@@ -21,8 +21,20 @@ function distanceMeters(a: { latitude: number; longitude: number }, b: { latitud
 }
 
 export type CheckInResult =
-  | { success: true }
-  | { success: false; reason: 'permission_denied' | 'too_far' | 'already_checked_in' | 'error'; distanceMeters?: number };
+  | { success: true; gymName: string }
+  | {
+      success: false;
+      reason: 'permission_denied' | 'too_far' | 'already_checked_in' | 'error';
+      distanceMeters?: number;
+      gymName?: string;
+    };
+
+// The campus gym closest to the student, and how far away it is.
+function nearestGym(position: { latitude: number; longitude: number }): { gym: Gym; distance: number } {
+  return GYMS.map((gym) => ({ gym, distance: distanceMeters(position, gym) })).reduce((best, next) =>
+    next.distance < best.distance ? next : best,
+  );
+}
 
 export async function checkInToGym(userId: string): Promise<CheckInResult> {
   try {
@@ -40,13 +52,13 @@ export async function checkInToGym(userId: string): Promise<CheckInResult> {
     if (status !== 'granted') return { success: false, reason: 'permission_denied' };
 
     const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-    const distance = distanceMeters(
-      { latitude: position.coords.latitude, longitude: position.coords.longitude },
-      GYM_LOCATION,
-    );
+    const { gym, distance } = nearestGym({
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+    });
 
     if (distance > CHECK_IN_RADIUS_METERS) {
-      return { success: false, reason: 'too_far', distanceMeters: Math.round(distance) };
+      return { success: false, reason: 'too_far', distanceMeters: Math.round(distance), gymName: gym.name };
     }
 
     const { error } = await supabase.from('gym_checkins').insert({
@@ -54,10 +66,11 @@ export async function checkInToGym(userId: string): Promise<CheckInResult> {
       date: today,
       lat: position.coords.latitude,
       lng: position.coords.longitude,
+      gym: gym.id,
     });
     if (error) return { success: false, reason: 'error' };
 
-    return { success: true };
+    return { success: true, gymName: gym.name };
   } catch {
     return { success: false, reason: 'error' };
   }

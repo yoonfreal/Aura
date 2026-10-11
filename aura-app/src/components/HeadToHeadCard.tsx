@@ -1,6 +1,8 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { ChallengeWithStatus } from '@/lib/challenges';
+import { isSportChallenge } from '@/constants/sports';
+import { LogSessionButton } from '@/components/LogSessionButton';
 
 type HeadToHeadCardProps = {
   challenge: ChallengeWithStatus;
@@ -11,6 +13,8 @@ type HeadToHeadCardProps = {
   onCancel: () => void;
   onClaim: () => void;
   onPlayAgain: () => void;
+  onLogSession: () => void;
+  loggingSession: boolean;
 };
 
 function daysLeft(endDate: string): number {
@@ -27,6 +31,8 @@ export function HeadToHeadCard({
   onCancel,
   onClaim,
   onPlayAgain,
+  onLogSession,
+  loggingSession,
 }: HeadToHeadCardProps) {
   const participation = challenge.participation;
   const opponent = challenge.opponent;
@@ -307,6 +313,10 @@ export function HeadToHeadCard({
           <View style={[styles.progressFill, { width: `${opponentGoalPct}%`, backgroundColor: '#1E4D8C' }]} />
         </View>
       </View>
+
+      {isSportChallenge(challenge.goalUnit, challenge.sport) && (
+        <LogSessionButton onPress={onLogSession} loading={loggingSession} />
+      )}
 
       <Text style={styles.footerText}>
         Ends in {daysLeft(challenge.endDate)} day{daysLeft(challenge.endDate) === 1 ? '' : 's'}.

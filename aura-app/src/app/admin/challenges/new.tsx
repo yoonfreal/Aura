@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useUserStore } from '@/store/userStore';
 import { createChallenge } from '@/lib/challenges';
 import { Dropdown } from '@/components/Dropdown';
+import { SPORTS, sportLabel } from '@/constants/sports';
 import { addDaysToISO, thailandDateISO } from '@/lib/thailandTime';
 import type { ChallengeType } from '@/types';
 
@@ -30,7 +31,9 @@ const DURATION_OPTIONS: { value: number | null; label: string }[] = [
   { value: 30, label: 'Monthly' },
 ];
 
-const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'MINUTES', 'KM', 'REPS', 'CUSTOM'] as const;
+// SESSIONS = photo-verified sessions of one sport (picked separately below).
+const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'KM', 'SESSIONS'] as const;
+const SPORT_LABELS = SPORTS.map((sport) => sport.label);
 
 // "No limit" still needs a real end date under the hood (the column isn't nullable), so
 // it just uses a date far enough out that it never realistically comes up.
@@ -51,8 +54,8 @@ export default function NewChallengeScreen() {
   const [type, setType] = useState<ChallengeType>('individual');
   const [goalValue, setGoalValue] = useState('');
   const [goalUnit, setGoalUnit] = useState('STEPS');
-  const [customGoalUnit, setCustomGoalUnit] = useState('');
-  const isCustomGoalUnit = goalUnit === 'CUSTOM';
+  const [sport, setSport] = useState<string>('basketball');
+  const isSessions = goalUnit === 'SESSIONS';
   const [xpReward, setXpReward] = useState('');
   const [durationDays, setDurationDays] = useState<number | null>(7);
   const [badgeName, setBadgeName] = useState('');
@@ -62,10 +65,11 @@ export default function NewChallengeScreen() {
   async function handleCreate() {
     if (!userId) return;
 
-    const goalValueNum = Number(goalValue);
+    // A sport (SESSIONS) challenge is completed by one accepted photo, so its goal is always 1.
+    const goalValueNum = isSessions ? 1 : Number(goalValue);
     const xpRewardNum = Number(xpReward);
 
-    if (!title.trim() || !goalValue || !xpReward || (isCustomGoalUnit && !customGoalUnit.trim())) {
+    if (!title.trim() || (!isSessions && !goalValue) || !xpReward) {
       Alert.alert('Missing fields', 'Title, goal, unit, and XP are required.');
       return;
     }
@@ -83,7 +87,7 @@ export default function NewChallengeScreen() {
         category: category.trim() || null,
         type,
         goalValue: goalValueNum,
-        goalUnit: (isCustomGoalUnit ? customGoalUnit : goalUnit).trim(),
+        goalUnit,
         xpReward: xpRewardNum,
         startDate: addDaysISO(0),
         // Today counts as day 1, so a 7-day week ends 6 days after today (7 days total),
@@ -92,6 +96,7 @@ export default function NewChallengeScreen() {
         durationDays: type === 'team' ? durationDays : null,
         badgeName: badgeName.trim() || null,
         badgeIcon: badgeIcon.trim() || null,
+        sport: isSessions ? sport : null,
       });
       router.back();
     } catch {
@@ -166,25 +171,31 @@ export default function NewChallengeScreen() {
         <Text style={styles.label}>Icon (emoji)</Text>
         <TextInput style={styles.input} value={icon} onChangeText={setIcon} placeholder="🏆" />
 
-        <Text style={styles.label}>Goal value</Text>
-        <TextInput
-          style={styles.input}
-          value={goalValue}
-          onChangeText={setGoalValue}
-          placeholder="10000"
-          keyboardType="numeric"
-        />
+        {!isSessions && (
+          <>
+            <Text style={styles.label}>Goal value</Text>
+            <TextInput
+              style={styles.input}
+              value={goalValue}
+              onChangeText={setGoalValue}
+              placeholder="10000"
+              keyboardType="numeric"
+            />
+          </>
+        )}
 
         <Text style={styles.label}>Goal unit</Text>
         <Dropdown label="Goal unit" value={goalUnit} options={GOAL_UNIT_OPTIONS} onChange={setGoalUnit} />
-        {isCustomGoalUnit && (
-          <TextInput
-            style={styles.input}
-            value={customGoalUnit}
-            onChangeText={(text) => setCustomGoalUnit(text.toUpperCase())}
-            autoCapitalize="characters"
-            placeholder="e.g. LAPS"
-          />
+        {isSessions && (
+          <>
+            <Text style={styles.label}>Sport (completed with one verified photo)</Text>
+            <Dropdown
+              label="Sport"
+              value={sportLabel(sport)}
+              options={SPORT_LABELS}
+              onChange={(label) => setSport(SPORTS.find((s) => s.label === label)?.value ?? 'basketball')}
+            />
+          </>
         )}
 
         <Text style={styles.label}>XP reward</Text>

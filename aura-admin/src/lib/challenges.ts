@@ -17,6 +17,7 @@ type ChallengeRow = {
   duration_days: number | null;
   badge_name: string | null;
   badge_icon: string | null;
+  sport: string | null;
 };
 
 function toChallenge(row: ChallengeRow): Challenge {
@@ -36,6 +37,7 @@ function toChallenge(row: ChallengeRow): Challenge {
     durationDays: row.duration_days,
     badgeName: row.badge_name,
     badgeIcon: row.badge_icon,
+    sport: row.sport,
   };
 }
 
@@ -113,6 +115,7 @@ export async function createChallenge(adminId: string, input: NewChallenge): Pro
       duration_days: input.durationDays,
       badge_name: input.badgeName,
       badge_icon: input.badgeIcon,
+      sport: input.sport,
     })
     .select('*')
     .single();
@@ -138,6 +141,7 @@ export async function updateChallenge(challengeId: string, input: NewChallenge):
       duration_days: input.durationDays,
       badge_name: input.badgeName,
       badge_icon: input.badgeIcon,
+      sport: input.sport,
     })
     .eq('id', challengeId)
     .select('*')

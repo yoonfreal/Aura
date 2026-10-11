@@ -1,6 +1,8 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { isChallengeExpired, type ChallengeWithStatus } from '@/lib/challenges';
+import { challengeUnitLabel, isSportChallenge } from '@/constants/sports';
+import { LogSessionButton } from '@/components/LogSessionButton';
 
 type ChallengeCardProps = {
   challenge: ChallengeWithStatus;
@@ -10,6 +12,8 @@ type ChallengeCardProps = {
   onClaim: () => void;
   onAcceptTeamInvite: () => void;
   onDeclineTeamInvite: () => void;
+  onLogSession: () => void;
+  loggingSession: boolean;
   highlighted?: boolean;
 };
 
@@ -36,6 +40,8 @@ export function ChallengeCard({
   onClaim,
   onAcceptTeamInvite,
   onDeclineTeamInvite,
+  onLogSession,
+  loggingSession,
   highlighted,
 }: ChallengeCardProps) {
   const isTeam = challenge.type === 'team';
@@ -61,6 +67,8 @@ export function ChallengeCard({
     ? challenge.participation?.status === 'accepted'
     : !!challenge.participation;
   const canClaim = hasJoined && isCompleted && !isClaimed && !isExpired;
+  const unitLabel = challengeUnitLabel(challenge.goalUnit, challenge.sport);
+  const canLogSession = isSportChallenge(challenge.goalUnit, challenge.sport) && hasJoined && !isCompleted && !isExpired;
   const isPendingTeamInvite = isTeam && challenge.participation?.status === 'pending';
   const isDeclinedTeamInvite = isTeam && challenge.participation?.status === 'declined';
   const inviterName = myTeam?.members.find((m) => m.userId === challenge.participation?.opponentId)?.name;
@@ -115,7 +123,7 @@ export function ChallengeCard({
           <View style={styles.completedRow}>
             <MaterialCommunityIcons name="check-circle" size={14} color={accent} />
             <Text style={styles.completedRowText}>
-              Completed · {challenge.goalValue.toLocaleString()} {challenge.goalUnit}
+              Completed · {challenge.goalValue.toLocaleString()} {unitLabel}
             </Text>
           </View>
           {badgePill}
@@ -131,7 +139,7 @@ export function ChallengeCard({
           </View>
           <View style={styles.progressRow}>
             <Text style={styles.progressLabel}>
-              {currentValue.toLocaleString()} / {challenge.goalValue.toLocaleString()} {challenge.goalUnit}
+              {currentValue.toLocaleString()} / {challenge.goalValue.toLocaleString()} {unitLabel}
             </Text>
             <Text style={[styles.progressPct, { color: accent }]}>{Math.round(progressPct)}%</Text>
           </View>
@@ -142,6 +150,7 @@ export function ChallengeCard({
               </Text>
             </View>
           )}
+          {canLogSession && <LogSessionButton onPress={onLogSession} loading={loggingSession} />}
         </>
       )}
 

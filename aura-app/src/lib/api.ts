@@ -154,6 +154,7 @@ export async function syncHealthKitStats(
   userId: string,
   steps: number,
   calories: number,
+  distanceKm = 0,
 ): Promise<void> {
   const today = todayISO();
 
@@ -168,8 +169,8 @@ export async function syncHealthKitStats(
   const row = existing as { id: string } | null;
 
   const { error: writeError } = row
-    ? await supabase.from('daily_stats').update({ steps, calories }).eq('id', row.id)
-    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps, calories, xp_earned: 0 });
+    ? await supabase.from('daily_stats').update({ steps, calories, distance_km: distanceKm }).eq('id', row.id)
+    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps, calories, distance_km: distanceKm, xp_earned: 0 });
   if (writeError) throw writeError;
 }
 

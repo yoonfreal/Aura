@@ -56,6 +56,14 @@
         {
           "NSHealthShareUsageDescription": "AUra reads your steps, calories, and workouts to track your fitness progress."
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "AUra uses your camera to take a live photo that verifies your workout.",
+          "photosPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

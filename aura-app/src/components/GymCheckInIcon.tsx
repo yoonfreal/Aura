@@ -27,7 +27,7 @@ export function GymCheckInIcon({ userId }: Props) {
 
     if (result.success) {
       setCheckedIn(true);
-      Alert.alert('Checked in!', "You're checked in at the gym today 🏋️");
+      Alert.alert('Checked in!', `You're checked in at the ${result.gymName} today 🏋️`);
       return;
     }
 
@@ -36,7 +36,10 @@ export function GymCheckInIcon({ userId }: Props) {
         Alert.alert('Location needed', 'Turn on location access to check in at the gym.');
         break;
       case 'too_far':
-        Alert.alert('Too far from the gym', `You're about ${result.distanceMeters}m away — get closer and try again.`);
+        Alert.alert(
+          'Too far from the gym',
+          `You're about ${result.distanceMeters}m from the ${result.gymName ?? 'nearest gym'} — get closer and try again.`,
+        );
         break;
       case 'already_checked_in':
         setCheckedIn(true);

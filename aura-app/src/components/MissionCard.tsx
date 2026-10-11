@@ -1,4 +1,4 @@
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { Mission } from '@/types';
 import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
@@ -6,9 +6,10 @@ import { MISSION_TYPE_ICON } from '@/lib/missionIcons';
 interface Props {
   mission: Mission;
   onLog?: (id: string) => void;
+  verifying?: boolean;
 }
 
-export function MissionCard({ mission, onLog }: Props) {
+export function MissionCard({ mission, onLog, verifying = false }: Props) {
   const progress = Math.min(mission.currentValue / mission.goalValue, 1);
   const percentage = Math.round(progress * 100);
   const hasStarted = mission.currentValue > 0;
@@ -18,6 +19,7 @@ export function MissionCard({ mission, onLog }: Props) {
   const isAutoTracked = mission.goalUnit === 'steps' || mission.goalUnit === 'calories';
 
   function formatProgress() {
+    if (verifying) return 'Verifying your photo…';
     if (mission.goalUnit === 'steps') {
       return `${mission.currentValue.toLocaleString()} / ${mission.goalValue.toLocaleString()} steps`;
     }
@@ -27,7 +29,7 @@ export function MissionCard({ mission, onLog }: Props) {
     if (mission.goalUnit === 'minutes') {
       return hasStarted
         ? `${mission.currentValue} / ${mission.goalValue} min`
-        : 'Not started · tap to log';
+        : 'Not started · log with a live photo';
     }
     return needsPhoto ? 'Take live photo to verify' : '';
   }
@@ -51,7 +53,9 @@ export function MissionCard({ mission, onLog }: Props) {
           <Text style={styles.progressText}>{formatProgress()}</Text>
         </View>
 
-        {!mission.completed && !hasStarted && !isAutoTracked && (
+        {verifying && <ActivityIndicator style={styles.spinner} color="#1B2B4B" />}
+
+        {!verifying && !mission.completed && !hasStarted && !isAutoTracked && (
           <TouchableOpacity style={styles.logBtn} onPress={() => onLog?.(mission.id)}>
             <Text style={styles.logBtnText}>Log</Text>
           </TouchableOpacity>
@@ -142,6 +146,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingHorizontal: 18,
     paddingVertical: 8,
+    marginLeft: 8,
+  },
+  spinner: {
     marginLeft: 8,
   },
   logBtnText: {

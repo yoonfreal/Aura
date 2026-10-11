@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchChallengeById, updateChallenge, deleteChallenge } from '@/lib/challenges';
 import { Dropdown } from '@/components/Dropdown';
+import { SPORTS, sportLabel } from '@/constants/sports';
 import { addDaysToISO } from '@/lib/thailandTime';
 import type { Challenge, ChallengeType } from '@/types';
 
@@ -30,7 +31,9 @@ const DURATION_OPTIONS: { value: number | null; label: string }[] = [
   { value: 30, label: 'Monthly' },
 ];
 
-const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'MINUTES', 'KM', 'REPS', 'CUSTOM'] as const;
+// SESSIONS = photo-verified sessions of one sport (picked separately below).
+const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'KM', 'SESSIONS'] as const;
+const SPORT_LABELS = SPORTS.map((sport) => sport.label);
 
 // "No limit" still needs a real end date under the hood (the column isn't nullable), so
 // it just uses a date far enough out that it never realistically comes up.
@@ -51,8 +54,8 @@ export default function EditChallengeScreen() {
   const [type, setType] = useState<ChallengeType>('individual');
   const [goalValue, setGoalValue] = useState('');
   const [goalUnit, setGoalUnit] = useState('STEPS');
-  const [customGoalUnit, setCustomGoalUnit] = useState('');
-  const isCustomGoalUnit = goalUnit === 'CUSTOM';
+  const [sport, setSport] = useState<string>('basketball');
+  const isSessions = goalUnit === 'SESSIONS';
   const [xpReward, setXpReward] = useState('');
   const [durationDays, setDurationDays] = useState<number | null>(7);
   const [badgeName, setBadgeName] = useState('');
@@ -69,13 +72,8 @@ export default function EditChallengeScreen() {
         setCategory(data.category ?? '');
         setType(data.type);
         setGoalValue(String(data.goalValue));
-        const upperUnit = data.goalUnit.toUpperCase();
-        if ((GOAL_UNIT_OPTIONS as readonly string[]).includes(upperUnit) && upperUnit !== 'CUSTOM') {
-          setGoalUnit(upperUnit);
-        } else {
-          setGoalUnit('CUSTOM');
-          setCustomGoalUnit(upperUnit);
-        }
+        setGoalUnit(data.goalUnit.toUpperCase());
+        setSport(data.sport ?? 'basketball');
         setXpReward(String(data.xpReward));
         setDurationDays(data.durationDays);
         setBadgeName(data.badgeName ?? '');
@@ -88,10 +86,11 @@ export default function EditChallengeScreen() {
   async function handleSave() {
     if (!challenge) return;
 
-    const goalValueNum = Number(goalValue);
+    // A sport (SESSIONS) challenge is completed by one accepted photo, so its goal is always 1.
+    const goalValueNum = isSessions ? 1 : Number(goalValue);
     const xpRewardNum = Number(xpReward);
 
-    if (!title.trim() || !goalValue || !xpReward || (isCustomGoalUnit && !customGoalUnit.trim())) {
+    if (!title.trim() || (!isSessions && !goalValue) || !xpReward) {
       Alert.alert('Missing fields', 'Title, goal, unit, and XP are required.');
       return;
     }
@@ -109,7 +108,7 @@ export default function EditChallengeScreen() {
         category: category.trim() || null,
         type,
         goalValue: goalValueNum,
-        goalUnit: (isCustomGoalUnit ? customGoalUnit : goalUnit).trim(),
+        goalUnit,
         xpReward: xpRewardNum,
         startDate: challenge.startDate,
         // Recomputed off the challenge's original start date, not today — editing an
@@ -118,6 +117,7 @@ export default function EditChallengeScreen() {
         durationDays: type === 'team' ? durationDays : null,
         badgeName: badgeName.trim() || null,
         badgeIcon: badgeIcon.trim() || null,
+        sport: isSessions ? sport : null,
       });
       router.back();
     } catch {
@@ -221,25 +221,31 @@ export default function EditChallengeScreen() {
         <Text style={styles.label}>Icon (emoji)</Text>
         <TextInput style={styles.input} value={icon} onChangeText={setIcon} placeholder="🏆" />
 
-        <Text style={styles.label}>Goal value</Text>
-        <TextInput
-          style={styles.input}
-          value={goalValue}
-          onChangeText={setGoalValue}
-          placeholder="10000"
-          keyboardType="numeric"
-        />
+        {!isSessions && (
+          <>
+            <Text style={styles.label}>Goal value</Text>
+            <TextInput
+              style={styles.input}
+              value={goalValue}
+              onChangeText={setGoalValue}
+              placeholder="10000"
+              keyboardType="numeric"
+            />
+          </>
+        )}
 
         <Text style={styles.label}>Goal unit</Text>
         <Dropdown label="Goal unit" value={goalUnit} options={GOAL_UNIT_OPTIONS} onChange={setGoalUnit} />
-        {isCustomGoalUnit && (
-          <TextInput
-            style={styles.input}
-            value={customGoalUnit}
-            onChangeText={(text) => setCustomGoalUnit(text.toUpperCase())}
-            autoCapitalize="characters"
-            placeholder="e.g. LAPS"
-          />
+        {isSessions && (
+          <>
+            <Text style={styles.label}>Sport (completed with one verified photo)</Text>
+            <Dropdown
+              label="Sport"
+              value={sportLabel(sport)}
+              options={SPORT_LABELS}
+              onChange={(label) => setSport(SPORTS.find((s) => s.label === label)?.value ?? 'basketball')}
+            />
+          </>
         )}
 
         <Text style={styles.label}>XP reward</Text>

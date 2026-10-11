@@ -12,6 +12,7 @@ import type { DailyStats, WatchSyncStatus } from '@/types';
 const READ_TYPES: readonly QuantityTypeIdentifier[] = [
   'HKQuantityTypeIdentifierStepCount',
   'HKQuantityTypeIdentifierActiveEnergyBurned',
+  'HKQuantityTypeIdentifierDistanceWalkingRunning',
 ];
 
 function startOfToday(): Date {
@@ -26,8 +27,11 @@ export async function requestHealthKitPermissions(): Promise<boolean> {
 }
 
 async function sumSince(
-  identifier: 'HKQuantityTypeIdentifierStepCount' | 'HKQuantityTypeIdentifierActiveEnergyBurned',
-  unit: 'count' | 'kcal',
+  identifier:
+    | 'HKQuantityTypeIdentifierStepCount'
+    | 'HKQuantityTypeIdentifierActiveEnergyBurned'
+    | 'HKQuantityTypeIdentifierDistanceWalkingRunning',
+  unit: 'count' | 'kcal' | 'm',
   startDate: Date,
 ): Promise<number> {
   const result = await queryStatisticsForQuantity(identifier, ['cumulativeSum'], {
@@ -43,9 +47,10 @@ export async function fetchTodayStats(): Promise<DailyStats> {
   }
 
   const today = startOfToday();
-  const [steps, calories] = await Promise.all([
+  const [steps, calories, meters] = await Promise.all([
     sumSince('HKQuantityTypeIdentifierStepCount', 'count', today),
     sumSince('HKQuantityTypeIdentifierActiveEnergyBurned', 'kcal', today),
+    sumSince('HKQuantityTypeIdentifierDistanceWalkingRunning', 'm', today),
   ]);
 
   return {
@@ -53,6 +58,7 @@ export async function fetchTodayStats(): Promise<DailyStats> {
     calories: Math.round(calories),
     streakDays: 0,
     xpEarned: 0,
+    distanceKm: Math.round(meters / 100) / 10,
   };
 }
 

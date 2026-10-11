@@ -16,6 +16,7 @@ export interface Challenge {
   durationDays: number | null;
   badgeName: string | null;
   badgeIcon: string | null;
+  sport: string | null;
 }
 
 export type NewChallenge = {
@@ -32,4 +33,5 @@ export type NewChallenge = {
   durationDays: number | null;
   badgeName: string | null;
   badgeIcon: string | null;
+  sport: string | null;
 };

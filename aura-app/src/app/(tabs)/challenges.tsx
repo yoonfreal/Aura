@@ -29,6 +29,7 @@ import {
   cancelInvite,
   claimReward,
   refreshStatsBasedProgress,
+  syncChallengeProgressForUser,
   countClaimableRewards,
   isChallengeExpired,
   type ChallengeWithStatus,
@@ -36,6 +37,8 @@ import {
 } from '@/lib/challenges';
 
 import { xpForLevel } from '@/lib/level';
+import { captureWorkoutPhoto, verifyWorkoutPhoto } from '@/lib/workoutPhoto';
+import { sportLabel } from '@/constants/sports';
 import { countIncomingRequests } from '@/lib/friends';
 import { countUnreadMessages } from '@/lib/chat';
 
@@ -1383,6 +1386,34 @@ function UserChallengesView({
      CANCEL INVITE
   ===================================================== */
 
+  const [loggingChallengeId, setLoggingChallengeId] = useState<string | null>(null);
+
+  // Sport-session challenges: a live photo, checked by Claude against the challenge's
+  // sport, adds one session. Same 30-minute cooldown and daily limit as sport missions.
+  async function handleLogSession(challenge: ChallengeWithStatus) {
+    if (!userId || !challenge.sport) return;
+
+    try {
+      const photo = await captureWorkoutPhoto();
+      if (!photo) return;
+
+      setLoggingChallengeId(challenge.id);
+      const verdict = await verifyWorkoutPhoto({ challengeId: challenge.id }, photo);
+      if (!verdict.verified) {
+        Alert.alert('Photo not accepted', verdict.reason);
+        return;
+      }
+
+      await syncChallengeProgressForUser(userId, 'sessions', 1, challenge.sport);
+      Alert.alert('Session logged', `+1 ${sportLabel(challenge.sport).toLowerCase()} session. ${verdict.reason}`);
+      onReload();
+    } catch (err) {
+      Alert.alert('Could not log session', (err as { message?: string })?.message ?? 'Please try again.');
+    } finally {
+      setLoggingChallengeId(null);
+    }
+  }
+
   async function handleCancelInvite(
     challenge: ChallengeWithStatus
   ) {
@@ -1860,6 +1891,9 @@ function UserChallengesView({
                     item
                   )
                 }
+
+                onLogSession={() => handleLogSession(item)}
+                loggingSession={loggingChallengeId === item.id}
               />
 
             ) : (
@@ -1902,6 +1936,9 @@ function UserChallengesView({
                     false
                   )
                 }
+
+                onLogSession={() => handleLogSession(item)}
+                loggingSession={loggingChallengeId === item.id}
 
                 highlighted={item.id === highlightChallengeId}
               />

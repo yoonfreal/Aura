@@ -37,6 +37,7 @@ import {
   refreshClaimableCount,
 } from '@/lib/challenges';
 
+import { captureWorkoutPhoto, verifyWorkoutPhoto } from '@/lib/workoutPhoto';
 import { countIncomingRequests } from '@/lib/friends';
 import { countUnreadMessages } from '@/lib/chat';
 
@@ -127,6 +128,7 @@ export default function HomeScreen() {
 
   // Notification state
   const [showNotifications, setShowNotifications] = useState(false);
+  const [verifyingMissionId, setVerifyingMissionId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
 
@@ -168,7 +170,7 @@ export default function HomeScreen() {
 
           if (hasHealthKitAccess) {
             const healthStats = await fetchTodayStats();
-            await syncHealthKitStats(user!.id, healthStats.steps, healthStats.calories);
+            await syncHealthKitStats(user!.id, healthStats.steps, healthStats.calories, healthStats.distanceKm);
           }
 
           const [
@@ -298,6 +300,29 @@ export default function HomeScreen() {
 
     if (!mission) return;
 
+    // Sport missions (basketball, jump rope, ...) have no sensor data, so they need a live
+    // photo that Claude verifies before any XP is awarded.
+    let verifiedSport: string | null = null;
+    if (mission.goalUnit === 'minutes') {
+      try {
+        const photo = await captureWorkoutPhoto();
+        if (!photo) return;
+
+        setVerifyingMissionId(mission.id);
+        const verdict = await verifyWorkoutPhoto({ userMissionId: mission.id }, photo);
+        if (!verdict.verified) {
+          Alert.alert('Photo not accepted', verdict.reason);
+          return;
+        }
+        verifiedSport = verdict.sport;
+      } catch (err) {
+        Alert.alert('Could not verify workout', (err as { message?: string })?.message ?? 'Please try again.');
+        return;
+      } finally {
+        setVerifyingMissionId(null);
+      }
+    }
+
     try {
       const {
         newXp,
@@ -312,11 +337,11 @@ export default function HomeScreen() {
         user.level,
       );
 
-      await syncChallengeProgressForUser(
-        user.id,
-        mission.goalUnit,
-        mission.goalValue
-      );
+      // A verified sport mission also counts as one session toward any joined
+      // challenge for the same sport.
+      if (verifiedSport) {
+        await syncChallengeProgressForUser(user.id, 'sessions', 1, verifiedSport);
+      }
 
       setMissions(
         missions.map((m) =>
@@ -613,6 +638,7 @@ export default function HomeScreen() {
                 key={mission.id}
                 mission={mission}
                 onLog={handleLog}
+                verifying={verifyingMissionId === mission.id}
               />
             ))}
           </>

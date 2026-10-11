@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { NO_LIMIT_DAYS, addDaysISO, todayISO } from '@/lib/dates';
 import type { ChallengeType, NewChallenge } from '@/lib/types';
+import { SPORTS } from '@/lib/sports';
 
 const TYPE_OPTIONS: { value: ChallengeType; label: string }[] = [
   { value: 'individual', label: 'Individual' },
@@ -36,7 +37,8 @@ function decomposeDurationDays(days: number): { value: string; unit: DurationUni
   return { value: String(days), unit: 'day' };
 }
 
-const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'KM'] as const;
+// SESSIONS = photo-verified sessions of one sport, chosen in the Sport field.
+const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'KM', 'SESSIONS'] as const;
 
 export type ChallengeFormValues = {
   title: string;
@@ -53,6 +55,7 @@ export type ChallengeFormValues = {
   endDate: string | null;
   badgeName: string;
   badgeIcon: string;
+  sport: string;
 };
 
 export const emptyChallengeForm: ChallengeFormValues = {
@@ -70,6 +73,7 @@ export const emptyChallengeForm: ChallengeFormValues = {
   endDate: addDaysISO(todayISO(), 6),
   badgeName: '',
   badgeIcon: '',
+  sport: 'basketball',
 };
 
 export function resolveEndDate(values: ChallengeFormValues, startDate: string): string {
@@ -89,10 +93,12 @@ function daysBetween(startISO: string, endISO: string): number {
 }
 
 export function toNewChallenge(values: ChallengeFormValues): NewChallenge | null {
-  const goalValueNum = Number(values.goalValue);
+  // A sport (SESSIONS) challenge is completed by one accepted photo, so its goal is always 1.
+  const isSessions = values.goalUnit.trim().toUpperCase() === 'SESSIONS';
+  const goalValueNum = isSessions ? 1 : Number(values.goalValue);
   const xpRewardNum = Number(values.xpReward);
 
-  if (!values.title.trim() || !values.goalValue || !values.xpReward || !values.goalUnit.trim()) {
+  if (!values.title.trim() || (!isSessions && !values.goalValue) || !values.xpReward || !values.goalUnit.trim()) {
     return null;
   }
   if (Number.isNaN(goalValueNum) || Number.isNaN(xpRewardNum)) return null;
@@ -111,6 +117,7 @@ export function toNewChallenge(values: ChallengeFormValues): NewChallenge | null
     durationDays: values.type === 'team' ? values.durationDays : null,
     badgeName: values.badgeName.trim() || null,
     badgeIcon: values.badgeIcon.trim() || null,
+    sport: values.goalUnit.trim().toUpperCase() === 'SESSIONS' ? values.sport : null,
   };
 }
 
@@ -128,6 +135,7 @@ export function fromChallenge(c: {
   endDate: string;
   badgeName: string | null;
   badgeIcon: string | null;
+  sport: string | null;
 }): ChallengeFormValues {
   const isNoLimit = c.type !== 'team' && daysBetween(c.startDate, c.endDate) >= 3650;
   const { value: durationValue, unit: durationUnit } =
@@ -147,6 +155,7 @@ export function fromChallenge(c: {
     endDate: isNoLimit ? null : c.endDate,
     badgeName: c.badgeName ?? '',
     badgeIcon: c.badgeIcon ?? '',
+    sport: c.sport ?? 'basketball',
   };
 }
 
@@ -302,13 +311,17 @@ export function ChallengeForm({
 
       <Field label="Goal" className="sm:col-span-2">
         <div className="flex gap-2">
-          <input
-            type="number"
-            className={inputClass}
-            value={values.goalValue}
-            onChange={(e) => set('goalValue', e.target.value)}
-            placeholder="10000"
-          />
+          {goalUnitUpper === 'SESSIONS' ? (
+            <p className={`${inputClass} text-gray-500`}>Completed with one verified photo</p>
+          ) : (
+            <input
+              type="number"
+              className={inputClass}
+              value={values.goalValue}
+              onChange={(e) => set('goalValue', e.target.value)}
+              placeholder="10000"
+            />
+          )}
           <select
             className={inputClass}
             value={goalUnitUpper}
@@ -322,6 +335,18 @@ export function ChallengeForm({
           </select>
         </div>
       </Field>
+
+      {goalUnitUpper === 'SESSIONS' && (
+        <Field label="Sport (each session is verified with a live photo)" className="sm:col-span-2">
+          <select className={inputClass} value={values.sport} onChange={(e) => set('sport', e.target.value)}>
+            {SPORTS.map((sport) => (
+              <option key={sport.value} value={sport.value}>
+                {sport.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       <Field label="XP reward">
         <input

@@ -48,6 +48,8 @@ export interface DailyStats {
   calories: number;
   streakDays: number;
   xpEarned: number;
+  // Walking + running distance today, from HealthKit (only set by fetchTodayStats).
+  distanceKm?: number;
 }
 
 export interface WatchSyncStatus {
@@ -73,6 +75,7 @@ export interface Challenge {
   durationDays: number | null;
   badgeName: string | null;
   badgeIcon: string | null;
+  sport: string | null;
 }
 
 export interface ChallengeTeam {
