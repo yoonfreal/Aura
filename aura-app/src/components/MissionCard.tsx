@@ -14,10 +14,9 @@ export function MissionCard({ mission, onLog, verifying = false }: Props) {
   const percentage = Math.round(progress * 100);
   const hasStarted = mission.currentValue > 0;
   const needsPhoto = mission.goalUnit === 'photo';
-  // Steps/calories track automatically from real HealthKit-synced activity — no manual
-  // log button, since the whole point is that these can't be tapped without doing them.
   const isAutoTracked = mission.goalUnit === 'steps' || mission.goalUnit === 'calories';
 
+  //daily mission
   function formatProgress() {
     if (verifying) return 'Verifying your photo…';
     if (mission.goalUnit === 'steps') {
@@ -121,6 +120,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   title: {
+    flexShrink: 1,
     fontSize: 15,
     fontWeight: '700',
     color: '#1B2B4B',

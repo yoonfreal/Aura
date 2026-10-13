@@ -1,13 +1,13 @@
 import { Platform } from 'react-native';
 import {
-  isHealthDataAvailable,
-  requestAuthorization,
-  queryStatisticsForQuantity,
-  queryStatisticsCollectionForQuantity,
-  type QuantityTypeIdentifier,
+  isHealthDataAvailable, //does this phone have Apple Health?
+  requestAuthorization, //ask the student for permission to read their health data.
+  queryStatisticsForQuantity, //get one total (e.g. all steps since midnight).
+  queryStatisticsCollectionForQuantity, //get totals day by day (steps on Mon, Tue, Wed…).
+  type QuantityTypeIdentifier, //the list of official names
 } from '@kingstinct/react-native-healthkit';
 import { startOfThailandDay, thailandDateISO } from '@/lib/thailandTime';
-import type { DailyStats, WatchSyncStatus } from '@/types';
+import type { DailyStats } from '@/types';
 
 const READ_TYPES: readonly QuantityTypeIdentifier[] = [
   'HKQuantityTypeIdentifierStepCount',
@@ -36,10 +36,11 @@ async function sumSince(
 ): Promise<number> {
   const result = await queryStatisticsForQuantity(identifier, ['cumulativeSum'], {
     unit,
-    filter: { date: { startDate, endDate: new Date() } },
+    filter: { date: { startDate, endDate: new Date() } }, //means only count records from startDate until now
   });
   return result.sumQuantity?.quantity ?? 0;
 }
+//Example: sumSince('HKQuantityTypeIdentifierStepCount', 'count', midnight) → 6,240 steps today.
 
 export async function fetchTodayStats(): Promise<DailyStats> {
   if (Platform.OS !== 'ios') {
@@ -80,10 +81,8 @@ async function dailySums(
   return sums;
 }
 
-// Per-day step/calorie totals for every Thailand-local day from `startISO` through today,
-// read straight from HealthKit. daily_stats only has a row for days the app was opened (and
-// only the count as of that last sync), so weekly averages built from it undercount — this
-// is the source Apple Health itself uses. Returns null where HealthKit isn't available.
+//uses for weekly charts
+//sumSince gives one number. fetchDailyHealthTotals gives one number for each day.
 export async function fetchDailyHealthTotals(startISO: string): Promise<DailyHealthTotals | null> {
   if (Platform.OS !== 'ios' || !isHealthDataAvailable()) return null;
 
@@ -94,24 +93,11 @@ export async function fetchDailyHealthTotals(startISO: string): Promise<DailyHea
   ]);
 
   const totals: DailyHealthTotals = new Map();
+
+  //this merges the two tables into one:
+  //steps.keys() is all the dates in the steps table
   for (const date of new Set([...steps.keys(), ...calories.keys()])) {
     totals.set(date, { steps: steps.get(date) ?? 0, calories: calories.get(date) ?? 0 });
   }
   return totals;
-}
-
-// Approximates "watch sync" from whether HealthKit has recorded any steps in the last
-// hour — this library has no direct "last synced at" API, so this is a proxy: recent
-// step data means a watch/phone is actively reporting to HealthKit right now.
-export async function fetchWatchSyncStatus(): Promise<WatchSyncStatus> {
-  if (Platform.OS !== 'ios') {
-    return { connected: false, lastSyncMinutesAgo: 0 };
-  }
-
-  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  const recentSteps = await sumSince('HKQuantityTypeIdentifierStepCount', 'count', hourAgo);
-
-  return recentSteps > 0
-    ? { connected: true, lastSyncMinutesAgo: 0 }
-    : { connected: false, lastSyncMinutesAgo: 60 };
 }

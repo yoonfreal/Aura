@@ -7,7 +7,7 @@ interface Props {
   iconBg: string;
   value: string;
   label: string;
-  sub?: string;
+  sub?: string; //"+12% vs last week"
   subColor?: string;
 }
 

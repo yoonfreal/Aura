@@ -38,19 +38,9 @@ export function HeadToHeadCard({
   const opponent = challenge.opponent;
   const mine = participation?.currentValue ?? 0;
   const opponentValue = opponent?.currentValue ?? 0;
-  // Each racer's own bar fills toward the goal independently — not one bar split by
-  // share of the combined total, which made a lead look identical whether both racers
-  // were crawling along or both already near the finish.
   const myGoalPct = Math.min(100, (mine / challenge.goalValue) * 100);
   const opponentGoalPct = Math.min(100, (opponentValue / challenge.goalValue) * 100);
 
-  // A 1v1 participation row always has an opponent_id from the moment it's created — the
-  // only way to end up with participation but no resolvable opponent is a declined pairing
-  // whose other side got deleted out from under it (declining can only ever delete the
-  // decliner's own row — RLS only lets a row's own user touch it, not the row across the
-  // pairing). Rather than falling through to the active-race UI with a "?" for opponent,
-  // this is treated exactly like never having engaged with the challenge at all — the same
-  // "Invite an Opponent" card either way.
   if (!participation || !opponent) {
     return (
       <View style={styles.card}>
@@ -558,9 +548,6 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginTop: 11,
   },
-  // Same pill styling as ChallengeCard's badgePreviewPill (individual/team) — kept
-  // identical (colors, icon, sizes) so the badge looks the same across all challenge
-  // types and states, just re-centered here since this card's content is center-aligned.
   badgePreviewPill: {
     flexDirection: 'row',
     alignItems: 'center',

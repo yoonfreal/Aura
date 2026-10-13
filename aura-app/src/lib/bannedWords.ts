@@ -1,8 +1,5 @@
 import { supabase } from './supabase';
 
-// Admin-editable list (see aura-admin's Settings > Moderation > Banned words). Fails open
-// (empty list, so nothing gets blocked) if the table isn't reachable — same fail-open
-// convention as appSettings.ts, since a network hiccup shouldn't silently break posting.
 export async function fetchBannedKeywords(): Promise<string[]> {
   const { data, error } = await supabase.from('banned_keywords').select('word');
   if (error || !data) return [];

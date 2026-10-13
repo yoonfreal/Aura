@@ -16,12 +16,8 @@ const TEXT_MUTED = '#8A93A6';
 const NAVY = '#1B2B4B';
 const GOLD = '#F5B800';
 
-// Same palette Social already uses for friend avatars — keeps a person's color consistent
-// with how they look everywhere else in the app, not just this screen.
 const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F'];
 
-// Keyed by friend id (not list position) so a person's color stays fixed even as the list
-// reorders itself around new messages.
 function avatarColorFor(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;

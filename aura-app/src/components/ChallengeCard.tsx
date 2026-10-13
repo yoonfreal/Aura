@@ -23,9 +23,6 @@ const TYPE_LABEL: Record<ChallengeWithStatus['type'], string> = {
   team: 'Team',
 };
 
-// Driven by the actual challenge type, not the free-text category — category is optional
-// and admin-set (e.g. "Sport"), so it can't be relied on to tell you what kind of
-// challenge this is. Type always can.
 function typeColor(type: ChallengeWithStatus['type']): string {
   if (type === 'individual') return '#16A34A';
   if (type === 'team') return '#D97706';
@@ -53,14 +50,11 @@ export function ChallengeCard({
   const progressPct = Math.min(100, (currentValue / challenge.goalValue) * 100);
   const isCompleted = isTeam ? currentValue >= challenge.goalValue : (challenge.participation?.completed ?? false);
   const isClaimed = challenge.participation?.claimed ?? false;
-  // Team deadlines are shared on the team itself, since the goal is collective.
-  // Individual challenges have no personal deadline anymore (everyone auto-enrolls and
-  // shares the challenge's own end date instead).
+
   const expiresAt = isTeam ? (myTeam?.expiresAt ?? null) : `${challenge.endDate}T23:59:59`;
   const isExpired = isChallengeExpired(challenge);
   const daysLeft = expiresAt ? Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86400000) : null;
-  // "No limit" individual/1v1 challenges still have a real (far-future) end date under the
-  // hood, so anything absurdly far out just means there's effectively no deadline to show.
+  // "No limit" individual/1v1 
   const isNoLimit = daysLeft !== null && daysLeft > 365;
   // A team invite isn't "joined" until accepted — pending/declined rows don't count.
   const hasJoined = isTeam
@@ -76,7 +70,6 @@ export function ChallengeCard({
   const showCategoryTag = challenge.category && challenge.category.toLowerCase() !== challenge.type;
 
   // One badge pill style used everywhere a badge shows up — same position (in the body,
-  // not the footer) and same look whether it's still up for grabs or already earned, so
   // individual/team/1v1 cards and ongoing/completed states all read the same way.
   const badgePill = challenge.badgeName ? (
     <View style={styles.badgePreviewPill}>

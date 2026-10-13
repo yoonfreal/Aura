@@ -38,6 +38,7 @@ async function fetchRequests(
   const column = direction === 'incoming' ? 'addressee_id' : 'requester_id';
   const otherColumn = direction === 'incoming' ? 'requester_id' : 'addressee_id';
 
+  //Which friend requests are waiting?
   const { data, error } = await supabase
     .from('friendships')
     .select(`id, ${otherColumn}`)
@@ -49,6 +50,8 @@ async function fetchRequests(
   if (rows.length === 0) return [];
 
   const otherIds = rows.map((r) => r[otherColumn]);
+
+  //Who are those people?
   const { data: profilesData } = await supabase
     .from('profiles')
     .select('id, username, first_name, last_name, level')
@@ -69,9 +72,6 @@ export function fetchSentRequests(userId: string): Promise<FriendRequestEntry[]>
   return fetchRequests(userId, 'sent');
 }
 
-// Powers the notification badge on the friends icon — counts only *unseen* incoming
-// requests, not all pending ones, so the badge clears once the user opens the Friends
-// screen and reappears (from 1) only for requests that arrive after that.
 export async function countIncomingRequests(userId: string): Promise<number> {
   const { count } = await supabase
     .from('friendships')
@@ -82,8 +82,6 @@ export async function countIncomingRequests(userId: string): Promise<number> {
   return count ?? 0;
 }
 
-// Called when the Friends screen loads — marks every currently-pending incoming request
-// as seen so the badge clears, without touching requests that arrive afterward.
 export async function markIncomingRequestsSeen(userId: string): Promise<void> {
   const { error } = await supabase
     .from('friendships')
@@ -104,6 +102,7 @@ export async function searchUsersToAdd(query: string, userId: string): Promise<F
     .or(`username.ilike.%${trimmed}%,first_name.ilike.%${trimmed}%,last_name.ilike.%${trimmed}%`)
     .neq('id', userId)
     .limit(20);
+    //give back at most 20 results.
 
   const results = (profilesData ?? []) as ProfileNameRow[];
   if (results.length === 0) return [];
@@ -130,9 +129,6 @@ export async function searchUsersToAdd(query: string, userId: string): Promise<F
 
 export type FriendRelationInfo = { relation: FriendRelation; requestId?: string };
 
-// Looks up the relationship between the current user and one specific other user —
-// used by the friend profile screen (opened via friends list, shared link, or QR scan)
-// to decide whether to show Add / Pending / Accept / Friends.
 export async function fetchFriendRelation(userId: string, otherId: string): Promise<FriendRelationInfo> {
   if (userId === otherId) return { relation: 'friends' };
 
@@ -171,9 +167,6 @@ export async function cancelFriendRequest(requestId: string): Promise<void> {
 
 export type FriendSuggestion = { id: string; name: string; level: number; mutualCount: number };
 
-// "People you may know": ranks by mutual friend count first, like most social apps, then
-// tops up with a general pool (highest XP — fits the fitness-competition angle) so the
-// section is never empty, since almost everyone has zero mutual friends at first.
 export async function fetchSuggestedFriends(userId: string, limit = 20): Promise<FriendSuggestion[]> {
   const { data: myFriendships } = await supabase
     .from('friendships')
@@ -183,6 +176,8 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
   const myRelations = (myFriendships ?? []) as FriendshipRow[];
   const excludeIds = new Set<string>([userId]);
   const myFriendIds: string[] = [];
+
+  //people not to suggest
   for (const f of myRelations) {
     const otherId = f.requester_id === userId ? f.addressee_id : f.requester_id;
     excludeIds.add(otherId);
@@ -199,6 +194,7 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
 
     for (const f of (friendsOfFriends ?? []) as FriendshipRow[]) {
       for (const candidate of [f.requester_id, f.addressee_id]) {
+        //skips friends and pending
         if (excludeIds.has(candidate)) continue;
         mutualCountById.set(candidate, (mutualCountById.get(candidate) ?? 0) + 1);
       }
@@ -210,6 +206,8 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
     .slice(0, limit)
     .map(([id]) => id);
 
+
+  //first suggest people with mutual friends; if that's not enough, fill the rest with the top XP students, skipping anyone you already know.
   const suggestionIds = new Set(rankedMutualIds);
 
   if (suggestionIds.size < limit) {
@@ -225,6 +223,8 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
       suggestionIds.add(row.id);
     }
   }
+
+
 
   if (suggestionIds.size === 0) return [];
 
@@ -242,8 +242,6 @@ export async function fetchSuggestedFriends(userId: string, limit = 20): Promise
 
 export type FriendEntry = { id: string; name: string };
 
-// The current user's accepted friends only — used wherever a picker should offer
-// friends to choose from (e.g. inviting to a team) rather than searching all AU users.
 export async function fetchAcceptedFriends(userId: string): Promise<FriendEntry[]> {
   const { data: friendshipsData } = await supabase
     .from('friendships')
@@ -267,8 +265,6 @@ export async function fetchAcceptedFriends(userId: string): Promise<FriendEntry[
 
 export type FriendLeaderboardEntry = { rank: number; userId: string; name: string; level: number; xp: number };
 
-// Includes the current user alongside their accepted friends, ranked together by XP —
-// mirrors the Overall/Weekly leaderboard shape so rank.tsx can reuse the same row renderer.
 export async function fetchFriendsLeaderboard(userId: string): Promise<FriendLeaderboardEntry[]> {
   const { data: friendshipsData } = await supabase
     .from('friendships')

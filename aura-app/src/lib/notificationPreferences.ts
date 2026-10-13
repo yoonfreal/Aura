@@ -23,7 +23,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
   challengeEndingSoon: true,
   streakReminder: true,
 };
-
+// for notification_preferences table
 type PreferencesRow = {
   push_enabled: boolean;
   friend_requests: boolean;
@@ -67,26 +67,27 @@ export async function fetchNotificationPreferences(
 
 export async function updateNotificationPreference(
   userId: string,
+  //the settings that changed, not all of them.
   patch: Partial<PreferencesRow>
 ): Promise<void> {
   const { error } = await supabase
     .from('notification_preferences')
+
+    //update + insert
     .upsert(
       {
         user_id: userId,
         ...patch,
         updated_at: new Date().toISOString(),
       },
+
+      //if a row with this user_id already exists, update that one instead of making a second row
       { onConflict: 'user_id' }
     );
 
   if (error) throw error;
 }
 
-// Gate for notify* functions: is this recipient willing to receive this specific kind of
-// notification? Checks both the master switch and the per-category one. Defaults to true
-// (matches DEFAULT_NOTIFICATION_PREFERENCES) if the recipient has never saved preferences,
-// so nothing regresses for existing users who haven't opened the settings screen.
 export async function isNotificationTypeEnabled(
   userId: string,
   key: keyof Omit<NotificationPreferences, 'pushEnabled'>

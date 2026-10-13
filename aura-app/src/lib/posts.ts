@@ -41,34 +41,21 @@ export type AchievementCandidate = {
   kind: AchievementKind;
   title: string;
   icon: string;
-  // Set only for the fixed stat candidates below (icon is then an Ionicons name, not an
-  // emoji) — mission/badge/challenge icons stay plain emoji since those come from the DB
-  // (admin-chosen) and can't be mapped to a fixed icon set.
   iconKind?: 'ionicon';
   iconColor?: string;
-  // null for stat candidates — sharing "today's steps" or "current streak" isn't itself an
-  // XP-earning event, unlike a mission/badge/challenge win.
   xp: number | null;
-  // Sort key only — never shown to the user, since mission completions only carry a date
-  // (no time), so this is a same-day anchor, not a real moment.
   sortKey: string;
 };
 
 type TodayStatsRow = { steps: number; calories: number };
 type ProfileStatRow = { streak_days: number | null; level: number | null };
 
-// Candidates for the Achievement post picker built from the user's own current stats —
-// today's steps/calories, active streak, current level — not tied to any specific
-// mission/challenge event, so someone can share "how they're doing" even with nothing
-// freshly completed.
+// achievements from your current numbers
 async function fetchStatCandidates(userId: string): Promise<AchievementCandidate[]> {
   const today = thailandDateISO();
-  // Anchored to the start of today, not the exact current instant — using "now" would always
-  // outrank a mission or challenge win from earlier today (those anchor at noon / their real
-  // completion time), which broke "most recent first" ordering. This still ranks below any
-  // actual completion from today while staying above anything from a prior day.
   const todayStart = `${today}T00:00:00.000Z`;
 
+  //get today's steps and calories and my streak, level and last active date.
   const [{ data: statsData }, { data: profileData }] = await Promise.all([
     supabase.from('daily_stats').select('steps, calories').eq('user_id', userId).eq('date', today).maybeSingle(),
     supabase.from('profiles').select('streak_days, level, last_active_date').eq('id', userId).single(),
@@ -78,6 +65,7 @@ async function fetchStatCandidates(userId: string): Promise<AchievementCandidate
   const profile = profileData as (ProfileStatRow & { last_active_date: string | null }) | null;
   const candidates: AchievementCandidate[] = [];
 
+  //only if there are steps today 
   if (stats?.steps) {
     candidates.push({
       kind: 'stat',
@@ -143,9 +131,6 @@ type RecentHistoryRow = {
   challenges: { title: string; icon: string } | { title: string; icon: string }[] | null;
 };
 
-// Candidates for the Achievement post picker: completed missions and challenge wins/badges
-// from the last `days` days, plus the user's own current stats (steps/calories/streak/level)
-// so there's always something to share even with nothing freshly completed. Newest first.
 export async function fetchRecentAchievements(userId: string, days = 3): Promise<AchievementCandidate[]> {
   const since = addDaysToISO(thailandDateISO(), -days);
 
@@ -167,6 +152,7 @@ export async function fetchRecentAchievements(userId: string, days = 3): Promise
     fetchStatCandidates(userId),
   ]);
 
+  // prepares the student's recently completed missions so they can be shared as an achievement post
   const missionItems: AchievementCandidate[] = ((missionsRes.data ?? []) as RecentMissionRow[])
     .map((r) => ({ ...r, missions: Array.isArray(r.missions) ? r.missions[0] : r.missions }))
     .filter(
@@ -262,10 +248,7 @@ export type NewPost = {
 
 export async function createPost(userId: string, input: NewPost): Promise<void> {
   const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
-  // communityPostsEnabled is the master switch — it covers every post type, partner included.
-  // partnerFinderEnabled is a narrower, additional gate only checked once the master switch
-  // is already on, so turning off Community posts blocks partner posts too even if partner
-  // finder itself is still toggled on.
+
   if (!settings.communityPostsEnabled) {
     throw new Error('Posting is temporarily disabled by an admin.');
   }
@@ -297,8 +280,6 @@ export async function createPost(userId: string, input: NewPost): Promise<void> 
     .single();
   if (error) throw error;
 
-  // The post itself is already saved at this point — a notification failure must not
-  // surface as "post failed", same reasoning as the comment-notification guard below.
   try {
     await notifyFriendsOfPost(userId, (data as { id: string }).id);
   } catch (err) {
@@ -306,9 +287,6 @@ export async function createPost(userId: string, input: NewPost): Promise<void> 
   }
 }
 
-// RLS restricts this to the author's own rows, but userId is passed explicitly to match
-// every other write in this file and avoid depending solely on the DB policy to catch a
-// caller's mistake.
 export async function deletePost(userId: string, postId: string): Promise<void> {
   const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', userId);
   if (error) throw error;
@@ -326,10 +304,6 @@ export type UpdatePostInput = {
   challengeId?: string | null;
 };
 
-// Deliberately leaves the post's type and achievement_* columns untouched — which
-// achievement was shared is tied to the moment it was posted and isn't re-pickable later,
-// unlike a partner post's activity/date/location/expiry, which are safe to change after
-// the fact.
 export async function updatePost(userId: string, postId: string, input: UpdatePostInput): Promise<void> {
   const [settings, bannedKeywords] = await Promise.all([fetchAppSettings(), fetchBannedKeywords()]);
   if (settings.filterBannedKeywords && input.caption && containsBannedKeyword(input.caption, bannedKeywords)) {
@@ -351,9 +325,6 @@ export async function updatePost(userId: string, postId: string, input: UpdatePo
     .eq('user_id', userId)
     .select('id');
   if (error) throw error;
-  // RLS can block the update while still reporting no error — Postgres just matches zero
-  // rows. Without this check, an update denied by a missing/misconfigured policy looks
-  // identical to a successful save.
   if (!data || data.length === 0) {
     throw new Error('Post could not be updated — it may no longer exist or you may not have permission to edit it.');
   }
@@ -379,6 +350,7 @@ export type FeedPost = {
   createdAt: string;
 };
 
+//same as Feedpost but from database
 type PostRow = {
   id: string;
   user_id: string;
@@ -432,9 +404,6 @@ async function fetchProfilesById(userIds: string[]): Promise<Map<string, Profile
   return new Map(((data ?? []) as ProfileNameRow[]).map((p) => [p.id, p]));
 }
 
-// Friends' (and your own) posts, newest first — created_at is a real DB timestamp set at
-// post time, so relative-time display is always accurate regardless of timezone. Excludes
-// posts whose expires_at has passed (Partner posts with auto-expiry on).
 export async function fetchFriendPosts(userId: string, limit = 30): Promise<FeedPost[]> {
   const friendIds = await fetchAcceptedFriendIds(userId);
   const authorIds = [userId, ...friendIds];
@@ -453,9 +422,6 @@ export async function fetchFriendPosts(userId: string, limit = 30): Promise<Feed
   return mapPostRows(rows, profileById);
 }
 
-// Loads one post regardless of the feed's usual friend/limit scoping — used when a
-// notification deep-links straight to a specific post (RLS still applies: this returns
-// nothing if the viewer isn't the author or an accepted friend of theirs).
 export async function fetchPostById(postId: string): Promise<FeedPost | null> {
   const { data, error } = await supabase.from('posts').select(POST_SELECT).eq('id', postId).maybeSingle();
   if (error) throw error;
@@ -479,11 +445,12 @@ export function timeAgo(iso: string): string {
 }
 
 export type JoinState = { count: number; joined: boolean };
-const EMPTY_JOIN: JoinState = { count: 0, joined: false };
+const EMPTY_JOIN: JoinState = { count: 0, joined: false };//did i join
 
+//how many people joined each post and whether you joined it.
 export async function fetchJoins(postIds: string[], userId: string): Promise<Map<string, JoinState>> {
   const map = new Map<string, JoinState>();
-  for (const id of postIds) map.set(id, { ...EMPTY_JOIN });
+  for (const id of postIds) map.set(id, { ...EMPTY_JOIN });//For every post, add a blank entry:
   if (postIds.length === 0) return map;
 
   const { data, error } = await supabase.from('post_joins').select('post_id, user_id').in('post_id', postIds);
@@ -498,9 +465,6 @@ export async function fetchJoins(postIds: string[], userId: string): Promise<Map
   return map;
 }
 
-// Joins a Partner post if there's still room — peopleNeeded null means unlimited ("Any").
-// Re-checks the live count right before inserting to shrink (not eliminate) the race window
-// where two people tap Join for the last open spot at the same moment.
 export async function joinPost(userId: string, postId: string, peopleNeeded: number | null): Promise<void> {
   if (peopleNeeded != null) {
     const { count, error: countError } = await supabase
@@ -517,8 +481,7 @@ export async function joinPost(userId: string, postId: string, peopleNeeded: num
 
 export type JoinedUser = { id: string; name: string };
 
-// Who joined a Partner post — shown only to the post's author, so they can reach out to
-// whoever signed up (e.g. to start a chat) instead of just seeing a bare count.
+
 export async function fetchJoinedUsers(postId: string): Promise<JoinedUser[]> {
   const { data: joinRows, error } = await supabase
     .from('post_joins')
@@ -568,6 +531,7 @@ export async function fetchReactions(postIds: string[], userId: string): Promise
   return map;
 }
 
+//runs when a user taps a reaction
 export async function toggleReaction(
   userId: string,
   postId: string,
@@ -598,9 +562,7 @@ export async function toggleReaction(
 
   if (error) throw error;
 
-  /*
-   * Find the post owner.
-   */
+  //it looks up the post's owner to know who to notify
   const { data: postData, error: postError } =
     await supabase
       .from('posts')
@@ -624,9 +586,6 @@ export async function toggleReaction(
 
   /*
    * Don't notify yourself.
-   *
-   * Notification failure should not make
-   * the successful reaction look like it failed.
    */
   try {
     await notifyReaction(
@@ -654,8 +613,6 @@ export type Comment = {
 
 type CommentRow = { id: string; post_id: string; user_id: string; body: string; created_at: string };
 
-// Lightweight per-post counts for the feed card's "💬 N" button — full comment bodies are
-// only fetched when a thread is actually expanded, not preloaded for every post on scroll.
 export async function fetchCommentCounts(postIds: string[]): Promise<Map<string, number>> {
   const map = new Map<string, number>();
   for (const id of postIds) map.set(id, 0);
@@ -695,8 +652,7 @@ export async function fetchComments(postId: string): Promise<Comment[]> {
   }));
 }
 
-// postAuthorId identifies who to notify — passed in rather than looked up here since the
-// caller (the feed) already has it on the FeedPost it's commenting on.
+
 export async function addComment(userId: string, postId: string, postAuthorId: string, body: string): Promise<void> {
   const trimmed = body.trim();
   if (!trimmed) return;
@@ -717,7 +673,6 @@ export async function addComment(userId: string, postId: string, postAuthorId: s
   if (error) throw error;
 
   // The comment itself is already saved at this point — a notification failure (e.g. the
-  // notifications table/policies not set up yet) must not surface as "comment failed".
   const commentId = (data as { id: string }).id;
   try {
     await notifyComment(postAuthorId, userId, postId, commentId);

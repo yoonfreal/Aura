@@ -3,7 +3,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Alert,
   Animated,
+  KeyboardAvoidingView,
   LayoutChangeEvent,
+  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -13,6 +16,7 @@ import {
 
 import { Colors } from '@/constants/colors';
 import { supabase } from '@/lib/supabase';
+import { AU_EMAIL_DOMAIN, isAuEmail } from '@/lib/auEmail';
 
 function AuraLogo() {
   return (
@@ -50,6 +54,10 @@ export default function AuthScreen() {
       Alert.alert('Error', 'Please fill in all fields.');
       return;
     }
+    if (!isAuEmail(signupEmail)) {
+      Alert.alert('AU Email Required', `Please sign up with your ${AU_EMAIL_DOMAIN} email address.`);
+      return;
+    }
     if (!/^[a-z0-9_]{3,20}$/.test(signupUsername)) {
       Alert.alert('Invalid Username', 'Username must be 3–20 characters and contain only lowercase letters, numbers, or underscores.');
       return;
@@ -73,7 +81,7 @@ export default function AuthScreen() {
     }
 
     const { data: authData, error } = await supabase.auth.signUp({
-      email: signupEmail,
+      email: signupEmail.trim().toLowerCase(),
       password: signupPassword,
       options: { data: { first_name: signupFirstName, last_name: signupLastName, username: signupUsername } },
     });
@@ -81,6 +89,16 @@ export default function AuthScreen() {
     if (error || !authData.user) {
       setSignupLoading(false);
       Alert.alert('Sign Up Failed', error?.message ?? 'Something went wrong.');
+      return;
+    }
+
+    if (!authData.session) {
+      setSignupLoading(false);
+      switchTab('login');
+      Alert.alert(
+        'Confirm your email',
+        `We sent a link to ${signupEmail.trim().toLowerCase()}. Tap it to confirm your account, then log in.`
+      );
       return;
     }
 
@@ -108,11 +126,13 @@ export default function AuthScreen() {
     }
     setLoginLoading(true);
     const { error } = await supabase.auth.signInWithPassword({
-      email: loginEmail,
+      email: loginEmail.trim().toLowerCase(),
       password: loginPassword,
     });
     setLoginLoading(false);
-    if (error) {
+    if (error?.code === 'email_not_confirmed') {
+      Alert.alert('Confirm your email', 'Please tap the link we sent to your @au.edu inbox, then log in again.');
+    } else if (error) {
       Alert.alert('Login Failed', error.message);
     }
   }
@@ -136,7 +156,15 @@ export default function AuthScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.container}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.logoSection}>
           <AuraLogo />
           <Text style={styles.title}>AUra</Text>
@@ -266,7 +294,8 @@ export default function AuthScreen() {
             </>
           )}
         </View>
-      </View>
+      </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -277,9 +306,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.skyBackground,
   },
 
-  container: {
+  flex: {
     flex: 1,
+  },
+
+  container: {
+    flexGrow: 1,
     paddingHorizontal: 28,
+    paddingBottom: 24,
   },
 
   logoSection: {

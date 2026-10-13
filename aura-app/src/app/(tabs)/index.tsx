@@ -21,7 +21,7 @@ import { GymCheckInIcon } from '@/components/GymCheckInIcon';
 import { WeeklyView } from '@/components/WeeklyView';
 import { NotificationsModal } from '@/components/NotificationsModal';
 
-import { fetchTodayStats, fetchWatchSyncStatus, requestHealthKitPermissions } from '@/lib/healthkit';
+import { fetchTodayStats, requestHealthKitPermissions } from '@/lib/healthkit';
 
 import {
   fetchTodayMissions,
@@ -111,7 +111,6 @@ export default function HomeScreen() {
 
     setActiveTab,
     setDailyStats,
-    setWatchSync,
     setMissions,
     setUser,
     setWeeklyStats,
@@ -175,11 +174,9 @@ export default function HomeScreen() {
 
           const [
             activityStats,
-            sync,
             todayMissions,
           ] = await Promise.all([
             fetchDailyStats(user!.id),
-            fetchWatchSyncStatus(),
             fetchTodayMissions(user!.id),
           ]);
 
@@ -193,7 +190,6 @@ export default function HomeScreen() {
           );
 
           setMissions(synced.missions);
-          setWatchSync(sync);
 
           setDailyStats({
             steps: activityStats.steps,

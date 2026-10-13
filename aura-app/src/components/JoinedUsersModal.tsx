@@ -12,14 +12,13 @@ const NAVY = '#1B2B4B';
 
 const AVATAR_COLORS = ['#1E4D8C', '#4A5568', '#744210', '#065F46', '#5B21B6', '#831843', '#1E3A5F', '#3D2B1F'];
 
+//a colour for a person based on their ID, so the same person always gets the same colour everywhere
 function avatarColorFor(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   return AVATAR_COLORS[hash % AVATAR_COLORS.length];
 }
 
-// Lets a Partner post's author see exactly who joined and message any of them directly —
-// without this, the author only ever sees a bare count with no way to reach out.
 export function JoinedUsersModal({
   visible,
   loading,

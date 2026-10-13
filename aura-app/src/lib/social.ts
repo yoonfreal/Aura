@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { isStreakStillAlive } from '@/lib/thailandTime';
-
+//friends who are on a streak
 type ProfileNameRow = {
   id: string;
   username: string | null;
@@ -27,10 +27,6 @@ async function fetchAcceptedFriendIds(userId: string): Promise<string[]> {
 
 export type StreakEntry = { userId: string; name: string; streakDays: number };
 
-// Friends currently on an active streak, hottest first — pure read off profiles.streak_days,
-// no separate streak-tracking table needed. streak_days only updates when a friend
-// completes a mission, so a friend who's gone quiet still has their old streak_days sitting
-// there stale — isStreakStillAlive filters those out rather than showing a dead streak as live.
 export async function fetchFriendStreaks(userId: string): Promise<StreakEntry[]> {
   const friendIds = await fetchAcceptedFriendIds(userId);
   if (friendIds.length === 0) return [];
@@ -38,8 +34,8 @@ export async function fetchFriendStreaks(userId: string): Promise<StreakEntry[]>
   const { data, error } = await supabase
     .from('profiles')
     .select('id, username, first_name, last_name, streak_days, last_active_date')
-    .in('id', friendIds)
-    .gt('streak_days', 0)
+    .in('id', friendIds) //only friends
+    .gt('streak_days', 0) //greater than 0
     .order('streak_days', { ascending: false });
   if (error) throw error;
 

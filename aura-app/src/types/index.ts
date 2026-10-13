@@ -48,14 +48,9 @@ export interface DailyStats {
   calories: number;
   streakDays: number;
   xpEarned: number;
-  // Walking + running distance today, from HealthKit (only set by fetchTodayStats).
   distanceKm?: number;
 }
 
-export interface WatchSyncStatus {
-  connected: boolean;
-  lastSyncMinutesAgo: number;
-}
 
 export type ChallengeType = 'individual' | '1v1' | 'team';
 
@@ -125,9 +120,5 @@ export interface WeeklyStats {
   caloriesVsLastWeek: number | null;
   xpVsLastWeek: number | null;
   barData: WeeklyBarDay[];
-  // True when there isn't a single daily_stats row for this week yet — the app was never
-  // opened/synced this week, as opposed to it syncing real zero activity. Distinguishing
-  // this matters because "0 steps, -100% vs last week" reads as a measured decline when it
-  // may just mean nothing has been recorded yet.
   noDataThisWeek: boolean;
 }

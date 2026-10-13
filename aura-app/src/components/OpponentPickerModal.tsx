@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Modal, View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet } from 'react-native';
+import { Modal, View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { searchUsers, type UserSearchResult } from '@/lib/challenges';
 import { fetchAcceptedFriends } from '@/lib/friends';
@@ -8,8 +8,7 @@ type OpponentPickerModalProps = {
   visible: boolean;
   currentUserId: string;
   title?: string;
-  // When true, this picks from the user's accepted friends only (e.g. inviting to a
-  // team) instead of searching every AU user by username (the 1v1 opponent picker).
+  
   friendsOnly?: boolean;
   onClose: () => void;
   onInvite: (opponentId: string) => void;
@@ -64,7 +63,7 @@ export function OpponentPickerModal({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.backdrop}>
+      <KeyboardAvoidingView style={styles.backdrop} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.sheet}>
           <View style={styles.header}>
             <Text style={styles.title}>{title}</Text>
@@ -108,7 +107,7 @@ export function OpponentPickerModal({
             )}
           />
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

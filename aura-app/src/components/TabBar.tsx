@@ -30,7 +30,7 @@ function TabItem({
   onPress: () => void;
 }) {
   const bg = useRef(new Animated.Value(focused ? 1 : 0)).current;
-
+  //animation
   useEffect(() => {
     Animated.timing(bg, {
       toValue: focused ? 1 : 0,
@@ -91,6 +91,8 @@ export function TabBar({ state, navigation }: BottomTabBarProps) {
                     ? socialNotificationCount
                     : undefined
               }
+
+              //tapping a tab
               onPress={() => {
                 const event = navigation.emit({
                   type: 'tabPress',

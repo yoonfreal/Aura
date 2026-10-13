@@ -19,6 +19,7 @@ export function Dropdown({ label, value, options, onChange }: DropdownProps) {
         <Ionicons name="chevron-down" size={18} color="#6B7280" />
       </TouchableOpacity>
 
+      {/* pop-up list */}
       <Modal visible={visible} transparent animationType="slide" onRequestClose={() => setVisible(false)}>
         <View style={styles.backdrop}>
           <View style={styles.sheet}>
@@ -28,7 +29,8 @@ export function Dropdown({ label, value, options, onChange }: DropdownProps) {
                 <Ionicons name="close" size={22} color="#0D1829" />
               </TouchableOpacity>
             </View>
-
+            
+      {/*the list of options*/}
             <FlatList
               data={options}
               keyExtractor={(item) => item}

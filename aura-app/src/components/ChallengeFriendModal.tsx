@@ -11,11 +11,7 @@ type ChallengeFriendModalProps = {
   onClose: () => void;
   onConfirm: (challengeId: string) => void;
 };
-
-// Two-step sheet: pick which open 1v1 challenge to race the friend in, then an explicit
-// confirm step before actually inviting them — the opponent is already fixed (whoever
-// posted), so unlike OpponentPickerModal this only needs to ask "which challenge", and it
-// must not fire the invite on the same tap that picks the challenge.
+//the pop-up behind the "Challenge" button on a post or profile
 export function ChallengeFriendModal({
   visible,
   friendName,

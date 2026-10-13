@@ -43,6 +43,7 @@ import { fetchLinkableChallenges, type LinkableChallenge } from '@/lib/challenge
 import { fetchAppSettings, type AppSettings } from '@/lib/appSettings';
 import { thailandDateISO } from '@/lib/thailandTime';
 import { ActivityTypeIcon } from '@/components/ActivityTypeIcon';
+import { AchievementIcon } from '@/components/AchievementIcon';
 
 const POST_TYPES: { type: PostType; icon: keyof typeof Ionicons.glyphMap; label: string }[] = [
   { type: 'partner', icon: 'people', label: 'Partner' },
@@ -65,9 +66,6 @@ function toDateInputValue(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// The exact expiry choice isn't stored — only the resulting timestamp — so this is a
-// best-effort guess when loading a post back into the editor: exact match on activityAt
-// means "after event", otherwise pick whichever fixed duration is closest.
 function guessExpiryOption(expiresAt: string, activityAt: string | null): ExpiryOption {
   if (activityAt && Math.abs(new Date(expiresAt).getTime() - new Date(activityAt).getTime()) < 60_000) {
     return 'after_event';
@@ -108,17 +106,12 @@ export default function CreatePostScreen() {
     ]).start();
   }, [typeIndex]);
 
-  // Fetched once so the type picker can tell the user up front which post types an admin has
-  // turned off, instead of only finding out after filling in the whole form and hitting Post
-  // (posts.ts still enforces this for real at submit time — this is just the earlier warning).
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
 
   useEffect(() => {
     fetchAppSettings().then(setAppSettings);
   }, []);
 
-  // communityPostsEnabled is the master switch for every type, including partner —
-  // partnerFinderEnabled is only checked once that master switch is already on.
   function isTypeDisabled(t: PostType): boolean {
     if (!appSettings) return false;
     if (!appSettings.communityPostsEnabled) return true;
@@ -417,7 +410,14 @@ export default function CreatePostScreen() {
             <Text style={styles.sectionLabel}>ACHIEVEMENT</Text>
             <Text style={styles.emptyText}>Which achievement was shared can't be changed after posting.</Text>
             <View style={[styles.achievementRow, { marginTop: 10 }]}>
-              <Text style={styles.achievementIcon}>{selectedAchievement.icon}</Text>
+              <View style={styles.achievementIconWrap}>
+                <AchievementIcon
+                  icon={selectedAchievement.icon}
+                  size={20}
+                  color={selectedAchievement.iconColor ?? '#1B2B4B'}
+                  emojiStyle={styles.achievementIcon}
+                />
+              </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.achievementTitle}>{selectedAchievement.title}</Text>
                 {selectedAchievement.xp != null && (

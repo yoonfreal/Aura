@@ -44,17 +44,17 @@ function toChatMessage(row: MessageRow): ChatMessage {
   };
 }
 
-// Finds the existing 1:1 conversation between these two users, or creates one plus both
-// participant rows. Chat is DM-only for now; `conversations.is_group` exists in the schema
-// for a future group chat feature but nothing here creates one.
+
 export async function getOrCreateDirectConversation(userId: string, friendId: string): Promise<string> {
   const { data: myConvos } = await supabase
     .from('conversation_participants')
     .select('conversation_id')
     .eq('user_id', userId);
 
+  //Get the IDs of every chat I am part of.
   const myConvoIds = ((myConvos ?? []) as ParticipantRow[]).map((r) => r.conversation_id);
 
+  //look for a participant row where the person is my friend and the chat is one of mine. That's a chat we share.
   if (myConvoIds.length > 0) {
     const { data: shared } = await supabase
       .from('conversation_participants')
@@ -67,15 +67,17 @@ export async function getOrCreateDirectConversation(userId: string, friendId: st
     if (existingId) return existingId;
   }
 
+  //if none found, create new chat
   const { data: conversation, error } = await supabase
     .from('conversations')
     .insert({ created_by: userId })
     .select('id')
-    .single();
+    .single(); //give back the new row's ID
   if (error) throw error;
 
   const conversationId = (conversation as { id: string }).id;
 
+  //add two participants
   const { error: participantsError } = await supabase.from('conversation_participants').insert([
     { conversation_id: conversationId, user_id: userId },
     { conversation_id: conversationId, user_id: friendId },
@@ -85,18 +87,14 @@ export async function getOrCreateDirectConversation(userId: string, friendId: st
   return conversationId;
 }
 
-// A message counts as unread when someone else sent it after the last time this user
-// opened the thread. `last_read_at` is null for a participant who has never opened it, in
-// which case everything in the thread is unread.
 function isUnreadFor(userId: string, message: UnreadMessageRow, lastReadAt: string | null): boolean {
   if (message.sender_id === userId) return false;
-  if (!lastReadAt) return true;
+  if (!lastReadAt) return true; //unread
+
+  //was the message sent after I last read? --> unread
   return new Date(message.created_at).getTime() > new Date(lastReadAt).getTime();
 }
 
-// Total unread messages across every conversation — what the Messages icon badges on each
-// tab. The unread test is per-conversation (each thread has its own read cursor), which
-// PostgREST can't express as a single filter, so the rows are compared here instead.
 export async function countUnreadMessages(userId: string): Promise<number> {
   const { data: myConvos } = await supabase
     .from('conversation_participants')
@@ -108,19 +106,18 @@ export async function countUnreadMessages(userId: string): Promise<number> {
 
   const lastReadByConvo = new Map(cursors.map((c) => [c.conversation_id, c.last_read_at]));
 
+  //all messages in my chats that were not sent by me
   const { data: messages } = await supabase
     .from('messages')
     .select('conversation_id, sender_id, created_at')
-    .in('conversation_id', [...lastReadByConvo.keys()])
-    .neq('sender_id', userId);
+    .in('conversation_id', [...lastReadByConvo.keys()]) //take nonly the chat IDs and filter the messages: "Only messages whose chat is one of these."
+    .neq('sender_id', userId); //neq = not equal, only messages where the sender is not me.
 
   return ((messages ?? []) as (UnreadMessageRow & { conversation_id: string })[]).filter((m) =>
     isUnreadFor(userId, m, lastReadByConvo.get(m.conversation_id) ?? null),
   ).length;
 }
 
-// Moves this user's read cursor on one thread to now, clearing its unread count. Called
-// when the thread is opened and again for anything that arrives while it's on screen.
 export async function markConversationRead(conversationId: string, userId: string): Promise<void> {
   const { error } = await supabase
     .from('conversation_participants')
@@ -148,6 +145,7 @@ export async function fetchConversations(userId: string): Promise<ConversationSu
     .in('conversation_id', conversationIds)
     .neq('user_id', userId);
 
+  //who am I talking to
   const otherUserByConvo = new Map(
     ((participants ?? []) as ParticipantRow[]).map((p) => [p.conversation_id, p.user_id]),
   );
@@ -155,7 +153,7 @@ export async function fetchConversations(userId: string): Promise<ConversationSu
   const otherUserIds = [...new Set(otherUserByConvo.values())];
   const { data: profilesData } = otherUserIds.length
     ? await supabase.from('profiles').select('id, username, first_name, last_name').in('id', otherUserIds)
-    : { data: [] as ProfileNameRow[] };
+    : { data: [] as ProfileNameRow[] }; //return empty if no result
   const profileById = new Map(((profilesData ?? []) as ProfileNameRow[]).map((p) => [p.id, p]));
 
   const { data: messages } = await supabase
@@ -164,12 +162,17 @@ export async function fetchConversations(userId: string): Promise<ConversationSu
     .in('conversation_id', conversationIds)
     .order('created_at', { ascending: false });
 
-  // One pass over the newest-first rows gives both the preview line and the unread count,
-  // so the list doesn't need a second trip through countUnreadMessages.
+  
+  //the latest message in each chat, shown as the grey preview text.
   const lastMessageByConvo = new Map<string, { body: string; created_at: string }>();
+
+  //how many unread messages each chat has, shown as the small number badge.
   const unreadByConvo = new Map<string, number>();
   for (const m of (messages ?? []) as (UnreadMessageRow & { conversation_id: string; body: string })[]) {
+    //if this chat doesn't have a message saved yet, save this one.
     if (!lastMessageByConvo.has(m.conversation_id)) lastMessageByConvo.set(m.conversation_id, m);
+
+    //If this message is unread, add 1 to that chat's count.
     if (isUnreadFor(userId, m, lastReadByConvo.get(m.conversation_id) ?? null)) {
       unreadByConvo.set(m.conversation_id, (unreadByConvo.get(m.conversation_id) ?? 0) + 1);
     }
@@ -191,9 +194,7 @@ export async function fetchConversations(userId: string): Promise<ConversationSu
     .sort((a, b) => (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''));
 }
 
-// Looks up who the thread is with directly from the database, rather than trusting
-// whatever navigation happened to pass in — so the header shows the right name
-// regardless of how the screen was reached (list tap, deep link, notification, etc).
+//In this chat, who am I talking to?
 export async function fetchOtherParticipant(
   conversationId: string,
   userId: string,
@@ -201,7 +202,7 @@ export async function fetchOtherParticipant(
   const { data: participant } = await supabase
     .from('conversation_participants')
     .select('user_id')
-    .eq('conversation_id', conversationId)
+    .eq('conversation_id', conversationId)// in the current chat
     .neq('user_id', userId)
     .limit(1)
     .maybeSingle();
@@ -215,20 +216,23 @@ export async function fetchOtherParticipant(
     .eq('id', otherId)
     .maybeSingle();
 
+  //{ id: Mya's ID, name: "Mya" }
   return { id: otherId, name: displayName(profile as ProfileNameRow | undefined) };
 }
 
+//loads all the messages in one chat so they can be shown on the chat screen.
 export async function fetchMessages(conversationId: string): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from('messages')
     .select('id, conversation_id, sender_id, body, created_at')
     .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true });
+    .order('created_at', { ascending: true }); //oldest first
   if (error) throw error;
 
-  return ((data ?? []) as MessageRow[]).map(toChatMessage);
+  return ((data ?? []) as MessageRow[]).map(toChatMessage);//messages or an empty list if there are none.
 }
 
+//sends a chat message by saving it to the database.
 export async function sendMessage(conversationId: string, senderId: string, body: string): Promise<void> {
   const trimmed = body.trim();
   if (!trimmed) return;
@@ -239,18 +243,25 @@ export async function sendMessage(conversationId: string, senderId: string, body
   if (error) throw error;
 }
 
-// Pushes new messages to this conversation live via Supabase Realtime. Returns an
-// unsubscribe function — callers must invoke it on unmount to avoid leaking the channel.
+//makes new messages appear instantly while a chat is open, without refreshing
 export function subscribeToMessages(conversationId: string, onInsert: (message: ChatMessage) => void): () => void {
+
+  //Creates a live connection for this chat
   const channel = supabase
     .channel(`messages:${conversationId}`)
+
+    //Say what to listen for
     .on(
       'postgres_changes',
       { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
-      (payload) => onInsert(toChatMessage(payload.new as MessageRow)),
-    )
-    .subscribe();
+      (payload) => onInsert(toChatMessage(payload.new as MessageRow)), //What to do when one arrives
+      //when a message comes, display
 
+
+    )
+    .subscribe();//starts listening
+
+  //for leaving the chat
   return () => {
     supabase.removeChannel(channel);
   };

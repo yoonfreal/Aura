@@ -603,15 +603,6 @@ export default function FriendProfileScreen() {
     try {
       setLoadingPosts(true);
 
-      /*
-       * IMPORTANT:
-       *
-       * Use the same fetchFriendPosts()
-       * used by Social.
-       *
-       * This gives us the proper FeedPost
-       * including the real user's name.
-       */
       const data =
   await fetchFriendPosts(id);
 

@@ -35,11 +35,7 @@ interface ReportData {
   focusItems: { text: string; sub: string }[];
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-// Labels the same Thailand-local rolling 7-day window that fetchWeeklyStats actually queries
-// — computed from that same window rather than the device's own local calendar, so the
-// label always matches the data shown regardless of what timezone the device is set to.
 function getWeekLabel(): string {
   const { start, end } = thailandRollingWeekRange(0);
   const [startYear, startMonth, startDay] = start.split('-').map(Number);
@@ -51,13 +47,11 @@ function getWeekLabel(): string {
     : `Week of ${months[startMonth - 1]} ${startDay} – ${months[endMonth - 1]} ${endDay}, ${endYear}`;
 }
 
-// Called only once weeklyStats has actually loaded (see the loading gate in the screen
-// below) — every number here is real, computed from the caller's own weekly activity.
+
 function buildReport(stats: WeeklyStats, user: User | null): ReportData {
   const avgSteps = stats.avgSteps;
   const totalCalories = stats.totalCalories;
-  // null means "no prior week to compare against" (e.g. a brand-new account) — kept as
-  // null through to the UI rather than collapsed into a misleading "+0%".
+  
   const stepsChange = stats.avgStepsVsLastWeek;
   const calChange = stats.caloriesVsLastWeek;
   const xpNeeded = user ? Math.max(0, user.xpForNextLevel - user.xp) : 0;
@@ -114,10 +108,6 @@ function buildReport(stats: WeeklyStats, user: User | null): ReportData {
     sub: `About ${missionsNeeded} mission${missionsNeeded !== 1 ? 's' : ''} away — finish your dailies`,
   });
 
-  // No prior week to compare against: treat "went from nothing to something" as +100%
-  // (the standard convention — Strava/Fitbit do the same), rather than a fake "+0%" or an
-  // undefined percentage. If this week is also still at zero, there's genuinely nothing to
-  // report either way, so 0% there is accurate, not a placeholder.
   const stepsUp = stepsChange !== null ? stepsChange >= 0 : avgSteps > 0;
   const stepsChangeAbs = stepsChange !== null ? Math.abs(stepsChange) : (avgSteps > 0 ? 100 : 0);
   const calUp = calChange !== null ? calChange >= 0 : totalCalories > 0;
@@ -133,9 +123,7 @@ function buildReport(stats: WeeklyStats, user: User | null): ReportData {
 }
 
 // ─── Recap renderer ─────────────────────────────────────────────────────────
-// Renders the AI's freeform recap text (plain paragraphs, "- " bullet lines, and
-// **bold** spans) without forcing it into a fixed layout — its shape follows
-// whatever structure Claude chose for that particular week.
+
 
 function renderInline(text: string, boldStyle: object) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -191,8 +179,6 @@ export default function AIReportCardScreen() {
   const [aiReport, setAiReport] = useState<ReportInsight | null>(null);
   const [insightLoading, setInsightLoading] = useState(true);
 
-  // Weekly stats may not be loaded yet if the user opened this screen without first
-  // visiting Home's Weekly tab — fetch it here so the AI recap always has real data.
   useEffect(() => {
     if (!user || weeklyStats) return;
     fetchWeeklyStats(user.id).then(setWeeklyStats).catch(() => {});
@@ -232,10 +218,8 @@ export default function AIReportCardScreen() {
     };
   }, [user, weeklyStats]);
 
-  // Wait for real weekly stats AND the AI recap/recommendations before showing anything —
-  // otherwise "What Improved" and "This Week's Focus" would render immediately off local
-  // fallback data while only the recap card waited, so the page would visibly flash from
-  // template content to AI content instead of appearing all at once.
+  //loading screen for the AI report card
+  // Wait for real weekly stats AND the AI recap/recommendations before showing anything 
   if (!weeklyStats || insightLoading) {
     return (
       <View style={[styles.safe, { paddingTop: insets.top }]}>
@@ -258,8 +242,6 @@ export default function AIReportCardScreen() {
 
   const d = buildReport(weeklyStats, user);
 
-  // Prefer Claude's real, data-grounded recommendations; fall back to the local
-  // algorithmic ones only if the Edge Function call failed.
   const focusItems = aiReport
     ? aiReport.recommendations.map((r) => ({ text: r.title, sub: r.detail }))
     : d.focusItems;
@@ -322,8 +304,7 @@ export default function AIReportCardScreen() {
           <View style={styles.metricsRow}>
             {[
               {
-                // A flat 0% (no data either week — never a real decline) reads as "-0%" with
-                // a sign, which looks like a measured drop. Show a plain, neutral "0%" instead.
+    
                 value: d.stepsChangeAbs === 0 ? '0%' : `${d.stepsUp ? '+' : '-'}${d.stepsChangeAbs}%`,
                 label: 'Steps',
                 color: d.stepsChangeAbs === 0 ? '#6B7280' : d.stepsUp ? '#16A34A' : '#DC2626',
@@ -396,7 +377,6 @@ const SHADOW = {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F2F6F9' },
 
-  // Header — identical to HomeScreen header style
   header: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -6,8 +6,6 @@ type Props = {
   loading: boolean;
 };
 
-// Shown on sport-session challenges: opens the camera for a live photo that Claude checks
-// against the challenge's sport before a session is counted.
 export function LogSessionButton({ onPress, loading }: Props) {
   return (
     <TouchableOpacity style={styles.button} onPress={onPress} disabled={loading} activeOpacity={0.8}>

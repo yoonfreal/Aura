@@ -42,16 +42,12 @@ async function fetchAcceptedFriendIds(
       addressee_id: string;
     }[]
   ).map((f) =>
+  //for each friendship, pick the other person
     f.requester_id === userId
       ? f.addressee_id
       : f.requester_id
   );
 }
-
-
-/* =========================================================
-   COMMENT NOTIFICATION
-========================================================= */
 
 export async function notifyComment(
   recipientId: string,
@@ -59,6 +55,7 @@ export async function notifyComment(
   postId: string,
   commentId: string
 ): Promise<void> {
+  // dont get noti
   if (recipientId === actorId) return;
   if (!(await isNotificationTypeEnabled(recipientId, 'comments'))) return;
 
@@ -75,10 +72,6 @@ export async function notifyComment(
   if (error) throw error;
 }
 
-
-/* =========================================================
-   REACTION NOTIFICATION
-========================================================= */
 
 export async function notifyReaction(
   recipientId: string,
@@ -103,10 +96,6 @@ export async function notifyReaction(
   if (error) throw error;
 }
 
-
-/* =========================================================
-   CHALLENGE INVITE NOTIFICATIONS (1v1 + team)
-========================================================= */
 
 export async function notifyChallengeInvite(
   recipientId: string,
@@ -153,17 +142,6 @@ export async function notifyTeamInvite(
 }
 
 
-/* =========================================================
-   CHALLENGE RESPONSE NOTIFICATION (accept + decline)
-========================================================= */
-
-// Tells the inviter whether their 1v1/team invite was accepted or declined — declines in
-// particular have no other way to surface, since a declined row never shows up as a new
-// teammate or opponent anywhere else in the app. Stays on the single 'challenge_response'
-// type (rather than two distinct types) because the DB's notifications_type_check
-// constraint only whitelists a fixed set of values and doesn't know about new ones —
-// accept vs. decline is instead encoded in `message`, the same free-text column
-// admin_warning already uses, which isn't constrained.
 export async function notifyChallengeResponse(
   recipientId: string,
   actorId: string,
@@ -188,12 +166,6 @@ export async function notifyChallengeResponse(
   if (error) throw error;
 }
 
-// Tells the team's founder someone new joined — whether by browsing open teams and
-// tapping Join, or by accepting an invite from a teammate other than the founder (an
-// invite accepted from the founder themself is covered by notifyChallengeResponse
-// instead, so this is skipped for that case to avoid notifying them twice for one event).
-// Shares 'challenge_response''s type for the same DB-constraint reason (see above);
-// message: 'joined' distinguishes it from an accept/decline.
 export async function notifyTeamMemberJoined(
   founderId: string,
   actorId: string,
@@ -217,14 +189,6 @@ export async function notifyTeamMemberJoined(
   if (error) throw error;
 }
 
-
-/* =========================================================
-   CHALLENGE COMPLETE NOTIFICATION
-========================================================= */
-
-// Self-notification: actor and recipient are the same person. RLS's insert policy only
-// requires actor_id = auth.uid(), so a user creating a notification for themselves is
-// allowed the same way notifyReaction/notifyComment let a user create one for someone else.
 export async function notifyChallengeComplete(
   userId: string,
   challengeId: string
@@ -244,13 +208,6 @@ export async function notifyChallengeComplete(
 }
 
 
-/* =========================================================
-   CHALLENGE ENDING SOON NOTIFICATION
-========================================================= */
-
-// Self-notification, same shape as notifyChallengeComplete. Deduped by checking for an
-// existing row for this user+challenge first, since there's no dedup column and this can
-// be called on every app open while the challenge is inside the "ending soon" window.
 export async function notifyChallengeEndingSoon(
   userId: string,
   challengeId: string
@@ -282,12 +239,6 @@ export async function notifyChallengeEndingSoon(
 }
 
 
-/* =========================================================
-   STREAK REMINDER NOTIFICATION
-========================================================= */
-
-// Self-notification, once per Thailand-calendar day: dedup by checking for an existing row
-// created since midnight Thailand time, since there's no dedup column to key off directly.
 export async function notifyStreakReminder(
   userId: string
 ): Promise<void> {
@@ -317,11 +268,7 @@ export async function notifyStreakReminder(
   if (error) throw error;
 }
 
-
-/* =========================================================
-   POST NOTIFICATION
-========================================================= */
-
+//notify friends
 export async function notifyFriendsOfPost(
   actorId: string,
   postId: string
@@ -351,11 +298,6 @@ export async function notifyFriendsOfPost(
   if (error) throw error;
 }
 
-
-/* =========================================================
-   UNREAD COUNT
-========================================================= */
-
 export async function countUnreadNotifications(
   userId: string,
   types?: NotificationType[]
@@ -363,6 +305,8 @@ export async function countUnreadNotifications(
   let query = supabase
     .from('notifications')
     .select('id', {
+
+      //tell how many
       count: 'exact',
       head: true,
     })
@@ -381,10 +325,6 @@ export async function countUnreadNotifications(
 }
 
 
-/* =========================================================
-   TYPES
-========================================================= */
-
 export type NotificationType =
   | 'comment'
   | 'post'
@@ -399,9 +339,7 @@ export type NotificationType =
   | 'admin_warning'
   | 'announcement';
 
-// Every type that should take a tap to the challenge it's about, rather than a post (or
-// nowhere). Shared by every screen's notification handler so the list can't drift between
-// them the way four separately-maintained copies would.
+
 const CHALLENGE_LINKED_TYPES: NotificationType[] = [
   'challenge_invite',
   'team_invite',
@@ -413,10 +351,6 @@ export function notificationLinksToChallenge(type: NotificationType): boolean {
   return CHALLENGE_LINKED_TYPES.includes(type);
 }
 
-// The types that belong to the Social tab's world (friend activity on posts/friendships)
-// as opposed to challenge/system notifications — used to scope the Social tab's badge
-// dot to only what's actually social, separately from the shared all-types unread count
-// the bell icons on every tab use.
 export const SOCIAL_NOTIFICATION_TYPES: NotificationType[] = [
   'comment',
   'post',
@@ -431,8 +365,6 @@ export type AppNotification = {
   postId: string | null;
   challengeId: string | null;
   previewText: string | null;
-  // Only meaningful for type 'challenge_response' — read off the `message` column to
-  // tell an accept, a decline, and a new team member joining apart, null otherwise.
   responseStatus: 'accepted' | 'declined' | 'joined' | null;
   createdAt: string;
   read: boolean;
@@ -478,9 +410,6 @@ type NotificationRow = {
 };
 
 
-/* =========================================================
-   POST PREVIEW
-========================================================= */
 
 function postPreview(
   post:
@@ -512,9 +441,6 @@ function postPreview(
 }
 
 
-/* =========================================================
-   FETCH NOTIFICATIONS
-========================================================= */
 
 export async function fetchNotifications(
   userId: string,
@@ -538,6 +464,8 @@ export async function fetchNotifications(
     (data ?? []) as NotificationRow[];
 
   const actorIds = [
+    //A Set is a list that can't hold duplicates
+    //Removing repeats only affects looking up names, not which notifications are shown.
     ...new Set(
       rows.map(
         (r) => r.actor_id
@@ -594,8 +522,6 @@ export async function fetchNotifications(
 
       type: r.type,
 
-      // Warnings and announcements come from an admin acting on behalf of the platform, not
-      // a specific person — never surface which admin's account sent it.
       actorName:
         r.type === 'admin_warning' || r.type === 'announcement'
           ? 'Admin'
@@ -639,10 +565,6 @@ export async function fetchNotifications(
   });
 }
 
-
-/* =========================================================
-   MARK ALL AS READ
-========================================================= */
 
 export async function markAllNotificationsRead(
   userId: string

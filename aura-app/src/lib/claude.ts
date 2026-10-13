@@ -1,5 +1,5 @@
 import { supabase } from '@/lib/supabase';
-
+//uses supabase functions to talk to AI, not directly
 type DayActivity = {
   day: string;
   steps: number;
@@ -22,19 +22,19 @@ type ReportInsightStats = {
 
 export type ReportRecommendation = { title: string; detail: string };
 
+//what AI sends back
 export type ReportInsight = {
   recap: string;
   recommendations: ReportRecommendation[];
 };
 
-// Calls the ai-report-card Supabase Edge Function, which holds the Claude API key —
-// never call Claude directly from the client. Returns null on any failure so the report
-// card can fall back to showing just the real stats without the AI recap.
+//asks the AI (Claude) to write the student's weekly report card
 export async function fetchReportInsight(stats: ReportInsightStats): Promise<ReportInsight | null> {
   try {
+    //call the server's function
     const { data, error } = await supabase.functions.invoke<ReportInsight>(
       'ai-report-card',
-      { body: stats },
+      { body: stats },//send the stats
     );
     if (error || !data?.recap || !data.recommendations?.length) return null;
     return data;

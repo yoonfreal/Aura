@@ -6,7 +6,7 @@ interface Props {
 }
 
 export function XPBar({ current, max }: Props) {
-  const progress = Math.min(current / max, 1);
+  const progress = Math.min(current / max, 1); //full not full
 
   return (
     <View style={styles.track}>

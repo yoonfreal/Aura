@@ -8,8 +8,7 @@ export function getLevelTitle(level: number): string {
 }
 
 // Cumulative XP to reach level N = 80 × (N-1)^1.3.
-// Anchored at (N-1) so level 1 starts at exactly 0 XP with no special
-// case, and every level's cost is strictly greater than the last.
+
 export function xpForLevel(level: number): number {
   return Math.round(80 * Math.pow(level - 1, 1.3));
 }

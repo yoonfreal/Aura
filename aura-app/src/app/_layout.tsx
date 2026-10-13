@@ -98,9 +98,9 @@ export default function RootLayout() {
   const navigationState = useRootNavigationState();
   const [pendingRedirect, setPendingRedirect] = useState<string | null>(null);
 
-  // The URL the app was cold-launched with (e.g. auraapp://friend/<id> from Share > Send
-  // To, or a shared chat link) — captured in a ref so the auth listener below always reads
-  // its latest value without needing to resubscribe every time it changes.
+  // The URL the app was cold-launched with (an auraapp:// deep link) — captured in a ref so
+  // the auth listener below always reads its latest value without needing to resubscribe
+  // every time it changes.
   const launchUrl = Linking.useURL();
   const launchUrlRef = useRef(launchUrl);
   useEffect(() => {
@@ -132,8 +132,8 @@ export default function RootLayout() {
           } else if (result === 'onboarding') {
             setPendingRedirect('/(onboarding)');
           } else {
-            // A cold start via a shared deep link (e.g. auraapp://friend/<id>) should land
-            // on that screen, not get overridden by the default tabs redirect below.
+            // A cold start via a deep link should land on that screen, not get overridden
+            // by the default tabs redirect below.
             const path = launchUrlRef.current ? Linking.parse(launchUrlRef.current).path : null;
             setPendingRedirect(path ? `/${path}` : '/(tabs)');
           }

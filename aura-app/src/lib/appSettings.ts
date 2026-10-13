@@ -7,9 +7,7 @@ export type AppSettings = {
   maintenanceModeEnabled: boolean;
 };
 
-// Fails open — if app_settings isn't reachable for some reason, the app should keep working
-// (everything enabled, maintenance off) rather than a network hiccup locking everyone out or
-// silently breaking posting for every user.
+
 const DEFAULTS: AppSettings = {
   communityPostsEnabled: true,
   partnerFinderEnabled: true,
@@ -17,7 +15,7 @@ const DEFAULTS: AppSettings = {
   maintenanceModeEnabled: false,
 };
 
-// Singleton row (id = 1) an admin controls from the Settings page in aura-admin.
+
 export async function fetchAppSettings(): Promise<AppSettings> {
   const { data, error } = await supabase
     .from('app_settings')

@@ -133,6 +133,33 @@ async function restFetch(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
+async function fetchExistingMissions(userId: string, date: string): Promise<MissionOut[] | null> {
+  const res = await restFetch(
+    `/user_missions?user_id=eq.${userId}&date=eq.${date}&select=id,current_value,completed,missions(title,xp_reward,goal_value,goal_unit,icon)`,
+  );
+  if (!res.ok) {
+    console.error('Failed to check existing missions', await res.text());
+    return null;
+  }
+  const rows = await res.json();
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((row: Record<string, unknown>) => row.missions)
+    .map((row: Record<string, unknown>) => {
+      const m = row.missions as Record<string, unknown>;
+      return {
+        id: row.id as string,
+        title: m.title as string,
+        xpReward: m.xp_reward as number,
+        goalValue: m.goal_value as number,
+        goalUnit: m.goal_unit as GoalUnit,
+        icon: (m.icon as string) || FALLBACK_ICON[m.goal_unit as GoalUnit] || '🏅',
+        currentValue: row.current_value as number,
+        completed: row.completed as boolean,
+      };
+    });
+}
+
 Deno.serve(async (req) => {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -168,32 +195,9 @@ Deno.serve(async (req) => {
     if (!userId) return json({ error: 'Could not resolve user' }, 401);
 
     // Idempotent: if today's missions already exist, return those instead of generating again.
-    const existingRes = await restFetch(
-      `/user_missions?user_id=eq.${userId}&date=eq.${date}&select=id,current_value,completed,missions(title,xp_reward,goal_value,goal_unit,icon)`,
-    );
-    if (!existingRes.ok) {
-      console.error('Failed to check existing missions', await existingRes.text());
-      return json({ error: 'Failed to check existing missions' }, 502);
-    }
-    const existing = await existingRes.json();
-    if (Array.isArray(existing) && existing.length > 0) {
-      const missions: MissionOut[] = existing
-        .filter((row: Record<string, unknown>) => row.missions)
-        .map((row: Record<string, unknown>) => {
-          const m = row.missions as Record<string, unknown>;
-          return {
-            id: row.id as string,
-            title: m.title as string,
-            xpReward: m.xp_reward as number,
-            goalValue: m.goal_value as number,
-            goalUnit: m.goal_unit as GoalUnit,
-            icon: (m.icon as string) || FALLBACK_ICON[m.goal_unit as GoalUnit] || '🏅',
-            currentValue: row.current_value as number,
-            completed: row.completed as boolean,
-          };
-        });
-      return json({ missions }, 200);
-    }
+    const existing = await fetchExistingMissions(userId, date);
+    if (!existing) return json({ error: 'Failed to check existing missions' }, 502);
+    if (existing.length > 0) return json({ missions: existing }, 200);
 
     // No missions yet today — pull recent history and generate personalized ones.
     const [historyRes, profileRes] = await Promise.all([
@@ -242,6 +246,10 @@ Deno.serve(async (req) => {
     }
 
     const sanitized = oneOfEachType(parsed.missions.map(sanitizeMission));
+
+    const savedMeanwhile = await fetchExistingMissions(userId, date);
+    if (!savedMeanwhile) return json({ error: 'Failed to check existing missions' }, 502);
+    if (savedMeanwhile.length > 0) return json({ missions: savedMeanwhile }, 200);
 
     const insertMissionsRes = await restFetch('/missions', {
       method: 'POST',

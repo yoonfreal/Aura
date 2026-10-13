@@ -10,6 +10,7 @@ import {
   type Comment,
 } from '@/lib/posts';
 import { ActivityTypeIcon } from '@/components/ActivityTypeIcon';
+import { AchievementIcon } from '@/components/AchievementIcon';
 
 function formatPartnerDate(iso: string): string {
   const d = new Date(iso);
@@ -46,8 +47,6 @@ type PostCardProps = {
   onDeleteComment: (comment: Comment) => void;
 };
 
-// Shared by the Social feed and the single-post detail screen (opened from a notification) —
-// both need identical rendering and interaction, so this stays the one place that changes.
 export function PostCard({
   post,
   avatarColor,
@@ -101,7 +100,14 @@ export function PostCard({
 
       {post.achievementTitle && (
         <View style={styles.achievementPill}>
-          <Text style={styles.achievementPillIcon}>{post.achievementIcon}</Text>
+          {post.achievementIcon && (
+            <AchievementIcon
+              icon={post.achievementIcon}
+              size={14}
+              color="#8A6D00"
+              emojiStyle={styles.achievementPillIcon}
+            />
+          )}
           <Text style={styles.achievementPillText}>{post.achievementTitle}</Text>
           {post.achievementXp != null && <Text style={styles.achievementPillXp}>+{post.achievementXp} XP</Text>}
         </View>

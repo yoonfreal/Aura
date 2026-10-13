@@ -8,6 +8,7 @@ import {
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { deleteMyAccount } from '@/lib/account';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -25,12 +26,15 @@ export default function SettingsScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
-            // Account deletion should be handled
-            // through a secure backend/Edge Function.
-            Alert.alert(
-              'Delete Account',
-              'Account deletion will be connected to the server later.'
-            );
+            try {
+              await deleteMyAccount();
+            } catch (error) {
+              console.error('deleteMyAccount failed', error);
+              Alert.alert(
+                'Delete Account',
+                'Your account could not be deleted. Please try again.'
+              );
+            }
           },
         },
       ]
@@ -83,26 +87,6 @@ export default function SettingsScreen() {
         >
           <Text style={styles.rowText}>
             Notifications
-          </Text>
-
-          <Text style={styles.chevron}>
-            ›
-          </Text>
-        </TouchableOpacity>
-
-        {/* =================================================
-            PRIVACY
-            ================================================= */}
-
-        <TouchableOpacity
-          style={styles.row}
-          onPress={() =>
-            router.push('/privacy')
-          }
-          activeOpacity={0.7}
-        >
-          <Text style={styles.rowText}>
-            Privacy
           </Text>
 
           <Text style={styles.chevron}>

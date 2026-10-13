@@ -25,8 +25,6 @@ function fmtChange(value: number | null, unit: 'percent' | 'absolute'): string |
   return unit === 'percent' ? `${sign}${value}% vs last week` : `${sign}${value} vs last week`;
 }
 
-// Red for a decline, green for an improvement — the fixed teal StatCard.sub previously used
-// made every "-X% vs last week" read as good news regardless of direction.
 function changeColor(value: number | null): string | undefined {
   if (value === null) return undefined;
   return value >= 0 ? '#16A34A' : '#DC2626';
@@ -51,7 +49,6 @@ export function WeeklyView({ stats }: Props) {
 
   return (
     <>
-      {/* Stats Grid — identical layout to Daily */}
       <View style={styles.statsGrid}>
         <View style={styles.statsRow}>
           <StatCard
@@ -111,8 +108,6 @@ export function WeeklyView({ stats }: Props) {
                     style={[
                       styles.bar,
                       {
-                        // Square-root scale, not linear — a single big day (e.g. a long hike)
-                        // would otherwise flatten every other day's bar to nearly nothing.
                         height: BAR_MAX_HEIGHT * (Math.sqrt(bar.steps) / Math.sqrt(maxSteps)),
                         backgroundColor: isSelected ? '#F5B800' : bar.steps === maxSteps && bar.steps > 0 ? '#1B2B4B' : '#B8CCE4',
                       },

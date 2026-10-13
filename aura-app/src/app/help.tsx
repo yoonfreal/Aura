@@ -30,6 +30,7 @@ const TEXT_MUTED = '#8A93A6';
 const ICON_BG = '#FBDCC8';
 const ORANGE = '#F5822A';
 const NAVY = '#1B2A41';
+const SUPPORT_EMAIL = 'u6642042@au.edu';
 
 type FAQ = {
   question: string;
@@ -79,7 +80,7 @@ export default function HelpScreen() {
   };
 
   const contactSupport = async () => {
-    const email = 'support@aura-app.com';
+    const email = SUPPORT_EMAIL;
 
     const subject = encodeURIComponent('Aura Support Request');
 
@@ -92,13 +93,13 @@ export default function HelpScreen() {
     } else {
       Alert.alert(
         'Unable to open email',
-        'Please contact support at support@aura-app.com.'
+        `Please contact support at ${SUPPORT_EMAIL}.`
       );
     }
   };
 
   const reportProblem = async () => {
-    const email = 'support@aura-app.com';
+    const email = SUPPORT_EMAIL;
 
     const subject = encodeURIComponent('Aura Problem Report');
 
@@ -115,7 +116,7 @@ export default function HelpScreen() {
     } else {
       Alert.alert(
         'Unable to open email',
-        'Please contact support at support@aura-app.com.'
+        `Please contact support at ${SUPPORT_EMAIL}.`
       );
     }
   };

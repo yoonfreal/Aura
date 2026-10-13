@@ -7,9 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '@/constants/colors';
 import { fetchAppSettings } from '@/lib/appSettings';
 
-// The root layout redirects here on every app launch while app_settings.maintenance_mode_enabled
-// is on (see _layout.tsx) — this screen has no way in or out except an admin flipping that
-// toggle back off, which "Try again" re-checks for.
+
 export default function MaintenanceScreen() {
   const [checking, setChecking] = useState(false);
 

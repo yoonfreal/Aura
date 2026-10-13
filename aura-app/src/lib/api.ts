@@ -8,17 +8,25 @@ import type { Mission, DailyStats, WeeklyStats, WeeklyBarDay } from '@/types';
 function todayISO(): string {
   return thailandDateISO();
 }
-
+// from daily_stats table
 type DailyStatRow = { steps: number; calories: number; xp_earned: number } | null;
 
-// Today's missions come from the generate-daily-missions Edge Function, which
-// personalizes them from the user's real recent activity instead of assigning the same
-// fixed global template set to everyone — see supabase/functions/generate-daily-missions.
-// The function is idempotent (checks for today's rows before generating), so calling it
-// every time the Home tab loads is safe and avoids a duplicate round trip here.
-export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
-  const today = todayISO();
 
+let missionsInFlight: { key: string; promise: Promise<Mission[]> } | null = null;
+
+export function fetchTodayMissions(userId: string): Promise<Mission[]> {
+  const today = todayISO();
+  const key = `${userId}:${today}`;
+  if (missionsInFlight?.key === key) return missionsInFlight.promise;
+
+  const promise = requestTodayMissions(today).finally(() => {
+    if (missionsInFlight?.promise === promise) missionsInFlight = null;
+  });
+  missionsInFlight = { key, promise };
+  return promise;
+}
+
+async function requestTodayMissions(today: string): Promise<Mission[]> {
   const { data, error } = await supabase.functions.invoke<{ missions: Mission[] }>(
     'generate-daily-missions',
     { body: { date: today } },
@@ -31,10 +39,6 @@ export async function fetchTodayMissions(userId: string): Promise<Mission[]> {
   return data.missions;
 }
 
-// Guarantees a daily_stats row exists for today the moment the app opens, even if the
-// user never completes a mission or claims a challenge — otherwise daily_stats only
-// reflects "did something," not "opened the app," which is what admin's daily active
-// users chart needs. Silently no-ops on failure so a hiccup here never blocks login.
 export async function ensureActiveToday(userId: string): Promise<void> {
   try {
     const today = todayISO();
@@ -49,26 +53,20 @@ export async function ensureActiveToday(userId: string): Promise<void> {
       await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps: 0, calories: 0, xp_earned: 0 });
     }
   } catch {
-    // Best-effort activity ping — never let this break app startup.
+    //The catch is empty on purpose. This function only records that the student was active today for the admin's chart, which isn't important enough to block the app. If it fails, the app just carries on normally.
   }
 }
 
-// Powers admin's Active/Offline column — a user is "Active" if their last_seen_at is
-// recent (see _layout.tsx's ping interval), "Offline" otherwise. Best-effort, silently
-// no-ops on failure since presence is a nice-to-have, never something to block on.
+
 export async function updateLastSeen(userId: string): Promise<void> {
   try {
     await supabase.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', userId);
   } catch {
-    // Best-effort presence ping.
+    
   }
 }
 
-// Nudges the user once per Thailand-calendar day, after 6 PM Thailand time, if they
-// haven't logged any activity yet today — "today" here matches the same Thailand-day
-// definition updateStreak uses for last_active_date, so this only fires once the day
-// updateStreak itself would consider still open. Best-effort, silently no-ops on failure
-// since this is a nice-to-have, never something to block app startup on.
+
 export async function checkStreakReminder(userId: string): Promise<void> {
   try {
     if (thailandHour() < 18) return;
@@ -84,7 +82,7 @@ export async function checkStreakReminder(userId: string): Promise<void> {
 
     await notifyStreakReminder(userId);
   } catch {
-    // Best-effort nudge.
+    
   }
 }
 
@@ -110,46 +108,27 @@ export async function fetchDailyStats(
   };
 }
 
-type DailyStatFields = { steps: number; calories: number; xp_earned: number };
 
-// Bumps today's daily_stats row so Daily/Weekly stats reflect XP/steps/calories right now —
-// missions call this for xp_earned (and steps/calories), challenge claims call it for
-// xp_earned too, since HealthKit isn't wired up yet to sync any of this automatically.
-// Unusual-activity flagging (steps/calories/XP thresholds) lives in a Postgres trigger on
-// daily_stats, not here — that way it fires no matter what writes the row (this function,
-// a future HealthKit sync, or a direct edit), not just this one call site.
-export async function incrementDailyStat(
-  userId: string,
-  field: 'steps' | 'calories' | 'xp_earned',
-  amount: number,
-): Promise<DailyStatFields> {
+export async function incrementDailyXp(userId: string, amount: number): Promise<void> {
   const today = todayISO();
 
   const { data: existing, error: selectError } = await supabase
     .from('daily_stats')
-    .select('id, steps, calories, xp_earned')
+    .select('id, xp_earned')
     .eq('user_id', userId)
     .eq('date', today)
     .maybeSingle();
   if (selectError) throw selectError;
 
-  const row = existing as ({ id: string } & DailyStatFields) | null;
-  const steps = (row?.steps ?? 0) + (field === 'steps' ? amount : 0);
-  const calories = (row?.calories ?? 0) + (field === 'calories' ? amount : 0);
-  const xp_earned = (row?.xp_earned ?? 0) + (field === 'xp_earned' ? amount : 0);
+  const row = existing as { id: string; xp_earned: number } | null;
+  const xp_earned = (row?.xp_earned ?? 0) + amount;
 
   const { error: writeError } = row
-    ? await supabase.from('daily_stats').update({ steps, calories, xp_earned }).eq('id', row.id)
-    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps, calories, xp_earned });
+    ? await supabase.from('daily_stats').update({ xp_earned }).eq('id', row.id)
+    : await supabase.from('daily_stats').insert({ user_id: userId, date: today, steps: 0, calories: 0, xp_earned });
   if (writeError) throw writeError;
-
-  return { steps, calories, xp_earned };
 }
 
-// Overwrites today's steps/calories with HealthKit's current totals (absolute values, not
-// deltas — HealthKit already reports the day's running total, so adding would double-count
-// on every refetch). Leaves xp_earned untouched since that's driven by missions/challenges,
-// not HealthKit.
 export async function syncHealthKitStats(
   userId: string,
   steps: number,
@@ -177,14 +156,11 @@ export async function syncHealthKitStats(
 type StatRow = { date: string; steps: number; calories: number; xp_earned: number };
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// Weekly stats cover a rolling 7-day window ending today (not a Mon–Sun calendar week) and
-// average over all 7 days, matching Apple Health's "W" daily average. Steps/calories come
-// from HealthKit per day when available — daily_stats misses days the app wasn't opened —
-// while XP only exists in daily_stats.
+//Get two weeks of data from both the database and Apple Health
 export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const thisWeek = thailandRollingWeekRange(0);
   const lastWeek = thailandRollingWeekRange(-1);
-
+  //offsetWeeks * 7
   const [{ data: statsRaw, error }, health] = await Promise.all([
     supabase.from('daily_stats').select('date, steps, calories, xp_earned').eq('user_id', userId).gte('date', lastWeek.start).lte('date', thisWeek.end),
     fetchDailyHealthTotals(lastWeek.start).catch((err) => {
@@ -194,6 +170,7 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   ]);
   if (error) throw error;
 
+  //turns the database rows into a lookup by date
   const statsByDate = new Map(((statsRaw ?? []) as StatRow[]).map((r) => [r.date, r]));
   const dayRow = (date: string): StatRow => {
     const stat = statsByDate.get(date);
@@ -209,8 +186,6 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const thisRows = rowsFor(thisWeek);
   const lastRows = rowsFor(lastWeek);
 
-  // Bars run oldest → today; carries steps/calories alongside xp (not just xp) so tapping a
-  // bar in the UI can show that day's full breakdown.
   const barData: WeeklyBarDay[] = thisRows.map((r) => ({
     day: WEEK_DAYS[thailandWeekdayIndex(r.date)],
     date: r.date,
@@ -231,11 +206,6 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const lastCalories = lastRows.reduce((s, r) => s + r.calories, 0);
   const lastXp = lastRows.reduce((s, r) => s + r.xp_earned, 0);
 
-  // ensureActiveToday() inserts a steps:0/calories:0 row just from opening the app, before
-  // any HealthKit sync happens — so a plain "does a row exist" check is always true and
-  // useless here. What actually distinguishes "nothing synced" from "genuinely inactive" is
-  // whether every tracked number this week is still zero: steps, calories, AND xp (xp can be
-  // nonzero from manually-logged minutes missions even with no HealthKit data at all).
   const noDataThisWeek = totalSteps === 0 && totalCalories === 0 && totalXp === 0;
 
   return {
@@ -251,10 +221,6 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   };
 }
 
-// Bumps streak_days once per calendar day: +1 if the user was also active yesterday,
-// reset to 1 if there's a gap (or this is the first day ever), unchanged if already
-// counted today. Called from logMissionComplete since that's the one "did something
-// today" moment the app already gates XP on.
 async function updateStreak(userId: string): Promise<number> {
   const today = todayISO();
 
@@ -282,9 +248,7 @@ async function updateStreak(userId: string): Promise<number> {
   return newStreak;
 }
 
-// Updates a mission's progress without completing it — used for steps/calories missions,
-// which are auto-tracked from real HealthKit-synced daily_stats rather than manually
-// logged (see syncAutoTrackedMissions in the Home screen).
+
 export async function updateMissionProgress(userMissionId: string, currentValue: number): Promise<void> {
   const { error } = await supabase
     .from('user_missions')
@@ -307,7 +271,7 @@ export async function logMissionComplete(
     .eq('id', userMissionId);
   if (missionError) throw missionError;
 
-  await incrementDailyStat(userId, 'xp_earned', xpReward);
+  await incrementDailyXp(userId, xpReward);
   const newStreak = await updateStreak(userId);
 
   const newXp = currentXp + xpReward;

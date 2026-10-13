@@ -12,13 +12,10 @@ export function extractProfileLinkUserId(text: string): string | null {
   const match = text.match(new RegExp(`${PROFILE_LINK_PREFIX}(${UUID_PATTERN})`));
   return match ? match[1] : null;
 }
+//RegExp = pattern for searching text
 
 export type ProfileLinkSplit = { before: string; link: string; after: string; userId: string };
 
-// Splits message text around the raw link substring so the chat bubble can render that
-// exact text as a tappable span (React Native's Text has no auto-linkify for custom
-// schemes like auraapp:// — the OS's built-in link detection only catches http(s)/phone/
-// email), while everything before and after it stays plain text.
 export function splitProfileLink(text: string): ProfileLinkSplit | null {
   const match = text.match(new RegExp(`${PROFILE_LINK_PREFIX}${UUID_PATTERN}`));
   if (!match || match.index == null) return null;

@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { AU_EMAIL_DOMAIN, isAuEmail } from '@/lib/auEmail';
 
 export default function ChangeEmailScreen() {
   const router = useRouter();
@@ -39,6 +40,11 @@ export default function ChangeEmailScreen() {
 
     if (!email) {
       Alert.alert('Missing Email', 'Please enter your new email address.');
+      return;
+    }
+
+    if (!isAuEmail(email)) {
+      Alert.alert('AU Email Required', `Please use your ${AU_EMAIL_DOMAIN} email address.`);
       return;
     }
 

@@ -30,7 +30,7 @@ function startOfMonthISO(): string {
 type ProfileRow = { id: string; username: string; level: number | null; xp: number | null };
 
 // Weekly/Monthly sum daily_stats.xp_earned — a per-day ledger aura-app bumps both when a
-// mission completes and when a challenge reward is claimed (see incrementDailyStat calls
+// mission completes and when a challenge reward is claimed (see incrementDailyXp calls
 // in aura-app/src/lib/api.ts and claimReward in aura-app/src/lib/challenges.ts), so it's
 // the one place both XP sources are already combined per day. This requires daily_stats'
 // SELECT policy to allow any authenticated user to read all rows (not just their own) —

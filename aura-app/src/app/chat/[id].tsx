@@ -81,9 +81,6 @@ export default function ChatThreadScreen() {
       .catch(() => setMessages([]))
       .finally(() => setLoading(false));
 
-    // Having the thread open means these messages are read. Mark on open, and again for
-    // anything that lands while it's on screen, then refresh the header badge so it clears
-    // immediately rather than on the next tab focus.
     function markRead() {
       markConversationRead(id, userId!)
         .then(() => countUnreadMessages(userId!))

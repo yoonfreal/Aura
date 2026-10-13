@@ -1,13 +1,6 @@
-// Every "what day is it" / "what week is it" decision in the app (daily_stats resets,
-// streaks, weekly stats, mission windows) must agree on the same calendar day — and that
-// day is always Thailand's, not UTC's and not whatever timezone the device happens to be
-// set to. UTC in particular can be a full day off: 11pm in Bangkok is already "tomorrow"
-// in UTC. Everything here goes through Intl's timeZone support (Hermes ships full ICU, so
-// this works with no extra dependency) rather than manual offset math, since Thailand has
-// no DST to get wrong but a hand-rolled UTC+7 shift is an easy way to reintroduce this bug.
+
 const THAILAND_TZ = 'Asia/Bangkok';
 
-// The calendar date (YYYY-MM-DD) `instant` falls on in Thailand.
 export function thailandDateISO(instant: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: THAILAND_TZ,
@@ -17,7 +10,6 @@ export function thailandDateISO(instant: Date = new Date()): string {
   }).format(instant);
 }
 
-// The hour of day (0–23) in Thailand for `instant` — for time-of-day checks like "after 6pm."
 export function thailandHour(instant: Date = new Date()): number {
   const hourStr = new Intl.DateTimeFormat('en-US', {
     timeZone: THAILAND_TZ,
@@ -27,34 +19,23 @@ export function thailandHour(instant: Date = new Date()): number {
   return parseInt(hourStr, 10) % 24;
 }
 
-// Adds `days` to a Y-M-D calendar date string. Pure calendar arithmetic — once we already
-// have the correct Thailand-local date as a plain string, no further timezone conversion
-// is needed, so this deliberately uses UTC internally just as a neutral calendar to avoid
-// DST/offset surprises from the runtime's own local timezone.
+// used by Streaks, weekly chart, this week vs last week, admin challenges date, posts from the last few days
 export function addDaysToISO(dateISO: string, days: number): string {
   const [y, m, d] = dateISO.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().split('T')[0];
 }
 
-// Monday-anchored weekday index (0=Mon..6=Sun) for a Y-M-D calendar date string.
+// shows which day of the week, monday=0, sunday=6, for a date in Thailand. used by weekly chart
 export function thailandWeekdayIndex(dateISO: string): number {
   const [y, m, d] = dateISO.split('-').map(Number);
   const jsDay = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=Sun..6=Sat
   return (jsDay + 6) % 7; // 0=Mon..6=Sun
 }
 
-// The instant that is 00:00:00 in Thailand on `dateISO` (defaults to today there) — for
-// "since the start of today" comparisons against real timestamptz columns, without relying
-// on the runtime's own local timezone the way `new Date().setHours(0,0,0,0)` would.
 export function startOfThailandDay(dateISO: string = thailandDateISO()): Date {
   return new Date(`${dateISO}T00:00:00+07:00`);
 }
 
-// A streak's stored streak_days only ever changes when updateStreak() runs, which only
-// happens when the user completes a mission — nothing proactively decays it to 0 on an
-// inactive day. So a streak from 3 days ago still reads "2 days" today even though the
-// user has done nothing since. Use this wherever streak_days is displayed or filtered on,
-// not the raw column, so a stale streak reads as broken (0) instead of still alive.
 export function isStreakStillAlive(lastActiveDate: string | null): boolean {
   if (!lastActiveDate) return false;
   const today = thailandDateISO();
@@ -62,19 +43,16 @@ export function isStreakStillAlive(lastActiveDate: string | null): boolean {
   return lastActiveDate === today || lastActiveDate === yesterday;
 }
 
-// The rolling 7-day range ending today in Thailand (today included) — the same window
-// Apple Health's "W" view averages over, so weekly step averages match what users see
-// there. offsetWeeks = -1 is the 7 days immediately before that, for "vs last week".
 export function thailandRollingWeekRange(offsetWeeks = 0): { start: string; end: string } {
   const end = addDaysToISO(thailandDateISO(), offsetWeeks * 7);
   return { start: addDaysToISO(end, -6), end };
 }
 
-// This week's Monday–Sunday range in Thailand, anchored to "today" there.
+// used by weekly leaderboard, Mon-Sun
 export function thailandWeekRange(offsetWeeks = 0): { start: string; end: string } {
   const today = thailandDateISO();
   const todayIdx = thailandWeekdayIndex(today);
-  const start = addDaysToISO(today, -todayIdx + offsetWeeks * 7);
+  const start = addDaysToISO(today, -todayIdx + offsetWeeks * 7); // to Monday
   const end = addDaysToISO(start, 6);
   return { start, end };
 }

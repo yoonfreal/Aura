@@ -41,11 +41,13 @@ export function FriendListModal({
   friends,
   onClose,
   onFriendPress,
+  title = 'Friends',
 }: {
   visible: boolean;
   friends: FriendListEntry[];
   onClose: () => void;
   onFriendPress: (friend: FriendListEntry) => void;
+  title?: string;
 }) {
   const [searchText, setSearchText] = useState('');
 
@@ -180,7 +182,7 @@ export function FriendListModal({
           </TouchableOpacity>
 
           <Text style={styles.friendListTitle}>
-            Friends
+            {title}
           </Text>
 
           <View style={{ width: 40 }} />

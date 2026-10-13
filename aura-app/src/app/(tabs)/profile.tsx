@@ -1,4 +1,5 @@
 import {
+  Alert,
   StyleSheet,
   Text,
   View,
@@ -23,6 +24,7 @@ import {
   ChevronDown,
   ChevronUp,
   ArrowLeft,
+  Share2,
 } from 'lucide-react-native';
 
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -33,7 +35,9 @@ import { useUserStore } from '@/store/userStore';
 import { getLevelTitle, xpAtLevelStart } from '@/lib/level';
 import { fetchBadges, type EarnedBadge } from '@/lib/challenges';
 import { CheckInCalendar } from '@/components/CheckInCalendar';
-import { FriendListModal } from '@/components/FriendListModal';
+import { FriendListModal, type FriendListEntry } from '@/components/FriendListModal';
+import { buildProfileLink } from '@/lib/profileLink';
+import { getOrCreateDirectConversation, sendMessage } from '@/lib/chat';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -299,6 +303,8 @@ export default function ProfileScreen() {
   const [friendListVisible, setFriendListVisible] =
     useState(false);
 
+  const [shareVisible, setShareVisible] = useState(false);
+
   const [badges, setBadges] =
     useState<EarnedBadge[]>([]);
 
@@ -532,6 +538,36 @@ export default function ProfileScreen() {
     return null;
   }
 
+  function openShare() {
+    if (friends.length === 0) {
+      Alert.alert('No friends yet', 'Add a friend first, then you can share your profile with them.');
+      return;
+    }
+    setShareVisible(true);
+  }
+
+  // Sharing stays inside AUra: the profile link is sent as a chat message, which the chat
+  // screen turns into a tappable "View Profile" card.
+  const myId = user.id;
+  async function handleShareProfile(friend: FriendListEntry) {
+    setShareVisible(false);
+
+    const name = friend.username ?? [friend.first_name, friend.last_name].filter(Boolean).join(' ');
+    try {
+      const conversationId = await getOrCreateDirectConversation(myId, friend.id);
+      await sendMessage(conversationId, myId, `Check out my AUra profile! ${buildProfileLink(myId)}`);
+      Alert.alert('Profile shared', `Your profile was sent to ${name}.`, [
+        { text: 'OK' },
+        {
+          text: 'Open chat',
+          onPress: () => router.push({ pathname: '/chat/[id]', params: { id: conversationId, name } }),
+        },
+      ]);
+    } catch {
+      Alert.alert('Could not share', 'Your profile could not be sent. Please try again.');
+    }
+  }
+
   const levelStartXp = xpAtLevelStart(
     user.level
   );
@@ -658,6 +694,15 @@ export default function ProfileScreen() {
               {user.xpForNextLevel - levelStartXp} XP
             </Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.shareBtn}
+            activeOpacity={0.8}
+            onPress={openShare}
+          >
+            <Share2 size={14} color={TEXT_DARK} />
+            <Text style={styles.shareBtnText}>Share Profile</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Stats */}
@@ -986,6 +1031,15 @@ export default function ProfileScreen() {
   }}
 />
 
+      {/* Share Profile — sent to a friend as an in-app chat message */}
+      <FriendListModal
+        visible={shareVisible}
+        friends={friends}
+        title="Share profile with"
+        onClose={() => setShareVisible(false)}
+        onFriendPress={handleShareProfile}
+      />
+
       {/* Badge Visibility */}
       <BadgeVisibilityModal
         visible={badgeEditVisible}
@@ -1055,7 +1109,7 @@ const styles = StyleSheet.create({
   },
 
   scrollContent: {
-    paddingBottom: 32,
+    paddingBottom: 120,
   },
 
 
@@ -1129,6 +1183,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: TEXT_MUTED,
     marginTop: 4,
+  },
+
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#D9DEE7',
+    backgroundColor: '#FFFFFF',
+  },
+
+  shareBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TEXT_DARK,
   },
 
   xpBarRow: {

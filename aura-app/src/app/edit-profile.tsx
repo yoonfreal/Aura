@@ -82,8 +82,6 @@ export default function EditProfileScreen() {
           : ''
       );
 
-      // If only age is stored in the database,
-      // create an approximate date of birth using the age.
       if (data?.age != null) {
         const today = new Date();
 

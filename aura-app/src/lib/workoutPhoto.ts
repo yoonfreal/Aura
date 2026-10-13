@@ -1,15 +1,13 @@
 import * as ImagePicker from 'expo-image-picker';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'; //resize
 import { supabase } from '@/lib/supabase';
 
+//did the AI accept the photo? yes/no.
 export type WorkoutVerdict = { verified: boolean; reason: string; sport: string | null };
 
-// A photo is checked either for a daily sport mission or for a sport-session challenge.
+//what the photo is for
 export type WorkoutTarget = { userMissionId: string } | { challengeId: string };
 
-// Opens the camera for a live photo — the gallery is never offered, so a student can't submit
-// an old or downloaded picture. Returns null if they cancel. The photo is downscaled before
-// upload: a full-resolution iPhone shot is several MB, far more than the AI needs to judge it.
 export async function captureWorkoutPhoto(): Promise<string | null> {
   const permission = await ImagePicker.requestCameraPermissionsAsync();
   if (!permission.granted) {
@@ -21,12 +19,9 @@ export async function captureWorkoutPhoto(): Promise<string | null> {
 
   const rendered = await ImageManipulator.manipulate(result.assets[0].uri).resize({ width: 1024 }).renderAsync();
   const saved = await rendered.saveAsync({ format: SaveFormat.JPEG, compress: 0.7, base64: true });
-  return saved.base64 ?? null;
+  return saved.base64 ?? null;//turning a picture into a long piece of text
 }
 
-// Sends the photo to the validate-workout Edge Function, which holds the Claude API key and
-// records the attempt. Server-side errors (limit reached, already completed) come back with a
-// readable message in the response body.
 export async function verifyWorkoutPhoto(target: WorkoutTarget, imageBase64: string): Promise<WorkoutVerdict> {
   const { data, error } = await supabase.functions.invoke<WorkoutVerdict>('validate-workout', {
     body: { ...target, imageBase64 },
