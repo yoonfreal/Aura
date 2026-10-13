@@ -22,7 +22,7 @@ import {
   useState,
 } from 'react';
 
-import { ArrowLeft } from 'lucide-react-native';
+import { ArrowLeft, Share2 } from 'lucide-react-native';
 
 import { supabase } from '@/lib/supabase';
 import { isStreakStillAlive } from '@/lib/thailandTime';
@@ -60,14 +60,18 @@ import {
 import { PostCard } from '@/components/PostCard';
 
 import { ChallengeFriendModal } from '@/components/ChallengeFriendModal';
-import { FriendListModal } from '@/components/FriendListModal';
+import { FriendListModal, type FriendListEntry } from '@/components/FriendListModal';
 
 import {
   fetchFriendRelation,
+  fetchAcceptedFriends,
   sendFriendRequest,
   acceptFriendRequest,
   type FriendRelation,
 } from '@/lib/friends';
+
+import { getOrCreateDirectConversation, sendMessage } from '@/lib/chat';
+import { buildProfileLink } from '@/lib/profileLink';
 
 const BG = '#F0F4F8';
 const CARD = '#FFFFFF';
@@ -248,6 +252,12 @@ export default function FriendProfileScreen() {
 
   const [relationActionLoading, setRelationActionLoading] =
     useState(false);
+
+  const [shareVisible, setShareVisible] =
+    useState(false);
+
+  const [shareFriends, setShareFriends] =
+    useState<FriendListEntry[]>([]);
 
   // =========================================================
   // POSTS
@@ -931,6 +941,57 @@ setPosts(friendPosts);
     }
   }
 
+  async function handleOpenShare() {
+    if (!userId || !id) return;
+
+    try {
+      const myFriends = await fetchAcceptedFriends(userId);
+      const others = myFriends
+        .filter((friend) => friend.id !== id)
+        .map((friend) => ({
+          id: friend.id,
+          username: friend.name,
+          first_name: null,
+          last_name: null,
+        }));
+
+      if (others.length === 0) {
+        Alert.alert('No other friends', 'Add more friends, then you can share this profile with them.');
+        return;
+      }
+
+      setShareFriends(others);
+      setShareVisible(true);
+    } catch {
+      Alert.alert('Could not load friends', 'Please try again.');
+    }
+  }
+
+  async function handleShareProfile(friend: FriendListEntry) {
+    setShareVisible(false);
+    if (!userId || !id) return;
+
+    const recipientName = friend.username ?? 'your friend';
+    const profileName =
+      profile?.username ||
+      `${profile?.first_name ?? ''} ${profile?.last_name ?? ''}`.trim() ||
+      'Friend';
+
+    try {
+      const conversationId = await getOrCreateDirectConversation(userId, friend.id);
+      await sendMessage(conversationId, userId, `Check out ${profileName}'s AUra profile! ${buildProfileLink(id)}`);
+      Alert.alert('Profile shared', `${profileName}'s profile was sent to ${recipientName}.`, [
+        { text: 'OK' },
+        {
+          text: 'Open chat',
+          onPress: () => router.push({ pathname: '/chat/[id]', params: { id: conversationId, name: recipientName } }),
+        },
+      ]);
+    } catch {
+      Alert.alert('Could not share', 'The profile could not be sent. Please try again.');
+    }
+  }
+
   // =========================================================
   // COMMENTS
   // =========================================================
@@ -1366,9 +1427,20 @@ setPosts(friendPosts);
             )}
 
             {relation === 'friends' && (
-              <View style={styles.relationStatusPill}>
-                <Ionicons name="checkmark-circle" size={14} color="#2F5D4E" />
-                <Text style={styles.relationStatusText}>Friends</Text>
+              <View style={styles.relationRow}>
+                <View style={styles.relationStatusPill}>
+                  <Ionicons name="checkmark-circle" size={14} color="#2F5D4E" />
+                  <Text style={styles.relationStatusText}>Friends</Text>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.shareBtn}
+                  onPress={handleOpenShare}
+                  activeOpacity={0.8}
+                >
+                  <Share2 size={14} color={TEXT_DARK} />
+                  <Text style={styles.shareBtnText}>Share Profile</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -1809,6 +1881,14 @@ setPosts(friendPosts);
         }}
       />
 
+      <FriendListModal
+        visible={shareVisible}
+        friends={shareFriends}
+        title="Share profile with"
+        onClose={() => setShareVisible(false)}
+        onFriendPress={handleShareProfile}
+      />
+
     </SafeAreaView>
   );
 }
@@ -1958,6 +2038,31 @@ const styles = StyleSheet.create({
     color: '#1B2B4B',
     fontWeight: '700',
     fontSize: 13,
+  },
+
+  relationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+
+  shareBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#D9DEE7',
+    backgroundColor: '#FFFFFF',
+  },
+
+  shareBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: TEXT_DARK,
   },
 
   relationStatusPill: {
