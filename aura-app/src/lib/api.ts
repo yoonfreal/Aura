@@ -196,7 +196,8 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
 
   // This week aggregates
   const totalSteps = Math.round(thisRows.reduce((s, r) => s + r.steps, 0));
-  const avgSteps = Math.round(totalSteps / 7);
+  // Cut off, not rounded — same as Apple Health's daily average (see avgCalories).
+  const avgSteps = Math.floor(totalSteps / 7 + 1e-9);
   const rawCalories = thisRows.reduce((s, r) => s + r.calories, 0);
   const totalCalories = Math.round(rawCalories);
   // One decimal, cut off rather than rounded (25.577 → 25.5) — that's how Apple Health
@@ -207,7 +208,7 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   const totalXp = thisRows.reduce((s, r) => s + r.xp_earned, 0);
 
   // Last week aggregates for comparison
-  const lastAvgSteps = Math.round(lastRows.reduce((s, r) => s + r.steps, 0) / 7);
+  const lastAvgSteps = Math.floor(lastRows.reduce((s, r) => s + r.steps, 0) / 7 + 1e-9);
   const lastCalories = lastRows.reduce((s, r) => s + r.calories, 0);
   const lastXp = lastRows.reduce((s, r) => s + r.xp_earned, 0);
 
