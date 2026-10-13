@@ -22,7 +22,6 @@ import {
   fetchChallengeHistory,
   createTeam,
   joinTeam,
-  deleteChallenge,
   inviteOpponent,
   inviteToTeam,
   respondToInvite,
@@ -94,20 +93,6 @@ const DEFAULT_SUB_FILTER: Partial<Record<FilterPill, FilterPill>> = {
   Team: 'All',
   Individual: 'All',
   '1v1': 'All',
-};
-
-
-/* =========================================================
-   TYPE LABEL
-========================================================= */
-
-const TYPE_LABEL: Record<
-  ChallengeWithStatus['type'],
-  string
-> = {
-  individual: 'Individual',
-  '1v1': '1v1',
-  team: 'Team',
 };
 
 
@@ -237,8 +222,6 @@ function challengeSortRank(c: ChallengeWithStatus): number {
 ========================================================= */
 
 export default function ChallengesScreen() {
-  const router = useRouter();
-
   const insets =
     useSafeAreaInsets();
 
@@ -273,9 +256,6 @@ export default function ChallengesScreen() {
 
   const userName =
     user?.username ?? 'You';
-
-  const isAdmin =
-    user?.role === 'admin';
 
 
   const [
@@ -503,46 +483,6 @@ export default function ChallengesScreen() {
 
 
   /* =====================================================
-     ADMIN SCREEN
-  ===================================================== */
-
-  if (isAdmin) {
-
-    return (
-      <AdminChallengesView
-        challenges={challenges}
-        loading={loading}
-        error={error}
-        insetsTop={insets.top}
-
-        onCreate={() =>
-          router.push(
-            '/admin/challenges/new'
-          )
-        }
-
-        onOpen={(challenge) =>
-          router.push(
-            `/admin/challenges/${challenge.id}`
-          )
-        }
-
-        onDelete={async (
-          challenge
-        ) => {
-
-          await deleteChallenge(
-            challenge.id
-          );
-
-          load();
-        }}
-      />
-    );
-  }
-
-
-  /* =====================================================
      USER SCREEN
   ===================================================== */
 
@@ -558,232 +498,6 @@ export default function ChallengesScreen() {
       onReload={load}
       onClaim={handleClaim}
     />
-  );
-}
-
-
-/* =========================================================
-   ADMIN VIEW
-========================================================= */
-
-type AdminChallengesViewProps = {
-  challenges: ChallengeWithStatus[];
-  loading: boolean;
-  error: string | null;
-  insetsTop: number;
-  onCreate: () => void;
-  onOpen: (
-    challenge: ChallengeWithStatus
-  ) => void;
-  onDelete: (
-    challenge: ChallengeWithStatus
-  ) => void;
-};
-
-
-function AdminChallengesView({
-  challenges,
-  loading,
-  error,
-  insetsTop,
-  onCreate,
-  onOpen,
-  onDelete,
-}: AdminChallengesViewProps) {
-
-
-  function confirmDelete(
-    challenge: ChallengeWithStatus
-  ) {
-
-    Alert.alert(
-      'Delete challenge?',
-
-      `"${challenge.title}" will be removed for everyone who joined it.`,
-
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-
-        {
-          text: 'Delete',
-          style: 'destructive',
-
-          onPress: () =>
-            onDelete(challenge),
-        },
-      ]
-    );
-  }
-
-
-  return (
-    <View style={styles.safe}>
-
-      {/* Header */}
-
-      <View
-        style={[
-          styles.header,
-          {
-            paddingTop:
-              insetsTop + 8,
-          },
-        ]}
-      >
-
-        <Text style={styles.title}>
-          Manage Challenges
-        </Text>
-
-
-        <TouchableOpacity
-          style={[
-            styles.iconBtn,
-            styles.adminIconBtn,
-          ]}
-          onPress={onCreate}
-        >
-
-          <Ionicons
-            name="add"
-            size={22}
-            color="#fff"
-          />
-
-        </TouchableOpacity>
-
-
-      </View>
-
-
-      {/* Content */}
-
-      {loading ? (
-
-        <View style={styles.center}>
-          <ActivityIndicator
-            size="large"
-            color="#2563EB"
-          />
-        </View>
-
-      ) : error ? (
-
-        <View style={styles.center}>
-
-          <Text
-            style={styles.errorText}
-          >
-            {error}
-          </Text>
-
-        </View>
-
-      ) : (
-
-        <FlatList
-          data={challenges}
-
-          keyExtractor={(item) =>
-            item.id
-          }
-
-          contentContainerStyle={
-            styles.adminList
-          }
-
-          ListEmptyComponent={
-
-            <View style={styles.center}>
-
-              <Text
-                style={styles.emptyText}
-              >
-                No challenges yet — tap +
-                to create one
-              </Text>
-
-            </View>
-          }
-
-          renderItem={({ item }) => (
-
-            <TouchableOpacity
-              style={styles.adminCard}
-              onPress={() =>
-                onOpen(item)
-              }
-              activeOpacity={0.7}
-            >
-
-              <View
-                style={
-                  styles.adminCardHeader
-                }
-              >
-
-                <Text
-                  style={
-                    styles.adminCardTitle
-                  }
-                >
-                  {item.icon}{' '}
-                  {item.title}
-                </Text>
-
-
-                <TouchableOpacity
-                  onPress={() =>
-                    confirmDelete(item)
-                  }
-                >
-
-                  <Ionicons
-                    name="trash-outline"
-                    size={18}
-                    color="#DC2626"
-                  />
-
-                </TouchableOpacity>
-
-              </View>
-
-
-              <Text
-                style={
-                  styles.adminCardMeta
-                }
-              >
-                {TYPE_LABEL[item.type]}
-                {' · '}
-                {item.goalValue.toLocaleString()}
-                {' '}
-                {item.goalUnit}
-                {' · '}
-                {item.xpReward} XP
-              </Text>
-
-
-              <Text
-                style={
-                  styles.adminCardDates
-                }
-              >
-                {item.startDate}
-                {' – '}
-                {item.endDate}
-              </Text>
-
-            </TouchableOpacity>
-          )}
-        />
-
-      )}
-
-    </View>
   );
 }
 
@@ -2241,12 +1955,6 @@ const styles =
     },
 
 
-    adminIconBtn: {
-      backgroundColor:
-        '#1B2B4B',
-    },
-
-
     /* -----------------------------------------------
        NOTIFICATION BADGE
     ----------------------------------------------- */
@@ -2524,101 +2232,6 @@ const styles =
     list: {
       paddingBottom:
         100,
-    },
-
-
-    /* -----------------------------------------------
-       ADMIN
-    ----------------------------------------------- */
-
-    adminList: {
-      paddingHorizontal:
-        16,
-
-      paddingBottom:
-        100,
-    },
-
-
-    adminCard: {
-      backgroundColor:
-        '#FFFFFF',
-
-      borderRadius:
-        16,
-
-      padding:
-        16,
-
-      marginBottom:
-        12,
-
-      shadowColor:
-        '#000',
-
-      shadowOffset: {
-        width: 0,
-        height: 1,
-      },
-
-      shadowOpacity:
-        0.05,
-
-      shadowRadius:
-        4,
-
-      elevation: 2,
-    },
-
-
-    adminCardHeader: {
-      flexDirection:
-        'row',
-
-      justifyContent:
-        'space-between',
-
-      alignItems:
-        'center',
-    },
-
-
-    adminCardTitle: {
-      fontSize:
-        15,
-
-      fontWeight:
-        '700',
-
-      color:
-        '#0D1829',
-    },
-
-
-    adminCardMeta: {
-      fontSize:
-        12,
-
-      color:
-        '#6B7280',
-
-      marginTop:
-        6,
-
-      fontWeight:
-        '600',
-    },
-
-
-    adminCardDates: {
-      fontSize:
-        11,
-
-      color:
-        '#9CA3AF',
-
-      marginTop:
-        4,
     },
 
   });
