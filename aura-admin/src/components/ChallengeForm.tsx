@@ -40,9 +40,8 @@ function decomposeDurationDays(days: number): { value: string; unit: DurationUni
 // SESSIONS = photo-verified sessions of one sport, chosen in the Sport field.
 const GOAL_UNIT_OPTIONS = ['STEPS', 'CALORIES', 'KM', 'SESSIONS'] as const;
 
-// 1v1 is a live race, so it only uses units recalculated from daily stats — no SESSIONS.
 function goalUnitOptionsFor(type: ChallengeType): readonly string[] {
-  return type === '1v1' ? GOAL_UNIT_OPTIONS.filter((u) => u !== 'SESSIONS') : GOAL_UNIT_OPTIONS;
+  return type !== 'individual' ? GOAL_UNIT_OPTIONS.filter((u) => u !== 'SESSIONS') : GOAL_UNIT_OPTIONS;
 }
 
 export type ChallengeFormValues = {
@@ -100,7 +99,7 @@ function daysBetween(startISO: string, endISO: string): number {
 export function toNewChallenge(values: ChallengeFormValues): NewChallenge | null {
   // A sport (SESSIONS) challenge is completed by one accepted photo, so its goal is always 1.
   const isSessions = values.goalUnit.trim().toUpperCase() === 'SESSIONS';
-  if (isSessions && values.type === '1v1') return null;
+  if (isSessions && values.type !== 'individual') return null;
   const goalValueNum = isSessions ? 1 : Number(values.goalValue);
   const xpRewardNum = Number(values.xpReward);
 
