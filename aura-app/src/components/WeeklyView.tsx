@@ -64,8 +64,8 @@ export function WeeklyView({ stats }: Props) {
             icon="barbell"
             iconColor="#EA580C"
             iconBg="#FFEDD5"
-            value={stats.totalCalories.toLocaleString()}
-            label="Calories"
+            value={stats.avgCalories.toLocaleString()}
+            label="Avg daily calories"
             sub={fmtChange(stats.caloriesVsLastWeek, 'percent')}
             subColor={changeColor(stats.caloriesVsLastWeek)}
           />

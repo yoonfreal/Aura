@@ -190,14 +190,19 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
     day: WEEK_DAYS[thailandWeekdayIndex(r.date)],
     date: r.date,
     xp: r.xp_earned,
-    steps: r.steps,
-    calories: r.calories,
+    steps: Math.round(r.steps),
+    calories: Math.round(r.calories),
   }));
 
   // This week aggregates
-  const totalSteps = thisRows.reduce((s, r) => s + r.steps, 0);
+  const totalSteps = Math.round(thisRows.reduce((s, r) => s + r.steps, 0));
   const avgSteps = Math.round(totalSteps / 7);
-  const totalCalories = thisRows.reduce((s, r) => s + r.calories, 0);
+  const rawCalories = thisRows.reduce((s, r) => s + r.calories, 0);
+  const totalCalories = Math.round(rawCalories);
+  // One decimal, cut off rather than rounded (25.577 → 25.5) — that's how Apple Health
+  // displays its daily average. The tiny epsilon keeps float error (25.6 stored as
+  // 25.5999…) from cutting off one step too far.
+  const avgCalories = Math.floor((rawCalories / 7) * 10 + 1e-9) / 10;
   const estimatedKm = Math.round(totalSteps * 0.000762 * 10) / 10;
   const totalXp = thisRows.reduce((s, r) => s + r.xp_earned, 0);
 
@@ -211,6 +216,7 @@ export async function fetchWeeklyStats(userId: string): Promise<WeeklyStats> {
   return {
     avgSteps,
     totalCalories,
+    avgCalories,
     estimatedKm,
     totalXp,
     barData,

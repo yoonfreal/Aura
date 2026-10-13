@@ -114,6 +114,7 @@ export interface WeeklyBarDay {
 export interface WeeklyStats {
   avgSteps: number;
   totalCalories: number;
+  avgCalories: number;
   estimatedKm: number;
   totalXp: number;
   avgStepsVsLastWeek: number | null;

@@ -19,10 +19,19 @@ import { ArrowLeft } from 'lucide-react-native';
 
 import { supabase } from '@/lib/supabase';
 import { useUserStore } from '@/store/userStore';
+import type { Gender } from '@/types';
+
+// Same stored values as onboarding (see Gender in types) — the admin analytics page
+// counts gender by these exact lowercase strings.
+const GENDER_OPTIONS: { label: string; value: Gender }[] = [
+  { label: 'Male', value: 'male' },
+  { label: 'Female', value: 'female' },
+  { label: 'Other', value: 'other' },
+];
 
 export default function EditProfileScreen() {
   const router = useRouter();
-  const { user } = useUserStore();
+  const { user, setUser } = useUserStore();
 
   // =====================================================
   // FORM
@@ -94,7 +103,7 @@ export default function EditProfileScreen() {
         setDateOfBirth(estimatedBirthDate);
       }
 
-      setGender(data?.gender ?? '');
+      setGender((data?.gender ?? '').toLowerCase());
 
     } catch (error: any) {
       console.error(
@@ -187,6 +196,12 @@ export default function EditProfileScreen() {
 
       if (error) {
         throw error;
+      }
+
+      // Every screen reads the username from the in-memory store, which is only loaded
+      // at login — update it too so the new name shows immediately, not after a reload.
+      if (user) {
+        setUser({ ...user, username: username.trim() });
       }
 
       Alert.alert(
@@ -410,77 +425,30 @@ export default function EditProfileScreen() {
             style={styles.genderRow}
           >
 
-            {/* MALE */}
-
-            <TouchableOpacity
-              style={[
-                styles.genderButton,
-                gender === 'Male' &&
-                  styles.genderButtonActive,
-              ]}
-              onPress={() =>
-                setGender('Male')
-              }
-              activeOpacity={0.8}
-            >
-              <Text
+            {GENDER_OPTIONS.map((option) => (
+              <TouchableOpacity
+                key={option.value}
                 style={[
-                  styles.genderText,
-                  gender === 'Male' &&
-                    styles.genderTextActive,
+                  styles.genderButton,
+                  gender === option.value &&
+                    styles.genderButtonActive,
                 ]}
+                onPress={() =>
+                  setGender(option.value)
+                }
+                activeOpacity={0.8}
               >
-                Male
-              </Text>
-            </TouchableOpacity>
-
-            {/* FEMALE */}
-
-            <TouchableOpacity
-              style={[
-                styles.genderButton,
-                gender === 'Female' &&
-                  styles.genderButtonActive,
-              ]}
-              onPress={() =>
-                setGender('Female')
-              }
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.genderText,
-                  gender === 'Female' &&
-                    styles.genderTextActive,
-                ]}
-              >
-                Female
-              </Text>
-            </TouchableOpacity>
-
-            {/* OTHER */}
-
-            <TouchableOpacity
-              style={[
-                styles.genderButton,
-                gender === 'Other' &&
-                  styles.genderButtonActive,
-              ]}
-              onPress={() =>
-                setGender('Other')
-              }
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.genderText,
-                  gender === 'Other' &&
-                    styles.genderTextActive,
-                ]}
-              >
-                Other
-              </Text>
-            </TouchableOpacity>
+                <Text
+                  style={[
+                    styles.genderText,
+                    gender === option.value &&
+                      styles.genderTextActive,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
 
           </View>
 

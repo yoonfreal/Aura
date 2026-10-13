@@ -56,7 +56,8 @@ export async function fetchTodayStats(): Promise<DailyStats> {
 
   return {
     steps: Math.round(steps),
-    calories: Math.round(calories),
+    // Unrounded so the Daily card can match Apple Health exactly (e.g. 0.59 kcal).
+    calories,
     streakDays: 0,
     xpEarned: 0,
     distanceKm: Math.round(meters / 100) / 10,
@@ -76,7 +77,7 @@ async function dailySums(
   });
   const sums = new Map<string, number>();
   for (const b of buckets) {
-    if (b.startDate) sums.set(thailandDateISO(b.startDate), Math.round(b.sumQuantity?.quantity ?? 0));
+    if (b.startDate) sums.set(thailandDateISO(b.startDate), b.sumQuantity?.quantity ?? 0);
   }
   return sums;
 }

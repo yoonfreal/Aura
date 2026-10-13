@@ -167,9 +167,13 @@ export default function HomeScreen() {
         try {
           const hasHealthKitAccess = await requestHealthKitPermissions();
 
+          // Exact HealthKit calories for display; daily_stats stores a whole number.
+          let exactCalories: number | null = null;
+
           if (hasHealthKitAccess) {
             const healthStats = await fetchTodayStats();
-            await syncHealthKitStats(user!.id, healthStats.steps, healthStats.calories, healthStats.distanceKm);
+            exactCalories = healthStats.calories;
+            await syncHealthKitStats(user!.id, healthStats.steps, Math.round(healthStats.calories), healthStats.distanceKm);
           }
 
           const [
@@ -193,7 +197,7 @@ export default function HomeScreen() {
 
           setDailyStats({
             steps: activityStats.steps,
-            calories: activityStats.calories,
+            calories: exactCalories ?? activityStats.calories,
             streakDays: synced.streak ?? user!.streak,
             xpEarned: activityStats.xpEarned + (synced.xp - user!.xp),
           });
@@ -600,7 +604,7 @@ export default function HomeScreen() {
                   icon="barbell"
                   iconColor="#EA580C"
                   iconBg="#FFEDD5"
-                  value={dailyStats.calories.toString()}
+                  value={(Math.floor(dailyStats.calories * 100 + 1e-9) / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}
                   label="Calories"
                 />
               </View>
