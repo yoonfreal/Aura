@@ -174,7 +174,7 @@ export default function SocialScreen() {
   function handleOpenChallenge(post: FeedPost) {
     setChallengeTarget(post);
     setLoadingChallenges(true);
-    fetchOpen1v1Challenges()
+    fetchOpen1v1Challenges(userId)
       .then(setOpen1v1)
       .catch(() => setOpen1v1([]))
       .finally(() => setLoadingChallenges(false));
@@ -461,7 +461,7 @@ export default function SocialScreen() {
                     currentUserId={userId}
                     onEdit={() => handleEditPost(post)}
                     onDelete={() => handleDeletePost(post)}
-                    onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
+                    onOpenLinkedChallenge={() => router.push({ pathname: '/(tabs)/challenges', params: { openChallengeId: post.linkedChallengeId ?? undefined } })}
                     reaction={reactions.get(post.id) ?? EMPTY_REACTION}
                     onReact={(kind) => handleReact(post.id, kind)}
                     join={joins.get(post.id) ?? EMPTY_JOIN}

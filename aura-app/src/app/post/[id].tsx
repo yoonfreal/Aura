@@ -128,7 +128,7 @@ export default function PostDetailScreen() {
   function handleOpenChallenge() {
     setChallengeOpen(true);
     setLoadingChallenges(true);
-    fetchOpen1v1Challenges()
+    fetchOpen1v1Challenges(userId)
       .then(setOpen1v1)
       .catch(() => setOpen1v1([]))
       .finally(() => setLoadingChallenges(false));
@@ -253,7 +253,7 @@ export default function PostDetailScreen() {
             currentUserId={userId}
             onEdit={handleEditPost}
             onDelete={handleDeletePost}
-            onOpenLinkedChallenge={() => router.push('/(tabs)/challenges')}
+            onOpenLinkedChallenge={() => router.push({ pathname: '/(tabs)/challenges', params: { openChallengeId: post.linkedChallengeId ?? undefined } })}
             reaction={reaction}
             onReact={handleReact}
             join={join}

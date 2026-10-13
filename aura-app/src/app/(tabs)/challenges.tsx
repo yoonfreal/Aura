@@ -634,7 +634,9 @@ function UserChallengesView({
   }
 
   useEffect(() => {
-    if (openChallengeId) focusOnChallenge(openChallengeId);
+    if (!openChallengeId) return;
+    focusOnChallenge(openChallengeId);
+    router.setParams({ openChallengeId: undefined });
   }, [openChallengeId]);
 
 
@@ -810,7 +812,7 @@ function UserChallengesView({
     );
 
   useEffect(() => {
-    if (!highlightChallengeId) return;
+    if (!highlightChallengeId || loading) return;
 
     const index = listData.findIndex((c) => c.id === highlightChallengeId);
     if (index === -1) return;
@@ -825,7 +827,7 @@ function UserChallengesView({
       clearTimeout(scrollTimer);
       clearTimeout(clearTimer);
     };
-  }, [highlightChallengeId, listData]);
+  }, [highlightChallengeId, listData, loading]);
 
 
   /* =====================================================
@@ -1524,8 +1526,11 @@ function UserChallengesView({
           onScrollToIndexFailed={(info: { index: number; averageItemLength: number }) => {
             listRef.current?.scrollToOffset({
               offset: info.index * info.averageItemLength,
-              animated: true,
+              animated: false,
             });
+            setTimeout(() => {
+              listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
+            }, 200);
           }}
 
 

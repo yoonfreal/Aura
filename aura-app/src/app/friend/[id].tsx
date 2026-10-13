@@ -878,7 +878,7 @@ setPosts(friendPosts);
       true
     );
 
-    fetchOpen1v1Challenges()
+    fetchOpen1v1Challenges(userId)
       .then(setOpen1v1)
       .catch(() =>
         setOpen1v1([])
@@ -1635,9 +1635,10 @@ setPosts(friendPosts);
                  * for linked challenges.
                  */
                 onOpenLinkedChallenge={() =>
-                  router.push(
-                    '/(tabs)/challenges'
-                  )
+                  router.push({
+                    pathname: '/(tabs)/challenges',
+                    params: { openChallengeId: post.linkedChallengeId ?? undefined },
+                  })
                 }
 
                 /*

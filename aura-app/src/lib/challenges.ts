@@ -217,7 +217,9 @@ export async function fetchChallenges(userId: string): Promise<ChallengeWithStat
 
   return challenges.map((row) => {
     const challengeParticipants = participants.filter((p) => p.challenge_id === row.id);
-    const myParticipation = challengeParticipants.find((p) => p.user_id === userId);
+    const myParticipation = challengeParticipants.find(
+      (p) => p.user_id === userId && !(row.type === 'team' && p.status === 'declined'),
+    );
     const opponentRow =
       row.type === '1v1' && myParticipation?.opponent_id
         ? challengeParticipants.find((p) => p.user_id === myParticipation.opponent_id)
@@ -340,21 +342,33 @@ export type Open1v1Challenge = {
 };
 
 
-export async function fetchOpen1v1Challenges(): Promise<Open1v1Challenge[]> {
+export async function fetchOpen1v1Challenges(userId: string | undefined): Promise<Open1v1Challenge[]> {
   const today = todayISODate();
 
-  const { data, error } = await supabase
-    .from('challenges')
-    .select('id, title, icon, goal_value, goal_unit, xp_reward')
-    .eq('type', '1v1')
-    .lte('start_date', today)
-    .gte('end_date', today)
-    .order('created_at', { ascending: false });
+  const [{ data, error }, { data: joinedData, error: joinedError }] = await Promise.all([
+    supabase
+      .from('challenges')
+      .select('id, title, icon, goal_value, goal_unit, xp_reward')
+      .eq('type', '1v1')
+      .lte('start_date', today)
+      .gte('end_date', today)
+      .order('created_at', { ascending: false }),
+    userId
+      ? supabase
+          .from('challenge_participants')
+          .select('challenge_id')
+          .eq('user_id', userId)
+          .eq('claimed', false)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
   if (error) throw error;
+  if (joinedError) throw joinedError;
+
+  const joinedIds = new Set(((joinedData ?? []) as { challenge_id: string }[]).map((p) => p.challenge_id));
 
   return (
     (data ?? []) as { id: string; title: string; icon: string; goal_value: number; goal_unit: string; xp_reward: number }[]
-  ).map((c) => ({
+  ).filter((c) => !joinedIds.has(c.id)).map((c) => ({
     id: c.id,
     title: c.title,
     icon: c.icon,
@@ -524,6 +538,19 @@ export async function respondToInvite(participantId: string, accept: boolean): P
     if (deleteError) throw deleteError;
 
     await notifyChallengeResponse(existingRow.opponent_id, existingRow.user_id, existingRow.challenge_id, false);
+    return;
+  }
+
+  if (!accept && existingRow.team_id) {
+    const { error: deleteError } = await supabase
+      .from('challenge_participants')
+      .delete()
+      .eq('id', participantId);
+    if (deleteError) throw deleteError;
+
+    if (existingRow.opponent_id) {
+      await notifyChallengeResponse(existingRow.opponent_id, existingRow.user_id, existingRow.challenge_id, false);
+    }
     return;
   }
 

@@ -180,7 +180,7 @@ export function ChallengeForm({
 
   function setDuration(durationValue: string, durationUnit: DurationUnit) {
     const n = Number(durationValue);
-    const durationDays = durationValue.trim() && n > 0 ? Math.round(n * DURATION_UNIT_DAYS[durationUnit]) : null;
+    const durationDays = durationValue.trim() && n > 0 ? Math.round(n * DURATION_UNIT_DAYS[durationUnit]) : 0;
     setValues((v) => ({ ...v, durationValue, durationUnit, durationDays }));
   }
 
@@ -188,6 +188,10 @@ export function ChallengeForm({
     e.preventDefault();
     if (toNewChallenge(values) === null) {
       setFormError('Title, goal value, goal unit, and XP reward are required.');
+      return;
+    }
+    if (values.type === 'team' && values.durationDays !== null && values.durationDays <= 0) {
+      setFormError('Enter a team duration, or tick "No limit".');
       return;
     }
     setFormError(null);
@@ -406,7 +410,7 @@ function Field({
 }
 
 const fieldBaseClass =
-  'rounded-xl border border-transparent bg-gray-100 py-2.5 text-sm text-black outline-none transition focus:border-[#1B2B4B] focus:bg-white';
+  'rounded-xl border border-transparent bg-gray-100 py-2.5 text-sm text-black outline-none transition focus:border-[#1B2B4B] focus:bg-white disabled:cursor-not-allowed disabled:opacity-50';
 
 const inputClass = `w-full px-3.5 ${fieldBaseClass}`;
 

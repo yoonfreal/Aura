@@ -268,7 +268,8 @@ export function HeadToHeadCard({
         </View>
       </View>
 
-      <Text style={styles.subtitle}>{challenge.description ?? challenge.title}</Text>
+      <Text style={styles.title}>{challenge.title}</Text>
+      {challenge.description && <Text style={styles.subtitle}>{challenge.description}</Text>}
 
       {challenge.badgeName && (
         <View style={styles.badgePreviewPill}>
