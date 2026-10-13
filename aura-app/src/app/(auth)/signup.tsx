@@ -113,7 +113,7 @@ export default function AuthScreen() {
       console.error('Profile insert failed:', profileError.message);
     }
 
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     setSignupLoading(false);
     switchTab('login');
     Alert.alert('Account created!', 'You can now log in.');

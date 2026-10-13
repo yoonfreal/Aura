@@ -189,7 +189,11 @@ Deno.serve(async (req) => {
     const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { Authorization: authHeader, apikey: SERVICE_ROLE_KEY },
     });
-    if (!userRes.ok) return json({ error: 'Invalid auth token' }, 401);
+    if (!userRes.ok) {
+      const detail = await userRes.text();
+      console.error('Auth check failed', userRes.status, detail);
+      return json({ error: 'Invalid auth token', status: userRes.status, detail }, 401);
+    }
     const userData = await userRes.json();
     const userId = userData.id as string | undefined;
     if (!userId) return json({ error: 'Could not resolve user' }, 401);

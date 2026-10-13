@@ -32,7 +32,8 @@ async function requestTodayMissions(today: string): Promise<Mission[]> {
     { body: { date: today } },
   );
   if (error || !data?.missions) {
-    console.error('fetchTodayMissions failed', error);
+    const detail = await (error as { context?: Response } | null)?.context?.text?.().catch(() => null);
+    console.error('fetchTodayMissions failed', error, detail);
     return [];
   }
 

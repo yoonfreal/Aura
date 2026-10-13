@@ -31,7 +31,7 @@ export default function LoginPage() {
       .single();
 
     if (profile?.role !== 'admin') {
-      await supabase.auth.signOut();
+      await supabase.auth.signOut({ scope: 'local' });
       setError('This account does not have admin access.');
       setLoading(false);
       return;

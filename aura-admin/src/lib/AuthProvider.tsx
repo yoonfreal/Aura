@@ -51,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!active) return;
 
       if (!profile || profile.role !== 'admin') {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: 'local' });
         setUser(null);
       } else {
         setUser({ id: profile.id, username: profile.username });
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loading, user, router]);
 
   async function signOut() {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     router.replace('/login');
   }
 

@@ -1004,7 +1004,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.signOut}
           onPress={async () => {
-            await supabase.auth.signOut();
+            await supabase.auth.signOut({ scope: 'local' });
           }}
           activeOpacity={0.85}
         >

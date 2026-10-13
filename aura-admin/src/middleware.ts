@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
     .single();
 
   if (profile?.role !== 'admin') {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     return NextResponse.redirect(new URL('/login', request.url));
   }
 

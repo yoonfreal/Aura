@@ -70,7 +70,7 @@ async function fetchAndSetUser(
   if (!profile) return 'tabs';
 
   if (profile.suspended) {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
     return 'suspended';
   }
 
