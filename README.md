@@ -26,6 +26,31 @@ AUra is a gamified fitness app for Assumption University students. It combines a
 - Build a supportive campus fitness community
 - Use activity data and photo checks to support verification
 
+## Project Structure
+
+```
+Aura/
+├── aura-app/     # Expo mobile app (iOS)
+│   └── src/
+│       ├── app/          # Expo Router screens
+│       ├── components/   # Shared UI components
+│       ├── store/        # Zustand stores
+│       ├── lib/          # Supabase client and helpers
+│       └── ...
+├── aura-admin/   # Next.js admin dashboard
+│   └── src/
+│       ├── app/          # Admin pages
+│       ├── components/
+│       └── lib/
+└── supabase/
+    ├── migrations/   # Database schema and policies
+    └── functions/    # Edge Functions
+        ├── generate-daily-missions/
+        ├── ai-report-card/
+        ├── validate-workout/
+        └── delete-account/
+```
+
 ##Team Members 
 - Yoon Hsu Hlaing
 - Myat Yadana Khin
