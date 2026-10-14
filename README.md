@@ -186,16 +186,9 @@ supabase functions deploy
 
 ## Team
 
-| Name | GitHub |
-|------|--------|
-| Yoon | [@yoonfreal](https://github.com/yoonfreal) |
-| Terry | [@txxrim](https://github.com/txxrim) |
-
-Built at Assumption University.
-````
-
-## Team Members 
 - Yoon Hsu Hlaing
 - Myat Yadana Khin
 - Bhone Myat Htut
+
+````
   
