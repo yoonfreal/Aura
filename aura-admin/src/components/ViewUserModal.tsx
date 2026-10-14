@@ -19,6 +19,7 @@ import {
   type UserPost,
 } from '@/lib/userProfile';
 import { percentChange } from '@/lib/stats';
+import { AppIcon, hasAppIcon } from './AppIcon';
 
 const FRIENDS_PREVIEW_COUNT = 6;
 
@@ -242,32 +243,41 @@ export function ViewUserModal({
 
         <div className="mb-6">
           <p className="mb-2 text-xs font-bold tracking-wide text-gray-500">PERSONAL DAILY AVERAGE (LAST 28 DAYS)</p>
-          <div className="rounded-xl bg-gray-50 p-3">
+          <div>
             {!averageStats || !allUsersAverage ? (
-              <p className="text-xs text-gray-400">Loading…</p>
+              <p className="rounded-xl bg-gray-50 p-3 text-xs text-gray-400">Loading…</p>
             ) : (
               <>
-                <div className="grid grid-cols-2 gap-2 text-center">
-                  <div>
-                    <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgSteps.toLocaleString()}</p>
-                    <p className="text-[11px] text-gray-500">Avg steps/day</p>
-                    <VsAverageCaption changePercent={percentChange(averageStats.avgSteps, allUsersAverage.avgSteps)} />
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-[#EEF2F8] p-3">
+                    <p className="mb-2 text-[11px] font-bold tracking-wide text-[#1B2B4B]">THIS USER</p>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgSteps.toLocaleString()}</p>
+                        <p className="text-[11px] text-gray-500">Avg steps/day</p>
+                        <VsAverageCaption changePercent={percentChange(averageStats.avgSteps, allUsersAverage.avgSteps)} />
+                      </div>
+                      <div>
+                        <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgCalories.toLocaleString()}</p>
+                        <p className="text-[11px] text-gray-500">Avg calories/day</p>
+                        <VsAverageCaption changePercent={percentChange(averageStats.avgCalories, allUsersAverage.avgCalories)} />
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-sm font-extrabold text-[#0D1829]">{averageStats.avgCalories.toLocaleString()}</p>
-                    <p className="text-[11px] text-gray-500">Avg calories/day</p>
-                    <VsAverageCaption changePercent={percentChange(averageStats.avgCalories, allUsersAverage.avgCalories)} />
+                  <div className="rounded-xl bg-gray-50 p-3">
+                    <p className="mb-2 text-[11px] font-bold tracking-wide text-gray-500">ALL USERS</p>
+                    <div className="space-y-2">
+                      <div>
+                        <p className="text-sm font-extrabold text-[#0D1829]">{allUsersAverage.avgSteps.toLocaleString()}</p>
+                        <p className="text-[11px] text-gray-500">Avg steps/day</p>
+                      </div>
+                      <div>
+                        <p className="text-sm font-extrabold text-[#0D1829]">{allUsersAverage.avgCalories.toLocaleString()}</p>
+                        <p className="text-[11px] text-gray-500">Avg calories/day</p>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <p className="mt-2 text-[11px] text-gray-400">
-                  vs. all-user average of {allUsersAverage.avgSteps.toLocaleString()} steps and{' '}
-                  {allUsersAverage.avgCalories.toLocaleString()} cal/day
-                </p>
-                <p className="mt-1 text-[11px] text-gray-400">
-                  {averageStats.personalized
-                    ? `Based on ${averageStats.historyDays} logged days — this is the baseline unusual-activity flags compare against.`
-                    : `Only ${averageStats.historyDays} logged day${averageStats.historyDays === 1 ? '' : 's'} so far — flags use the standard limits until 7+ days are logged.`}
-                </p>
               </>
             )}
           </div>
@@ -413,7 +423,11 @@ export function ViewUserModal({
 
                   {p.achievementTitle && (
                     <div className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1">
-                      <span className="text-xs">{p.achievementIcon ?? '🏆'}</span>
+                      {hasAppIcon(p.achievementIcon) ? (
+                        <AppIcon name={p.achievementIcon} size={14} color="#8A6D00" />
+                      ) : (
+                        p.achievementIcon && <span className="text-xs">{p.achievementIcon}</span>
+                      )}
                       <span className="text-xs font-bold text-amber-700">{p.achievementTitle}</span>
                       {p.achievementXp != null && <span className="text-[11px] font-bold text-amber-700/80">+{p.achievementXp} XP</span>}
                     </div>
