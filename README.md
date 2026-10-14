@@ -50,9 +50,7 @@ Aura/
         ├── validate-workout/
         └── delete-account/
 ```
-This is your Getting Started section with every table and step kept, from Required Tools through Team, with your GitHub link added. Paste it below Goals:
 
-````markdown
 ## Getting Started
 
 ### Required Tools
@@ -60,25 +58,25 @@ This is your Getting Started section with every table and step kept, from Requir
 Install these on your Mac before running the project:
 
 | Tool | Version | Needed for | Install |
-| ---- | ------- | ---------- | ------- |
+|------|---------|------------|---------|
 | macOS | Recent version | Building the iOS app | – |
-| [Node.js](https://nodejs.org) | 20 or later (LTS recommended) | Both projects | `brew install node` |
+| Node.js | 20 or later (LTS recommended) | Both projects | `brew install node` |
 | npm | Comes with Node.js | Installing packages | – |
-| [Xcode](https://apps.apple.com/app/xcode/id497799835) | Latest, with iOS Simulator | Mobile app | Mac App Store |
-| [CocoaPods](https://cocoapods.org) | 1.15 or later | Mobile app (iOS native libraries) | `brew install cocoapods` |
-| [Watchman](https://facebook.github.io/watchman/) | Any | Mobile app (recommended, faster reloads) | `brew install watchman` |
-| [Supabase CLI](https://supabase.com/docs/guides/cli) | Latest | Backend only (migrations and Edge Functions) | `brew install supabase/tap/supabase` |
+| Xcode | Latest, with iOS Simulator | Mobile app | Mac App Store |
+| CocoaPods | 1.15 or later | Mobile app (iOS native libraries) | `brew install cocoapods` |
+| Watchman | Any | Mobile app (recommended, faster reloads) | `brew install watchman` |
+| Supabase CLI | Latest | Backend only (migrations and Edge Functions) | `brew install supabase/tap/supabase` |
 
-> **Note:** The mobile app uses HealthKit, so it **does not run in Expo Go**. It needs a development build made with Xcode, using the steps below.
+> **Note:** The mobile app uses HealthKit, so it does not run in Expo Go. It needs a development build made with Xcode, using the steps below.
 
 ### Dependencies
 
 Each project installs its own packages with `npm install`. These are the main ones.
 
-**aura-app**
+#### aura-app
 
 | Package | Purpose |
-| ------- | ------- |
+|---------|---------|
 | `expo` (SDK 56), `react-native` 0.85, `react` 19 | App framework |
 | `expo-router` | Screen navigation |
 | `nativewind`, `tailwindcss` | Styling |
@@ -89,10 +87,10 @@ Each project installs its own packages with `npm install`. These are the main on
 | `expo-image-picker`, `expo-image-manipulator` | Workout photos |
 | `react-native-reanimated`, `react-native-gesture-handler` | Animations and gestures |
 
-**aura-admin**
+#### aura-admin
 
 | Package | Purpose |
-| ------- | ------- |
+|---------|---------|
 | `next` 16, `react` 19 | Web framework |
 | `@supabase/supabase-js`, `@supabase/ssr` | Database and admin login |
 | `tailwindcss` 4 | Styling |
@@ -124,7 +122,7 @@ npm run ios
 
 The first build takes about 5–10 minutes. It opens the app in the iPhone Simulator when done.
 
-**To run on a real iPhone**, connect it with a cable and run:
+To run on a real iPhone, connect it with a cable and run:
 
 ```bash
 npm run ios -- --device
@@ -132,7 +130,7 @@ npm run ios -- --device
 
 Use a real iPhone to test HealthKit, because the Simulator has no real health data.
 
-**After the first build**, you don't need to rebuild every time. Start the dev server and press `i` to open the app that is already installed:
+After the first build, you don't need to rebuild every time. Start the dev server and press `i` to open the app that is already installed:
 
 ```bash
 npm start
@@ -162,7 +160,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 npm run dev
 ```
 
-Then open [http://localhost:3000](http://localhost:3000) and log in with an account that has the admin role.
+Then open http://localhost:3000 and log in with an account that has the admin role.
 
 > **Tip:** To run the app and the dashboard together, use two terminal tabs. Press `Ctrl + C` in a tab to stop that one.
 
@@ -179,15 +177,12 @@ supabase functions deploy
 
 #### Edge Functions
 
-| Function                  | Purpose                                  |
-| ------------------------- | ---------------------------------------- |
-| `generate-daily-missions` | Creates personalised daily missions      |
-| `ai-report-card`          | Generates a progress report for a user   |
-| `validate-workout`        | Checks workout photos for anti-cheat     |
-| `delete-account`          | Deletes a user's account and data        |
-
----
-
+| Function | Purpose |
+|----------|---------|
+| `generate-daily-missions` | Creates personalised daily missions |
+| `ai-report-card` | Generates a progress report for a user |
+| `validate-workout` | Checks workout photos for anti-cheat |
+| `delete-account` | Deletes a user's account and data |
 
 ## Team
 
