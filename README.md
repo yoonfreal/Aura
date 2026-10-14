@@ -50,67 +50,151 @@ Aura/
         ├── validate-workout/
         └── delete-account/
 ```
+This is your Getting Started section with every table and step kept, from Required Tools through Team, with your GitHub link added. Paste it below Goals:
+
+````markdown
 ## Getting Started
 
-### Prerequisites
+### Required Tools
 
-- Node.js and npm
-- [Supabase CLI](https://supabase.com/docs/guides/cli)
-- Xcode and an iPhone or iOS Simulator (HealthKit needs a development build, so Expo Go won't work)
-- A Supabase project and an Anthropic API key
+Install these on your Mac before running the project:
 
-### 1. Set up the backend
+| Tool | Version | Needed for | Install |
+|------|---------|------------|---------|
+| macOS | Recent version | Building the iOS app | – |
+| Node.js | 20 or later (LTS recommended) | Both projects | `brew install node` |
+| npm | Comes with Node.js | Installing packages | – |
+| Xcode | Latest, with iOS Simulator | Mobile app | Mac App Store |
+| CocoaPods | 1.15 or later | Mobile app (iOS native libraries) | `brew install cocoapods` |
+| Watchman | Any | Mobile app (recommended, faster reloads) | `brew install watchman` |
+| Supabase CLI | Latest | Backend only (migrations and Edge Functions) | `brew install supabase/tap/supabase` |
 
-```bash
-supabase link --project-ref <your-project-ref>
-supabase db push
-supabase secrets set ANTHROPIC_API_KEY=<your-anthropic-key>
-supabase functions deploy generate-daily-missions
-supabase functions deploy ai-report-card
-supabase functions deploy validate-workout
-supabase functions deploy delete-account
-```
+> **Note:** The mobile app uses HealthKit, so it does not run in Expo Go. It needs a development build made with Xcode, using the steps below.
 
-Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Functions automatically.
+### Dependencies
 
-Sign-up only accepts `@au.edu` email addresses. A database trigger in the migrations enforces this.
+Each project installs its own packages with `npm install`. These are the main ones.
 
-### 2. Run the mobile app
+#### aura-app
 
-Create `aura-app/.env`:
+| Package | Purpose |
+|---------|---------|
+| `expo` (SDK 56), `react-native` 0.85, `react` 19 | App framework |
+| `expo-router` | Screen navigation |
+| `nativewind`, `tailwindcss` | Styling |
+| `zustand` | App state |
+| `@supabase/supabase-js` | Database and login |
+| `@kingstinct/react-native-healthkit` | Steps, calories, and workouts from Apple Health |
+| `expo-location` | Gym check-in and GPS tracking |
+| `expo-image-picker`, `expo-image-manipulator` | Workout photos |
+| `react-native-reanimated`, `react-native-gesture-handler` | Animations and gestures |
 
-```
-EXPO_PUBLIC_SUPABASE_URL=<your-supabase-url>
-EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
-```
+#### aura-admin
 
-Then:
+| Package | Purpose |
+|---------|---------|
+| `next` 16, `react` 19 | Web framework |
+| `@supabase/supabase-js`, `@supabase/ssr` | Database and admin login |
+| `tailwindcss` 4 | Styling |
+| `typescript` | Type checking |
+
+The full lists are in each project's `package.json`.
+
+### Run the Mobile App (aura-app)
+
+**1. Install packages** (first time only):
 
 ```bash
 cd aura-app
 npm install
+```
+
+**2. Add environment variables.** Create a file named `aura-app/.env`:
+
+```
+EXPO_PUBLIC_SUPABASE_URL=your-supabase-url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+**3. Build and run on the iOS Simulator:**
+
+```bash
 npm run ios
 ```
 
-### 3. Run the admin dashboard
+The first build takes about 5–10 minutes. It opens the app in the iPhone Simulator when done.
 
-Create `aura-admin/.env.local`:
+To run on a real iPhone, connect it with a cable and run:
 
+```bash
+npm run ios -- --device
 ```
-NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+
+Use a real iPhone to test HealthKit, because the Simulator has no real health data.
+
+After the first build, you don't need to rebuild every time. Start the dev server and press `i` to open the app that is already installed:
+
+```bash
+npm start
 ```
 
-Then:
+You only need to run `npm run ios` again after adding or updating a native package.
+
+### Run the Admin Dashboard (aura-admin)
+
+**1. Install packages** (first time only):
 
 ```bash
 cd aura-admin
 npm install
+```
+
+**2. Add environment variables.** Create a file named `aura-admin/.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+**3. Start the dashboard:**
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:3000.
+Then open http://localhost:3000 and log in with an account that has the admin role.
 
+> **Tip:** To run the app and the dashboard together, use two terminal tabs. Press `Ctrl + C` in a tab to stop that one.
+
+### Supabase Backend
+
+Only needed when setting up a new Supabase project or changing the database or Edge Functions. Link your project, apply the database migrations, and deploy the Edge Functions:
+
+```bash
+supabase link --project-ref your-project-ref
+supabase db push
+supabase secrets set ANTHROPIC_API_KEY=your-key
+supabase functions deploy
+```
+
+#### Edge Functions
+
+| Function | Purpose |
+|----------|---------|
+| `generate-daily-missions` | Creates personalised daily missions |
+| `ai-report-card` | Generates a progress report for a user |
+| `validate-workout` | Checks workout photos for anti-cheat |
+| `delete-account` | Deletes a user's account and data |
+
+## Team
+
+| Name | GitHub |
+|------|--------|
+| Yoon | [@yoonfreal](https://github.com/yoonfreal) |
+| Terry | [@txxrim](https://github.com/txxrim) |
+
+Built at Assumption University.
+````
 
 ## Team Members 
 - Yoon Hsu Hlaing
