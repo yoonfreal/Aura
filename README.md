@@ -25,4 +25,9 @@ AUra is a gamified fitness app for Assumption University students. It combines a
 - Personalize daily goals using recent activity and preferences
 - Build a supportive campus fitness community
 - Use activity data and photo checks to support verification
+
+##Team Members 
+- Yoon Hsu Hlaing
+- Myat Yadana Khin
+- Bhone Myat Htut
   
