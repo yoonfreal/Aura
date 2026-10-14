@@ -190,5 +190,4 @@ supabase functions deploy
 - Myat Yadana Khin
 - Bhone Myat Htut
 
-````
   
