@@ -50,6 +50,67 @@ Aura/
         ├── validate-workout/
         └── delete-account/
 ```
+## Getting Started
+
+### Prerequisites
+
+- Node.js and npm
+- [Supabase CLI](https://supabase.com/docs/guides/cli)
+- Xcode and an iPhone or iOS Simulator (HealthKit needs a development build, so Expo Go won't work)
+- A Supabase project and an Anthropic API key
+
+### 1. Set up the backend
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+supabase secrets set ANTHROPIC_API_KEY=<your-anthropic-key>
+supabase functions deploy generate-daily-missions
+supabase functions deploy ai-report-card
+supabase functions deploy validate-workout
+supabase functions deploy delete-account
+```
+
+Supabase provides `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to the Edge Functions automatically.
+
+Sign-up only accepts `@au.edu` email addresses. A database trigger in the migrations enforces this.
+
+### 2. Run the mobile app
+
+Create `aura-app/.env`:
+
+```
+EXPO_PUBLIC_SUPABASE_URL=<your-supabase-url>
+EXPO_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+```
+
+Then:
+
+```bash
+cd aura-app
+npm install
+npm run ios
+```
+
+### 3. Run the admin dashboard
+
+Create `aura-admin/.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=<your-supabase-url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+```
+
+Then:
+
+```bash
+cd aura-admin
+npm install
+npm run dev
+```
+
+Open http://localhost:3000.
+
 
 ## Team Members 
 - Yoon Hsu Hlaing
